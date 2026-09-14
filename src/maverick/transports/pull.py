@@ -80,7 +80,7 @@ class FileTransport(Transport):
             "frame format (`.png`, `.bmp`, or `.bin` for a raw layout)."
         ),
         "write_preview": (
-            "Also write `<display id>-preview.png`, a viewable render of the quantised "
+            "Also write `<display id>-preview.png`, a viewable render of the quantized "
             "frame. Default false."
         ),
     }

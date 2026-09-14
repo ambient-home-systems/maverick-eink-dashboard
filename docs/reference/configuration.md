@@ -75,9 +75,9 @@ render.
 
 ## Panel profiles and per-display overrides
 
-A display names a panel from the catalogue (`maverick panels`), and the catalogue
-entry supplies the resolution, colour scheme, dpi, native rotation, frame format
-and ghosting behaviour. That is the point of it: `panel: waveshare-7in5-mono` is
+A display names a panel from the catalog (`maverick panels`), and the catalog
+entry supplies the resolution, color scheme, dpi, native rotation, frame format
+and ghosting behavior. That is the point of it: `panel: waveshare-7in5-mono` is
 meant to be the last thing you have to know about the hardware.
 
 Each of those values can still be overridden per display, and `DisplayConfig.resolved()`
@@ -99,7 +99,7 @@ exception that tells unset from zero, so `rotation: 0` really does mean "no
 rotation, whatever the profile says".
 
 Everything else — theme, image pipeline, render, schedule, transport, packing and
-ESPHome generation — is per display with no catalogue involvement, and defaults to
+ESPHome generation — is per display with no catalog involvement, and defaults to
 the values in the tables below.
 
 ## home_assistant
@@ -170,19 +170,19 @@ Every key at the root of the file. The three above have sections of their own, a
 
 ## displays[]
 
-One entry per physical panel. `id` is the only required key: the keys beside it override something the panel catalogue already knows, and the sections they point at are all optional too, so a display that names a catalogue panel and a dashboard needs almost nothing else.
+One entry per physical panel. `id` is the only required key: the keys beside it override something the panel catalog already knows, and the sections they point at are all optional too, so a display that names a catalog panel and a dashboard needs almost nothing else.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `id` | `str` | **required** | Identifier for this display, unique within the file. It becomes a URL path segment and an MQTT topic level. |
 | `name` | `str` | `""` | Human-readable name, shown in the setup UI and used for the Home Assistant device. Empty derives one from the id. |
-| `panel` | `str` | `"generic-mono"` | Panel id from the catalogue, as listed by `maverick panels`. It supplies the resolution, colour scheme, dpi, rotation, frame format and refresh behaviour that the keys below override. |
+| `panel` | `str` | `"generic-mono"` | Panel id from the catalog, as listed by `maverick panels`. It supplies the resolution, color scheme, dpi, rotation, frame format and refresh behavior that the keys below override. |
 | `dashboard` | `str` | `"/lovelace/0"` | What to render: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as absolute, so `file:///...` renders a local page. |
 | `enabled` | `bool` | `true` | Render and deliver this display. False keeps it configured but idle. |
-| `width` | `int` \| `None` | *unset* | Panel width in pixels. Unset uses the catalogue value for `panel`. |
-| `height` | `int` \| `None` | *unset* | Panel height in pixels. Unset uses the catalogue value for `panel`. |
-| `color_scheme` | `mono` \| `bwr` \| `bwy` \| `bwry` \| `gray4` \| `gray8` \| `gray16` \| `spectra6` \| `acep7` \| `None` | *unset* | Inks to quantise to; see [Colour schemes](#colour-schemes). Unset uses the catalogue value for `panel`. |
-| `dpi` | `int` \| `None` | *unset* | Pixels per inch, used to turn the theme's millimetre sizes into pixels. Unset uses the catalogue value for `panel`. |
+| `width` | `int` \| `None` | *unset* | Panel width in pixels. Unset uses the catalog value for `panel`. |
+| `height` | `int` \| `None` | *unset* | Panel height in pixels. Unset uses the catalog value for `panel`. |
+| `color_scheme` | `mono` \| `bwr` \| `bwy` \| `bwry` \| `gray4` \| `gray8` \| `gray16` \| `spectra6` \| `acep7` \| `None` | *unset* | Inks to quantize to; see [Color schemes](#color-schemes). Unset uses the catalog value for `panel`. |
+| `dpi` | `int` \| `None` | *unset* | Pixels per inch, used to turn the theme's millimeter sizes into pixels. Unset uses the catalog value for `panel`. |
 | `rotation` | `int` \| `None` | *unset* | Rotation in degrees applied after fitting, for a panel mounted sideways. Unset uses the panel's native rotation. |
 | `frame_format` | `packed` \| `planes` \| `indexed` \| `png` \| `bmp` \| `None` | *unset* | Wire format for the delivered frame; see [Frame formats](#frame-formats). Unset uses the panel's default format, and failing that a default for the configured transport. |
 | `theme` | [section](#displaystheme) | *section defaults* | Overrides for the injected e-ink stylesheet. |
@@ -193,7 +193,7 @@ One entry per physical panel. `id` is the only required key: the keys beside it 
 | `pack` | [section](#displayspack) | *section defaults* | Controller quirks for raw-frame transports. |
 | `esphome` | [section](#displaysesphome) | *section defaults* | Inputs for the ESPHome configuration `maverick esphome <id>` generates. |
 
-**Validation.** `id` must be lowercase alphanumeric with `-` or `_`, starting with a letter or digit. `panel` must name a catalogue entry, and `rotation` must be 0, 90, 180 or 270.
+**Validation.** `id` must be lowercase alphanumeric with `-` or `_`, starting with a letter or digit. `panel` must name a catalog entry, and `rotation` must be 0, 90, 180 or 270.
 
 ## displays[].theme
 
@@ -202,13 +202,13 @@ Overrides for the injected e-ink stylesheet.
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `bool` | `true` | Inject the generated e-ink stylesheet. False leaves Home Assistant's own styling in place and applies `extra_css` alone. |
-| `body_mm` | `float` | `3.2` | Height of body text in millimetres on the panel, converted to pixels using the panel's dpi. It is a physical size, not a browser font size. |
+| `body_mm` | `float` | `3.2` | Height of body text in millimeters on the panel, converted to pixels using the panel's dpi. It is a physical size, not a browser font size. |
 | `scale_ratio` | `float` | `1.25` | Ratio of the modular type scale: each step up multiplies by this. |
 | `min_font_weight` | `int`, 100 to 900 | `400` | Minimum font weight. 400 is the floor at which stems survive 1-bit output. |
 | `strong_font_weight` | `int`, 100 to 900 | `700` | Weight used for headings and numeric readouts. |
-| `rule_mm` | `float` | `0.25` | Border width in millimetres — hairlines disappear below roughly 0.2 mm. |
-| `radius_mm` | `float` | `0.0` | Card corner radius in millimetres. Sharp corners dither more cleanly. |
-| `font_stack` | `str` \| `None` | *unset* | CSS font stack for the page. Unset uses the built-in e-ink stack, which prefers faces whose stems survive quantisation. |
+| `rule_mm` | `float` | `0.25` | Border width in millimeters — hairlines disappear below roughly 0.2 mm. |
+| `radius_mm` | `float` | `0.0` | Card corner radius in millimeters. Sharp corners dither more cleanly. |
+| `font_stack` | `str` \| `None` | *unset* | CSS font stack for the page. Unset uses the built-in e-ink stack, which prefers faces whose stems survive quantization. |
 | `hide_chrome` | `bool` | `true` | Hide the Home Assistant toolbar, sidebar and other frontend chrome. |
 | `use_spot_colour` | `bool` | `true` | Let the panel's spot ink carry alerts and state highlights. It has no effect on a panel without a spot ink. |
 | `letter_spacing_em` | `float` \| `None` | *unset* | Letter spacing in em. Unset derives it from the panel's dpi: 0.012 below 150 dpi, where adjacent stems smear together, and 0 above. |
@@ -224,15 +224,15 @@ Overrides for the image pipeline.
 | `dither` | `auto` \| `none` \| `ordered` \| `floyd_steinberg` \| `atkinson` \| `burkes` \| `sierra` \| `sierra_lite` \| `stucki` \| `jarvis` | `auto` | How continuous tone is mapped onto the panel's inks; see [Dither modes](#dither-modes). |
 | `fit` | `contain` \| `cover` \| `stretch` \| `crop` | `contain` | How the screenshot is resized onto the panel; see [Fit modes](#fit-modes). |
 | `serpentine` | `bool` | `true` | Alternate the scan direction on each row while diffusing error, which hides directional artefacts. Only the error-diffusion kernels use it: `none` and `ordered` have no error to carry, and `auto` diffuses through Pillow, whose implementation is always left-to-right. |
-| `exposure` | `float` | `1.0` | Multiplies luminance before quantisation. Above 1 lightens. |
-| `contrast` | `float` | `1.08` | Contrast stretch before quantisation. E-ink benefits from a little more than a screen wants. |
-| `gamma` | `float` | `1.0` | Gamma applied before quantisation. Panels are closer to linear than sRGB, so a mild decode keeps midtones from crushing to black. |
-| `saturation` | `float` | `1.0` | Saturation boost for colour panels. Their gamut is small; pushing saturation first means more pixels land on a real ink instead of dithering between two. |
+| `exposure` | `float` | `1.0` | Multiplies luminance before quantization. Above 1 lightens. |
+| `contrast` | `float` | `1.08` | Contrast stretch before quantization. E-ink benefits from a little more than a screen wants. |
+| `gamma` | `float` | `1.0` | Gamma applied before quantization. Panels are closer to linear than sRGB, so a mild decode keeps midtones from crushing to black. |
+| `saturation` | `float` | `1.0` | Saturation boost for color panels. Their gamut is small; pushing saturation first means more pixels land on a real ink instead of dithering between two. |
 | `sharpen` | `float` | `0.6` | Unsharp mask radius in pixels. Ink bleeds slightly; a light sharpen restores the edge the panel loses. 0 disables it. |
-| `black_level` | `int`, 0 to 255 | `0` | Black clip point, 0-255, applied as a level stretch before quantisation. |
-| `white_level` | `int`, 0 to 255 | `255` | White clip point, 0-255, applied as a level stretch before quantisation. |
-| `invert` | `bool` | `false` | Invert the image before quantisation, for a panel wired or mounted to show a negative. Distinct from `pack.invert`, which inverts the packed indices instead. |
-| `palette_overrides` | `dict` of `str` to `[int, int, int]` | `{}` | Measured ink values for this panel, keyed by palette name (`black`, `white`, `red`, ...) with `[r, g, b]` values. Despite sitting under `image`, they drive both the quantisation palette and the injected stylesheet, so the page is styled with the same inks the frame is quantised to. |
+| `black_level` | `int`, 0 to 255 | `0` | Black clip point, 0-255, applied as a level stretch before quantization. |
+| `white_level` | `int`, 0 to 255 | `255` | White clip point, 0-255, applied as a level stretch before quantization. |
+| `invert` | `bool` | `false` | Invert the image before quantization, for a panel wired or mounted to show a negative. Distinct from `pack.invert`, which inverts the packed indices instead. |
+| `palette_overrides` | `dict` of `str` to `[int, int, int]` | `{}` | Measured ink values for this panel, keyed by palette name (`black`, `white`, `red`, ...) with `[r, g, b]` values. Despite sitting under `image`, they drive both the quantization palette and the injected stylesheet, so the page is styled with the same inks the frame is quantized to. |
 
 **Validation.** `black_level` must be below `white_level`.
 
@@ -251,7 +251,7 @@ How the browser should capture the dashboard.
 | `wait_for_selector` | `str` \| `None` | *unset* | CSS selector to wait for before capturing. Unset waits for `home-assistant`, which is present on every Home Assistant page. |
 | `crop_to_selector` | `str` \| `None` | *unset* | CSS selector to capture instead of the whole page. A selector that matches nothing fails the render rather than capturing the page. |
 | `wait_for_images` | `bool` | `true` | Wait until every `<img>` has decoded. Weather icons are usually the slowest thing on the page. |
-| `debug_artifacts` | `bool` | `false` | Keep the pre-quantisation screenshot next to the frame preview and the lint report, under `<data_dir>/debug/<id>/`. |
+| `debug_artifacts` | `bool` | `false` | Keep the pre-quantization screenshot next to the frame preview and the lint report, under `<data_dir>/debug/<id>/`. |
 
 **Validation.** `settle` and `timeout` accept a duration and are stored as seconds.
 
@@ -296,7 +296,7 @@ Controller quirks for raw-frame transports.
 | --- | --- | --- | --- |
 | `msb_first` | `bool` | `true` | Pack the leftmost pixel of each byte into the most significant bit. False packs it into the least significant bit. |
 | `invert` | `bool` | `false` | Invert the packed indices, so index 0 becomes the last ink. For controllers that clock 1 for white. Distinct from `image.invert`, which inverts the image itself. |
-| `plane_order` | `list` of `str` \| `None` | *unset* | Ink order for the `planes` frame format, by palette name. Unset packs black first, then the spot colours. |
+| `plane_order` | `list` of `str` \| `None` | *unset* | Ink order for the `planes` frame format, by palette name. Unset packs black first, then the spot colors. |
 | `plane_active_low` | `bool` | `false` | Some controllers clock 1 for the *absence* of an ink on the black plane; this inverts each plane to suit them. |
 
 ## displays[].esphome
@@ -317,7 +317,7 @@ a Waveshare panel via the vendor's HAT.
 | `busy_pin` | `str` | `"GPIO25"` | Panel busy pin. |
 | `reset_pin` | `str` | `"GPIO26"` | Panel reset pin. |
 | `deep_sleep` | `bool` | `false` | Sleep between fetches instead of staying awake, waking on the display's own interval. Essential on battery, and it means the device is unreachable — and so cannot be flashed over the air — between wakes. |
-| `buffer_size` | `int` | `0` | Bytes reserved for the downloaded frame. Too small and the fetch fails; 0 generates a size from the panel's resolution and colour scheme. |
+| `buffer_size` | `int` | `0` | Bytes reserved for the downloaded frame. Too small and the fetch fails; 0 generates a size from the panel's resolution and color scheme. |
 | `verify_ssl` | `bool` | `false` | Whether the generated firmware verifies the server's TLS certificate. Off by default: certificate validation costs an ESP32 memory the frame buffer needs. |
 | `node_name` | `str` \| `None` | *unset* | ESPHome node name. Unset derives one from the display id, as `<id>-panel` with underscores replaced by hyphens. |
 
@@ -332,11 +332,11 @@ How to map continuous-tone pixels onto the panel's inks.
 | `auto` | Diffuse error only where the image is locally busy and snap flat regions straight to the nearest ink. Photographs still dither; a temperature readout stays crisp. The default, and the right answer for a dashboard. |
 | `none` | Snap every pixel to its nearest ink. Flattest output, hardest gradients. |
 | `ordered` | An 8x8 Bayer matrix. Regular texture rather than noise, and cheap; it patterns large flat fills visibly. |
-| `floyd_steinberg` | Classic error diffusion over four neighbours. A good general default. |
+| `floyd_steinberg` | Classic error diffusion over four neighbors. A good general default. |
 | `atkinson` | Diffuses only three quarters of the error, which keeps contrast high and light areas clean at the cost of some detail. |
 | `burkes` | Error diffusion over two rows; smoother than Floyd-Steinberg, slightly softer. |
 | `sierra` | Error diffusion over three rows. Smooth gradients, the slowest of the family. |
-| `sierra_lite` | A two-row, three-neighbour Sierra. Fast, with more visible structure. |
+| `sierra_lite` | A two-row, three-neighbor Sierra. Fast, with more visible structure. |
 | `stucki` | Three-row diffusion with a wide kernel. Clean gradients, soft edges. |
 | `jarvis` | Jarvis, Judice and Ninke: the widest kernel here. Smoothest, and the softest. |
 
@@ -346,7 +346,7 @@ How the screenshot is resized onto the panel, before rotation.
 
 | Value | Meaning |
 | --- | --- |
-| `contain` | Scale to fit inside the panel, preserving aspect ratio, and centre it on white. Nothing is lost and nothing is stretched. |
+| `contain` | Scale to fit inside the panel, preserving aspect ratio, and center it on white. Nothing is lost and nothing is stretched. |
 | `cover` | Scale to cover the panel, preserving aspect ratio, and crop the overflow. Anchored to the top, so headers survive. |
 | `stretch` | Scale to the panel exactly, distorting the aspect ratio if it differs. |
 | `crop` | No scaling: paste the image at the top left of a white canvas and crop whatever falls outside the panel. |
@@ -357,15 +357,15 @@ The byte layout of the delivered frame. Transports that hand a PIL image to a li
 
 | Value | Meaning |
 | --- | --- |
-| `packed` | N bits per pixel, pixels left to right, rows top to bottom, each row padded to a byte boundary. Most greyscale controllers and index-addressed colour panels. |
+| `packed` | N bits per pixel, pixels left to right, rows top to bottom, each row padded to a byte boundary. Most grayscale controllers and index-addressed color panels. |
 | `planes` | One 1-bit plane per ink, concatenated. The classic Waveshare black/white plus red layout, where two full-size buffers are clocked out in sequence. |
 | `indexed` | One byte per pixel. Wasteful on the wire, and the simplest thing for a device or transport that does its own conversion. |
 | `png` | A PNG image. What every transport that hands a picture to a library or a browser wants. |
 | `bmp` | A BMP image, for firmware with a BMP decoder and no PNG one. |
 
-### Colour schemes
+### Color schemes
 
-The colour capability of a panel.
+The color capability of a panel.
 
 | Value | Meaning |
 | --- | --- |
@@ -373,15 +373,15 @@ The colour capability of a panel.
 | `bwr` | Black, white and red: one spot ink. |
 | `bwy` | Black, white and yellow: one spot ink. |
 | `bwry` | Black, white, red and yellow: two spot inks. |
-| `gray4` | Four levels of grey. |
-| `gray8` | Eight levels of grey. |
-| `gray16` | Sixteen levels of grey, as IT8951 controllers drive. |
+| `gray4` | Four levels of gray. |
+| `gray8` | Eight levels of gray. |
+| `gray16` | Sixteen levels of gray, as IT8951 controllers drive. |
 | `spectra6` | E Ink Spectra 6: black, white, red, yellow, blue and green. |
-| `acep7` | Advanced Colour ePaper: the Spectra 6 inks plus orange. |
+| `acep7` | Advanced Color ePaper: the Spectra 6 inks plus orange. |
 
 ## Transport options
 
-`displays[].transport.type` picks a transport; every other key in that section is the transport's own. They are listed here rather than in the table above because `TransportConfig` allows extra keys, so the transport, not the model, owns them. An option a transport does not recognise is ignored rather than rejected.
+`displays[].transport.type` picks a transport; every other key in that section is the transport's own. They are listed here rather than in the table above because `TransportConfig` allows extra keys, so the transport, not the model, owns them. An option a transport does not recognize is ignored rather than rejected.
 
 ### `file`
 
@@ -391,7 +391,7 @@ Write frames to a directory (Kindle screensaver, Samba, debugging). Pushes to th
 | --- | --- | --- |
 | `path` | no | Directory to write frames into, created if it does not exist. Default `./out`. |
 | `filename` | no | Name of the frame file. Unset uses the display id with an extension from the frame format (`.png`, `.bmp`, or `.bin` for a raw layout). |
-| `write_preview` | no | Also write `<display id>-preview.png`, a viewable render of the quantised frame. Default false. |
+| `write_preview` | no | Also write `<display id>-preview.png`, a viewable render of the quantized frame. Default false. |
 
 ### `http_pull`
 

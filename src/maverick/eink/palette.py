@@ -18,7 +18,7 @@ RGB = tuple[int, int, int]
 
 
 class ColorScheme(str, Enum):
-    """The colour capability of a panel."""
+    """The color capability of a panel."""
 
     MONO = "mono"
     BWR = "bwr"

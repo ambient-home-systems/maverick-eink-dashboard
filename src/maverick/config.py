@@ -1,7 +1,7 @@
 """Configuration schema.
 
 A display's configuration is deliberately shallow: name a panel from the
-catalogue and a dashboard path, and everything else has a defensible default
+catalog and a dashboard path, and everything else has a defensible default
 derived from the panel. Every derived value remains overridable, because
 someone always has a panel mounted sideways behind glass.
 
@@ -68,7 +68,7 @@ def expand_env(value: Any) -> Any:
 
 
 class Base(BaseModel):
-    # validate_default matters: several fields accept "5m" and normalise to
+    # validate_default matters: several fields accept "5m" and normalize to
     # seconds in a validator, and pydantic skips validators on defaults unless
     # told otherwise — which would leave callers with a str where a float is
     # documented.
@@ -240,7 +240,7 @@ class ThemeConfig(Base):
     body_mm: float = Field(
         default=3.2,
         description=(
-            "Height of body text in millimetres on the panel, converted to pixels using the "
+            "Height of body text in millimeters on the panel, converted to pixels using the "
             "panel's dpi. It is a physical size, not a browser font size."
         ),
     )
@@ -262,17 +262,17 @@ class ThemeConfig(Base):
     )
     rule_mm: float = Field(
         default=0.25,
-        description="Border width in millimetres — hairlines disappear below roughly 0.2 mm.",
+        description="Border width in millimeters — hairlines disappear below roughly 0.2 mm.",
     )
     radius_mm: float = Field(
         default=0.0,
-        description="Card corner radius in millimetres. Sharp corners dither more cleanly.",
+        description="Card corner radius in millimeters. Sharp corners dither more cleanly.",
     )
     font_stack: str | None = Field(
         default=None,
         description=(
             "CSS font stack for the page. Unset uses the built-in e-ink stack, which prefers "
-            "faces whose stems survive quantisation."
+            "faces whose stems survive quantization."
         ),
     )
     hide_chrome: bool = Field(
@@ -331,26 +331,26 @@ class ImageConfig(Base):
     )
     exposure: float = Field(
         default=1.0,
-        description="Multiplies luminance before quantisation. Above 1 lightens.",
+        description="Multiplies luminance before quantization. Above 1 lightens.",
     )
     contrast: float = Field(
         default=1.08,
         description=(
-            "Contrast stretch before quantisation. E-ink benefits from a little more than a "
+            "Contrast stretch before quantization. E-ink benefits from a little more than a "
             "screen wants."
         ),
     )
     gamma: float = Field(
         default=1.0,
         description=(
-            "Gamma applied before quantisation. Panels are closer to linear than sRGB, so a "
+            "Gamma applied before quantization. Panels are closer to linear than sRGB, so a "
             "mild decode keeps midtones from crushing to black."
         ),
     )
     saturation: float = Field(
         default=1.0,
         description=(
-            "Saturation boost for colour panels. Their gamut is small; pushing saturation "
+            "Saturation boost for color panels. Their gamut is small; pushing saturation "
             "first means more pixels land on a real ink instead of dithering between two."
         ),
     )
@@ -365,18 +365,18 @@ class ImageConfig(Base):
         default=0,
         ge=0,
         le=255,
-        description="Black clip point, 0-255, applied as a level stretch before quantisation.",
+        description="Black clip point, 0-255, applied as a level stretch before quantization.",
     )
     white_level: int = Field(
         default=255,
         ge=0,
         le=255,
-        description="White clip point, 0-255, applied as a level stretch before quantisation.",
+        description="White clip point, 0-255, applied as a level stretch before quantization.",
     )
     invert: bool = Field(
         default=False,
         description=(
-            "Invert the image before quantisation, for a panel wired or mounted to show a "
+            "Invert the image before quantization, for a panel wired or mounted to show a "
             "negative. Distinct from `pack.invert`, which inverts the packed indices instead."
         ),
     )
@@ -385,8 +385,8 @@ class ImageConfig(Base):
         description=(
             "Measured ink values for this panel, keyed by palette name (`black`, `white`, "
             "`red`, ...) with `[r, g, b]` values. Despite sitting under `image`, they drive "
-            "both the quantisation palette and the injected stylesheet, so the page is styled "
-            "with the same inks the frame is quantised to."
+            "both the quantization palette and the injected stylesheet, so the page is styled "
+            "with the same inks the frame is quantized to."
         ),
     )
 
@@ -467,7 +467,7 @@ class RenderConfig(Base):
     debug_artifacts: bool = Field(
         default=False,
         description=(
-            "Keep the pre-quantisation screenshot next to the frame preview and the lint "
+            "Keep the pre-quantization screenshot next to the frame preview and the lint "
             "report, under `<data_dir>/debug/<id>/`."
         ),
     )
@@ -617,7 +617,7 @@ class EsphomeConfig(Base):
         default=0,
         description=(
             "Bytes reserved for the downloaded frame. Too small and the fetch fails; 0 "
-            "generates a size from the panel's resolution and colour scheme."
+            "generates a size from the panel's resolution and color scheme."
         ),
     )
     verify_ssl: bool = Field(
@@ -655,8 +655,8 @@ class DisplayConfig(Base):
     panel: str = Field(
         default="generic-mono",
         description=(
-            "Panel id from the catalogue, as listed by `maverick panels`. It supplies the "
-            "resolution, colour scheme, dpi, rotation, frame format and refresh behaviour "
+            "Panel id from the catalog, as listed by `maverick panels`. It supplies the "
+            "resolution, color scheme, dpi, rotation, frame format and refresh behavior "
             "that the keys below override."
         ),
     )
@@ -673,27 +673,27 @@ class DisplayConfig(Base):
         description="Render and deliver this display. False keeps it configured but idle.",
     )
 
-    # Panel overrides — all default to the catalogue entry.
+    # Panel overrides — all default to the catalog entry.
     width: int | None = Field(
         default=None,
-        description="Panel width in pixels. Unset uses the catalogue value for `panel`.",
+        description="Panel width in pixels. Unset uses the catalog value for `panel`.",
     )
     height: int | None = Field(
         default=None,
-        description="Panel height in pixels. Unset uses the catalogue value for `panel`.",
+        description="Panel height in pixels. Unset uses the catalog value for `panel`.",
     )
     color_scheme: ColorScheme | None = Field(
         default=None,
         description=(
-            "Inks to quantise to; see Colour schemes. Unset uses the catalogue value for "
+            "Inks to quantize to; see Color schemes. Unset uses the catalog value for "
             "`panel`."
         ),
     )
     dpi: int | None = Field(
         default=None,
         description=(
-            "Pixels per inch, used to turn the theme's millimetre sizes into pixels. Unset "
-            "uses the catalogue value for `panel`."
+            "Pixels per inch, used to turn the theme's millimeter sizes into pixels. Unset "
+            "uses the catalog value for `panel`."
         ),
     )
     rotation: int | None = Field(
@@ -753,7 +753,7 @@ class DisplayConfig(Base):
 
     @model_validator(mode="after")
     def _defaults(self) -> DisplayConfig:
-        """`panel` must name a catalogue entry, and `rotation` must be 0, 90, 180 or 270."""
+        """`panel` must name a catalog entry, and `rotation` must be 0, 90, 180 or 270."""
         if not self.name:
             object.__setattr__(self, "name", self.id.replace("-", " ").replace("_", " ").title())
         # Validate the panel now so a typo fails at load, not at first render.
@@ -767,7 +767,7 @@ class DisplayConfig(Base):
         return get_panel(self.panel)
 
     def resolved(self) -> ResolvedDisplay:
-        """Merge catalogue defaults with user overrides."""
+        """Merge catalog defaults with user overrides."""
         p = self.profile
         return ResolvedDisplay(
             config=self,
@@ -805,7 +805,7 @@ class PackOptionsConfig(Base):
         default=None,
         description=(
             "Ink order for the `planes` frame format, by palette name. Unset packs black "
-            "first, then the spot colours."
+            "first, then the spot colors."
         ),
     )
     plane_active_low: bool = Field(
@@ -838,15 +838,15 @@ def _default_format_for(transport_type: str) -> FrameFormat:
 
 
 class ResolvedDisplay(BaseModel):
-    """A display with catalogue defaults and overrides merged."""
+    """A display with catalog defaults and overrides merged."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     config: DisplayConfig = Field(description="The display as the user wrote it.")
-    profile: PanelProfile = Field(description="The catalogue entry named by `panel`.")
+    profile: PanelProfile = Field(description="The catalog entry named by `panel`.")
     width: int = Field(description="Panel width in pixels, after overrides.")
     height: int = Field(description="Panel height in pixels, after overrides.")
-    color_scheme: ColorScheme = Field(description="Ink capability to quantise to, after overrides.")
+    color_scheme: ColorScheme = Field(description="Ink capability to quantize to, after overrides.")
     dpi: int = Field(description="Pixels per inch, after overrides.")
     rotation: int = Field(description="Rotation in degrees, after overrides.")
     frame_format: FrameFormat = Field(description="Wire format for the frame, after overrides.")
