@@ -29,8 +29,21 @@ from .ui import render_ui
 log = logging.getLogger(__name__)
 
 
+#: TRMNL firmware carries its API key in its own header rather than in
+#: ``Authorization``. It sends ``Access-Token``; the BYOS reference docs spell
+#: the same field ``ACCESS_TOKEN``, and HTTP header names are case-insensitive
+#: but underscores and hyphens are not interchangeable, so both are accepted.
+_TOKEN_HEADERS = ("access-token", "access_token")
+
+
 def _require_token(app: Application):
-    """Bearer-token dependency, active only when server.api_token is set."""
+    """Token dependency, active only when server.api_token is set.
+
+    Accepts the token three ways: an ``Authorization: Bearer`` header, one of
+    the TRMNL ``Access-Token`` headers, or a ``?token=`` query parameter. All
+    three carry the same secret and are compared the same way — the extra
+    header names widen how a client may present the token, not who is let in.
+    """
 
     async def dependency(request: Request) -> None:
         expected = app.config.server.api_token
@@ -38,6 +51,11 @@ def _require_token(app: Application):
             return
         header = request.headers.get("authorization", "")
         supplied = header[7:] if header.lower().startswith("bearer ") else ""
+        if not supplied:
+            for name in _TOKEN_HEADERS:
+                supplied = request.headers.get(name, "")
+                if supplied:
+                    break
         if not supplied:
             supplied = request.query_params.get("token", "")
         # Constant-time compare: this token gates re-rendering and frame access.
@@ -172,7 +190,7 @@ def create_app(application: Application) -> FastAPI:
 
     @api.post("/api/render", dependencies=[auth])
     async def render_all(force: bool = False) -> list[dict[str, Any]]:
-        outcomes = await application.render_all(trigger="api")
+        outcomes = await application.render_all(trigger="api", force=force)
         return [
             {"display": o.display_id, "ok": o.ok, "skipped": o.skipped, "reason": o.reason}
             for o in outcomes

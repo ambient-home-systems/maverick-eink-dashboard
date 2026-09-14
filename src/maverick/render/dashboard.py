@@ -169,6 +169,7 @@ def build_theme_css(display: ResolvedDisplay) -> str:
         # render.zoom composes with the dpi-derived zoom rather than fighting it.
         zoom_multiplier=display.config.render.zoom,
         letter_spacing_em=theme.letter_spacing_em,
+        palette_overrides=dict(display.config.image.palette_overrides),
         extra_css=extra,
     )
     if theme.font_stack:

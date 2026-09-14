@@ -23,6 +23,17 @@ from .base import DeliveryContext, DeliveryResult, Transport, register
 log = logging.getLogger(__name__)
 
 
+def availability_topic(base_topic: str) -> str:
+    """The retained online/offline topic for the service as a whole.
+
+    Home Assistant's discovery payloads point every entity's availability at
+    this topic, and it is what the broker publishes ``offline`` to on our
+    behalf if we die. Defined here rather than on :class:`MqttDiscovery` so the
+    engine can register the last will without importing the HA layer.
+    """
+    return f"{base_topic}/status"
+
+
 class MqttPublisher:
     """A small shared wrapper over paho-mqtt's threaded client.
 
@@ -38,7 +49,9 @@ class MqttPublisher:
         self._connected = asyncio.Event()
         #: (topic, payload) published by the broker if we disconnect uncleanly,
         #: so Home Assistant marks every display unavailable rather than showing
-        #: a stale "last render" forever.
+        #: a stale "last render" forever. paho registers a will as part of the
+        #: CONNECT packet, so this must be supplied here: setting it after
+        #: :meth:`start` has connected is silently ignored.
         self._will = will
 
     async def start(self) -> None:
@@ -165,4 +178,4 @@ class MqttTransport(Transport):
         )
 
 
-__all__ = ["MqttTransport", "MqttPublisher"]
+__all__ = ["MqttTransport", "MqttPublisher", "availability_topic"]
