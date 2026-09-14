@@ -290,6 +290,15 @@ arrives later when the device fetches.
 For `opendisplay` in `mode: ble`, run `maverick scan` to find tags in range.
 It needs a Bluetooth adapter the process can see, and the `opendisplay` extra.
 
+**Device recipes.** [`docs/recipes/`](docs/recipes/README.md) has a page per
+device path — [ESPHome and a Waveshare panel](docs/recipes/esphome-waveshare.md),
+[OpenDisplay tags](docs/recipes/opendisplay-tags.md),
+[Kindle and Kobo](docs/recipes/kindle-kobo.md), [TRMNL](docs/recipes/trmnl.md),
+[a Pi driving an Inky over MQTT](docs/recipes/inky-mqtt.md), and
+[webhook and file](docs/recipes/webhook-and-file.md) — each with the
+configuration, a client where one is needed, and what to check when it does not
+work. None of them has been run on hardware yet; each says what was verified.
+
 ## Home Assistant
 
 **With MQTT.** Set `mqtt.enabled: true` and each display arrives in Home

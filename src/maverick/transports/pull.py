@@ -13,6 +13,10 @@ Two details do most of the work for battery life:
 ``Date``
     Every response carries the server clock, so firmware can keep time without
     an SNTP client.
+
+Both details are why the device-side recipes stay short: ``docs/recipes/``
+covers ESPHome, a jailbroken Kindle or Kobo, and TRMNL against this transport,
+and ``webhook-and-file.md`` against the other two here.
 """
 
 from __future__ import annotations
