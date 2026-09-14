@@ -100,11 +100,69 @@ class ThemeOptions:
     extra_css: str = ""
 
 
-def _ink(palette: Palette, name: str, fallback: str) -> str:
-    if name in palette.names:
-        r, g, b = palette.colors[palette.index_of(name)]
-        return f"rgb({r},{g},{b})"
-    return fallback
+#: Inks that read as "this is a problem", in the order we would rather use them.
+#: Blue and green are categorical inks on a full-colour panel, not alert inks,
+#: so they are never chosen here however much contrast they have.
+ALERT_INKS = ("red", "orange", "yellow")
+
+#: Luminance weights, the same ones :func:`dither._nearest_indices` quantises
+#: with, so the stylesheet judges an ink the way the quantiser will.
+_LUMA = (0.299, 0.587, 0.114)
+
+#: An accent below this luminance ratio against the panel's own white cannot be
+#: read as text at body size. Measured inks: red 3.0:1, orange 1.9:1,
+#: yellow 1.3:1. Only yellow is ever chosen and fails, because the one palette
+#: with orange (``acep7``) has red as well and prefers it.
+MIN_ACCENT_CONTRAST = 2.0
+
+
+def _luminance(rgb: RGB) -> float:
+    return sum(channel * weight for channel, weight in zip(rgb, _LUMA, strict=True))
+
+
+def _contrast(ink: RGB, ground: RGB) -> float:
+    lo, hi = sorted((_luminance(ink), _luminance(ground)))
+    return hi / lo if lo else float("inf")
+
+
+def _rgb_css(rgb: RGB) -> str:
+    return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+
+def _accent_ink(palette: Palette, fg: str) -> tuple[str, str]:
+    """Pick the accent ink, and decide whether it is the figure or the ground.
+
+    Returns ``(colour, highlight)``, exactly one of which is the panel's spot
+    pigment. Looking up ``red`` alone left a BWY panel with no accent at all:
+    its one spot pigment went unused and its alerts came out in plain black. So
+    take the first alert ink the palette actually has, then check it can be
+    read against the panel's own white:
+
+    * at or above :data:`MIN_ACCENT_CONTRAST` it is returned as ``colour``, and
+      carries alert text, active icons and state highlights as before;
+    * below it the pigment is too pale to be a foreground — yellow is 1.3:1 —
+      so text stays on the foreground ink and the pigment comes back as
+      ``highlight``, a fill to put that text on. Black on yellow is 6.9:1.
+    """
+    spot = next((name for name in ALERT_INKS if name in palette.names), None)
+    if spot is None:
+        return fg, ""
+    rgb = palette.colors[palette.index_of(spot)]
+    white = palette.colors[palette.white_index]
+    if _contrast(rgb, white) >= MIN_ACCENT_CONTRAST:
+        return _rgb_css(rgb), ""
+    return fg, _rgb_css(rgb)
+
+
+def _emphasis(fg: str, accent: str, highlight: str) -> str:
+    """The declarations that make an alert stand out, given the accent's role."""
+    if highlight:
+        return (
+            f"background: {highlight} !important;\n"
+            f"  color: {fg} !important;\n"
+            "  padding: 0 0.2em;"
+        )
+    return f"color: {accent} !important;"
 
 
 def build_css(options: ThemeOptions) -> str:
@@ -151,9 +209,11 @@ def build_css(options: ThemeOptions) -> str:
     else:
         secondary = fg  # On 1-bit panels there is no second text colour. Use weight.
 
-    accent = fg
+    # The panel's spot pigment, as a text colour where it is legible as one and
+    # as a highlight fill where it is not. See :func:`_accent_ink`.
+    accent, highlight = fg, ""
     if options.use_spot_colour and options.scheme.is_colour:
-        accent = _ink(palette, "red", fg)
+        accent, highlight = _accent_ink(palette, fg)
 
     return f"""
 /* ==========================================================================
@@ -317,7 +377,7 @@ ha-ripple, mwc-ripple, paper-ripple, .mdc-ripple-surface::before,
 {_chrome_css() if options.hide_chrome else "/* chrome retained */"}
 
 /* --- 8. Panel-specific ------------------------------------------------ */
-{_scheme_css(options, palette, fg, bg, accent, huge, xlarge)}
+{_scheme_css(options, palette, fg, bg, accent, highlight, huge, xlarge)}
 
 /* --- 9. User overrides ------------------------------------------------ */
 {options.extra_css}
@@ -345,6 +405,7 @@ def _scheme_css(
     fg: str,
     bg: str,
     accent: str,
+    highlight: str,
     huge: int,
     xlarge: int,
 ) -> str:
@@ -365,7 +426,7 @@ def _scheme_css(
    decoration wastes the only attention-grabbing tool the panel has, and each
    spot-ink refresh is markedly slower than black/white. */
 .alert, .warning, .error, [data-state="unavailable"], .state-unavailable {{
-  color: {accent} !important;
+  {_emphasis(fg, accent, highlight)}
 }}
 .big, .primary-value {{ font-size: {xlarge}px !important; font-weight: 700 !important; }}
 """
@@ -379,9 +440,19 @@ def _scheme_css(
     return f"""
 /* Full-colour panel. The gamut is tiny and refreshes are slow, so colour is
    for categorical meaning only - never for gradients or photographs of UI. */
-.alert, .warning, .error {{ color: {accent} !important; }}
+.alert, .warning, .error {{
+  {_emphasis(fg, accent, highlight)}
+}}
 .big, .primary-value {{ font-size: {xlarge}px !important; font-weight: 700 !important; }}
 """
 
 
-__all__ = ["ThemeOptions", "TypeScale", "build_css", "mm_to_px", "EINK_FONT_STACK"]
+__all__ = [
+    "ALERT_INKS",
+    "EINK_FONT_STACK",
+    "MIN_ACCENT_CONTRAST",
+    "ThemeOptions",
+    "TypeScale",
+    "build_css",
+    "mm_to_px",
+]

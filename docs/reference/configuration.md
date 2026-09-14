@@ -98,9 +98,9 @@ recommendation rather than for no full refreshes at all. `rotation` is the
 exception that tells unset from zero, so `rotation: 0` really does mean "no
 rotation, whatever the profile says".
 
-Everything else — theme, image pipeline, render, schedule, transport, packing and
-ESPHome generation — is per display with no catalog involvement, and defaults to
-the values in the tables below.
+Everything else — theme, image pipeline, lint thresholds, render, schedule,
+transport, packing and ESPHome generation — is per display with no catalog
+involvement, and defaults to the values in the tables below.
 
 ## home_assistant
 
@@ -187,6 +187,7 @@ One entry per physical panel. `id` is the only required key: the keys beside it 
 | `frame_format` | `packed` \| `planes` \| `indexed` \| `png` \| `bmp` \| `None` | *unset* | Wire format for the delivered frame; see [Frame formats](#frame-formats). Unset uses the panel's default format, and failing that a default for the configured transport. |
 | `theme` | [section](#displaystheme) | *section defaults* | Overrides for the injected e-ink stylesheet. |
 | `image` | [section](#displaysimage) | *section defaults* | Overrides for the image pipeline. |
+| `lint` | [section](#displayslint) | *section defaults* | Thresholds for the render linter. |
 | `render` | [section](#displaysrender) | *section defaults* | How the browser should capture the dashboard. |
 | `schedule` | [section](#displaysschedule) | *section defaults* | When to re-render. |
 | `transport` | [section](#displaystransport) | *section defaults* | Where the finished frame goes. |
@@ -210,7 +211,7 @@ Overrides for the injected e-ink stylesheet.
 | `radius_mm` | `float` | `0.0` | Card corner radius in millimeters. Sharp corners dither more cleanly. |
 | `font_stack` | `str` \| `None` | *unset* | CSS font stack for the page. Unset uses the built-in e-ink stack, which prefers faces whose stems survive quantization. |
 | `hide_chrome` | `bool` | `true` | Hide the Home Assistant toolbar, sidebar and other frontend chrome. |
-| `use_spot_colour` | `bool` | `true` | Let the panel's spot ink carry alerts and state highlights. It has no effect on a panel without a spot ink. |
+| `use_spot_colour` | `bool` | `true` | Let the panel's spot ink carry alerts and state highlights. The ink is used as a text color where it is legible against the panel's white, and as a highlight fill under the foreground ink where it is not — yellow is 1.3:1 as text and 6.9:1 under black. It has no effect on a panel without a spot ink. |
 | `letter_spacing_em` | `float` \| `None` | *unset* | Letter spacing in em. Unset derives it from the panel's dpi: 0.012 below 150 dpi, where adjacent stems smear together, and 0 above. |
 | `extra_css` | `str` | `""` | CSS appended verbatim, last, so it can override anything the theme generates. It is applied even when `enabled` is false. |
 | `css_file` | `str` \| `None` | *unset* | Path to a CSS file merged after `extra_css`. A path that does not exist fails the render rather than being skipped. |
@@ -235,6 +236,19 @@ Overrides for the image pipeline.
 | `palette_overrides` | `dict` of `str` to `[int, int, int]` | `{}` | Measured ink values for this panel, keyed by palette name (`black`, `white`, `red`, ...) with `[r, g, b]` values. Despite sitting under `image`, they drive both the quantization palette and the injected stylesheet, so the page is styled with the same inks the frame is quantized to. |
 
 **Validation.** `black_level` must be below `white_level`.
+
+## displays[].lint
+
+Thresholds for the render linter.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `blank_ratio` | `float`, 0.0 to 1.0 | `0.995` | Fraction of the frame that may be a single ink before `blank_render` calls it blank. That finding is an error, so it also blocks delivery while `block_on_lint_error` is true. |
+| `max_ink_coverage` | `float`, 0.0 to 1.0 | `0.62` | Fraction of the frame that may be a non-white ink before `heavy_ink` warns. Dense frames refresh slowly and ghost more. |
+| `max_hairline_ratio` | `float`, 0.0 to 1.0 | `0.28` | Fraction of inked pixels that may lie on the boundary of the inked area before `hairlines` warns. Text-heavy monochrome frames sit near 1.0 by construction; see the design guide before lowering it. |
+| `max_speckle_ratio` | `float`, 0.0 to 1.0 | `0.035` | Fraction of the frame that may be isolated salt-and-pepper dither noise before `dither_speckle` warns. |
+| `max_spot_coverage` | `float`, 0.0 to 1.0 | `0.18` | Coverage any one spot ink may reach before `spot_ink_overuse.<ink>` warns. Checked for every pigment beyond black, white and the grey ramp. |
+| `min_feature_mm` | `float`, at least 0.0 | `0.18` | Pixel size in millimeters below which `sub_threshold_pixel` notes that single-pixel detail is under the eye's threshold at reading distance. |
 
 ## displays[].render
 

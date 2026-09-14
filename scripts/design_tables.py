@@ -51,12 +51,16 @@ from maverick.eink.palette import (  # noqa: E402
     INK_WHITE,
     INK_YELLOW,
     ColorScheme,
+    Palette,
     get_palette,
 )
 from maverick.eink.theme import (  # noqa: E402
+    ALERT_INKS,
+    MIN_ACCENT_CONTRAST,
     REFERENCE_BASE_PX,
     ThemeOptions,
     TypeScale,
+    _contrast,
     build_css,
     mm_to_px,
 )
@@ -318,14 +322,26 @@ def inks() -> list[str]:
 # --------------------------------------------------------------------------- #
 
 
+def _accent_cell(palette: Palette) -> str:
+    """What `theme._accent_ink` picks for this palette, and in which role."""
+    alert = next((name for name in ALERT_INKS if name in palette.names), None)
+    if alert is None:
+        return "—"
+    ratio = _contrast(
+        palette.colors[palette.index_of(alert)],
+        palette.colors[palette.white_index],
+    )
+    role = "text" if ratio >= MIN_ACCENT_CONTRAST else "fill"
+    return f"`{alert}` ({ratio:.1f}:1, {role})"
+
+
 def schemes() -> list[str]:
-    """Per colour scheme: inks, packing width, and which lint checks can fire."""
+    """Per colour scheme: inks, packing width, accent, and which checks can fire."""
     rows = []
     for scheme in ColorScheme:
         palette = get_palette(scheme)
         pal = np.asarray(palette.colors, dtype=np.float32)
         spread = float(np.mean(np.sort(np.linalg.norm(pal[:, None] - pal[None, :], axis=2))[:, 1]))
-        spot = [n for n in ("red", "yellow", "orange") if n in palette.names]
         rows.append(
             [
                 f"`{scheme.value}`",
@@ -333,7 +349,8 @@ def schemes() -> list[str]:
                 str(palette.bits_per_pixel),
                 ", ".join(f"`{n}`" for n in palette.names),
                 f"{spread:.0f}",
-                ", ".join(f"`{s}`" for s in spot) or "—",
+                ", ".join(f"`{s}`" for s in palette.spot_inks) or "—",
+                _accent_cell(palette),
                 "yes" if len(palette) > 4 else "no",
             ]
         )
@@ -342,7 +359,10 @@ def schemes() -> list[str]:
             "`spread` is the mean nearest-neighbour distance between inks — the"
             " threshold noise `dither._ordered` scales its Bayer matrix by, and"
             " so a direct measure of how violently ordered dithering treats a"
-            " flat fill."
+            " flat fill. `spot inks` are the pigments `spot_ink_overuse` counts"
+            " coverage for; `accent` is the ink the theme reserves for alerts,"
+            " with its luminance ratio against the panel's own white and the"
+            f" role that ratio earns it at a {MIN_ACCENT_CONTRAST:.1f}:1 floor."
         ),
         *table(
             [
@@ -351,7 +371,8 @@ def schemes() -> list[str]:
                 "bits/px",
                 "names",
                 "spread",
-                "spot checks",
+                "spot inks",
+                "accent",
                 "`palette_underused` can fire",
             ],
             rows,

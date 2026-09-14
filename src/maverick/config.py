@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .devices import PanelProfile, get_panel
 from .eink.dither import DitherMode
+from .eink.lint import LintThresholds
 from .eink.pack import FrameFormat, PackOptions
 from .eink.palette import ColorScheme
 from .eink.pipeline import FitMode
@@ -282,8 +283,10 @@ class ThemeConfig(Base):
     use_spot_colour: bool = Field(
         default=True,
         description=(
-            "Let the panel's spot ink carry alerts and state highlights. It has no effect on "
-            "a panel without a spot ink."
+            "Let the panel's spot ink carry alerts and state highlights. The ink is used as "
+            "a text color where it is legible against the panel's white, and as a highlight "
+            "fill under the foreground ink where it is not — yellow is 1.3:1 as text and "
+            "6.9:1 under black. It has no effect on a panel without a spot ink."
         ),
     )
     letter_spacing_em: float | None = Field(
@@ -396,6 +399,76 @@ class ImageConfig(Base):
         if self.black_level >= self.white_level:
             raise ConfigError("black_level must be below white_level")
         return self
+
+
+class LintConfig(Base):
+    """Thresholds for the render linter."""
+
+    blank_ratio: float = Field(
+        default=0.995,
+        gt=0.0,
+        le=1.0,
+        description=(
+            "Fraction of the frame that may be a single ink before `blank_render` calls it "
+            "blank. That finding is an error, so it also blocks delivery while "
+            "`block_on_lint_error` is true."
+        ),
+    )
+    max_ink_coverage: float = Field(
+        default=0.62,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Fraction of the frame that may be a non-white ink before `heavy_ink` warns. "
+            "Dense frames refresh slowly and ghost more."
+        ),
+    )
+    max_hairline_ratio: float = Field(
+        default=0.28,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Fraction of inked pixels that may lie on the boundary of the inked area before "
+            "`hairlines` warns. Text-heavy monochrome frames sit near 1.0 by construction; "
+            "see the design guide before lowering it."
+        ),
+    )
+    max_speckle_ratio: float = Field(
+        default=0.035,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Fraction of the frame that may be isolated salt-and-pepper dither noise before "
+            "`dither_speckle` warns."
+        ),
+    )
+    max_spot_coverage: float = Field(
+        default=0.18,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Coverage any one spot ink may reach before `spot_ink_overuse.<ink>` warns. "
+            "Checked for every pigment beyond black, white and the grey ramp."
+        ),
+    )
+    min_feature_mm: float = Field(
+        default=0.18,
+        gt=0.0,
+        description=(
+            "Pixel size in millimeters below which `sub_threshold_pixel` notes that "
+            "single-pixel detail is under the eye's threshold at reading distance."
+        ),
+    )
+
+    def to_thresholds(self) -> LintThresholds:
+        return LintThresholds(
+            blank_ratio=self.blank_ratio,
+            max_ink_coverage=self.max_ink_coverage,
+            max_hairline_ratio=self.max_hairline_ratio,
+            max_speckle_ratio=self.max_speckle_ratio,
+            max_spot_coverage=self.max_spot_coverage,
+            min_feature_mm=self.min_feature_mm,
+        )
 
 
 class RenderConfig(Base):
@@ -718,6 +791,10 @@ class DisplayConfig(Base):
     image: ImageConfig = Field(
         default_factory=ImageConfig,
         description="Overrides for the image pipeline.",
+    )
+    lint: LintConfig = Field(
+        default_factory=LintConfig,
+        description="Thresholds for the render linter.",
     )
     render: RenderConfig = Field(
         default_factory=RenderConfig,

@@ -177,6 +177,22 @@ def build_theme_css(display: ResolvedDisplay) -> str:
     return build_css(options)
 
 
+def needs_zoom_style_tag(config: DisplayConfig) -> bool:
+    """Whether the renderer has to apply ``render.zoom`` itself.
+
+    With the theme enabled, :func:`build_css` folds ``render.zoom`` into the
+    stylesheet's own root zoom as ``zoom_multiplier``, and a second zoom here
+    would compound it. With the theme disabled, :func:`build_theme_css` returns
+    ``theme.extra_css`` verbatim and nothing applies the zoom at all, so the
+    renderer adds a style tag of its own.
+
+    The condition is ``theme.enabled`` and nothing else. Keying it off "the
+    composed stylesheet came back empty" meant that disabling the theme while
+    keeping any ``extra_css`` dropped ``render.zoom`` on the floor.
+    """
+    return config.render.zoom != 1.0 and not config.theme.enabled
+
+
 _ABSOLUTE_URL = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
 
 
@@ -245,9 +261,7 @@ class DashboardRenderer:
 
             await self._verify_authenticated(page, display, key)
 
-            if render.zoom != 1.0 and not css:
-                # With the theme enabled, zoom is already folded into the
-                # stylesheet; this covers theme.enabled = false.
+            if needs_zoom_style_tag(config):
                 await page.add_style_tag(content=f"html {{ zoom: {render.zoom}; }}")
 
             selector = render.wait_for_selector or "home-assistant"

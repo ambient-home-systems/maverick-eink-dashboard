@@ -147,17 +147,18 @@ def lint_frame(
         )
 
     # --- spot ink usage --------------------------------------------------
-    for spot in ("red", "yellow", "orange"):
-        if spot in palette.names:
-            frac = float(coverage[palette.index_of(spot)])
-            if frac > t.max_spot_coverage:
-                report.add(
-                    f"spot_ink_overuse.{spot}",
-                    Severity.WARNING,
-                    f"{frac:.1%} of the frame uses the {spot} ink.",
-                    "Spot inks refresh much more slowly than black. Reserve them "
-                    "for alerts rather than decoration.",
-                )
+    # Every pigment beyond black and white, not just the alert inks: blue and
+    # green on a Spectra 6 panel cost the same refresh time as red.
+    for spot in palette.spot_inks:
+        frac = float(coverage[palette.index_of(spot)])
+        if frac > t.max_spot_coverage:
+            report.add(
+                f"spot_ink_overuse.{spot}",
+                Severity.WARNING,
+                f"{frac:.1%} of the frame uses the {spot} ink.",
+                "Spot inks refresh much more slowly than black. Reserve them "
+                "for alerts and categorical meaning rather than decoration.",
+            )
 
     # --- hairlines -------------------------------------------------------
     inked = indices != palette.white_index
