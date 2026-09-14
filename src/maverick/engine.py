@@ -526,6 +526,7 @@ class Engine:
             frame_format=FrameFormat(display.frame_format),
             pack_options=display.config.pack.to_options(),
             palette_overrides=dict(image.palette_overrides),
+            lint_thresholds=display.config.lint.to_thresholds(),
         )
 
     def _needs_full_refresh(self, display: ResolvedDisplay, state: DisplayState) -> bool:

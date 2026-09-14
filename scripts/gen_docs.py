@@ -266,7 +266,7 @@ def build_sections() -> list[Section]:
     top = Config.model_fields
     display = DisplayConfig.model_fields
     connections = ["home_assistant", "mqtt", "server"]
-    nested = ["theme", "image", "render", "schedule", "transport", "pack", "esphome"]
+    nested = ["theme", "image", "lint", "render", "schedule", "transport", "pack", "esphome"]
 
     sections = [Section(name, model_of(top[name].annotation)) for name in connections]
     sections.append(

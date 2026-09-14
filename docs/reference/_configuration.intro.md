@@ -90,6 +90,6 @@ recommendation rather than for no full refreshes at all. `rotation` is the
 exception that tells unset from zero, so `rotation: 0` really does mean "no
 rotation, whatever the profile says".
 
-Everything else — theme, image pipeline, render, schedule, transport, packing and
-ESPHome generation — is per display with no catalog involvement, and defaults to
-the values in the tables below.
+Everything else — theme, image pipeline, lint thresholds, render, schedule,
+transport, packing and ESPHome generation — is per display with no catalog
+involvement, and defaults to the values in the tables below.

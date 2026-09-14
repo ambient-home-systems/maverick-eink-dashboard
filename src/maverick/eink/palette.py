@@ -114,6 +114,21 @@ class Palette:
         return 4
 
     @property
+    def spot_inks(self) -> tuple[str, ...]:
+        """Inks that are neither black, white, nor a step of a grey ramp.
+
+        These are the pigments a panel adds on top of black and white. Each one
+        is a separate particle population the controller has to drive, so their
+        coverage is what costs refresh time — which is what the render linter
+        needs to know about, for every one of them and not just the red.
+        """
+        return tuple(
+            name
+            for name in self.names
+            if name not in ("black", "white") and not name.startswith("grey")
+        )
+
+    @property
     def white_index(self) -> int:
         return self.names.index("white")
 

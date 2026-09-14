@@ -209,12 +209,10 @@ In practice: **size the type with `body_mm` first, then use `render.zoom` to fit
 the layout, then check the type size again.** If `render.zoom` is below 1, the
 body text on the panel is `body_mm × render.zoom` millimetres, not `body_mm`.
 
-> **Gap.** With `theme.enabled: false` **and** a non-empty `theme.extra_css`,
-> `render.zoom` is applied nowhere: the renderer only adds its own
-> `html { zoom: … }` style tag when the composed stylesheet is empty
-> (`src/maverick/render/dashboard.py:248`), and `build_css` — which would
-> otherwise fold the multiplier in — is never called. Put the zoom in your
-> `extra_css` yourself in that combination.
+With `theme.enabled: false` there is no derived zoom to multiply, so the
+renderer injects `render.zoom` as a style tag of its own
+(`DashboardRenderer.needs_zoom_style_tag`). Either way it is applied exactly
+once, and `theme.extra_css` makes no difference to which path runs.
 
 ---
 
@@ -342,19 +340,19 @@ the honest reason it is a warning and never blocks delivery.
 Every scheme, what it can pack into, and which lint checks its palette makes
 possible:
 
-_`spread` is the mean nearest-neighbour distance between inks — the threshold noise `dither._ordered` scales its Bayer matrix by, and so a direct measure of how violently ordered dithering treats a flat fill._
+_`spread` is the mean nearest-neighbour distance between inks — the threshold noise `dither._ordered` scales its Bayer matrix by, and so a direct measure of how violently ordered dithering treats a flat fill. `spot inks` are the pigments `spot_ink_overuse` counts coverage for; `accent` is the ink the theme reserves for alerts, with its luminance ratio against the panel's own white and the role that ratio earns it at a 2.0:1 floor._
 
-| scheme | inks | bits/px | names | spread | spot checks | `palette_underused` can fire |
-|---|---|---|---|---|---|---|
-| `mono` | 2 | 1 | `black`, `white` | 352 | — | no |
-| `bwr` | 3 | 2 | `black`, `white`, `red` | 179 | `red` | no |
-| `bwy` | 3 | 2 | `black`, `white`, `yellow` | 190 | `yellow` | no |
-| `bwry` | 4 | 2 | `black`, `white`, `yellow`, `red` | 145 | `red`, `yellow` | no |
-| `gray4` | 4 | 2 | `black`, `grey1`, `grey2`, `white` | 117 | — | no |
-| `gray8` | 8 | 4 | `black`, `grey1`, `grey2`, `grey3`, `grey4`, `grey5`, `grey6`, `white` | 50 | — | yes |
-| `gray16` | 16 | 4 | `black`, `grey1`, `grey2`, `grey3`, `grey4`, `grey5`, `grey6`, `grey7`, `grey8`, `grey9`, `grey10`, `grey11`, `grey12`, `grey13`, `grey14`, `white` | 23 | — | yes |
-| `spectra6` | 6 | 4 | `black`, `white`, `yellow`, `red`, `blue`, `green` | 114 | `red`, `yellow` | yes |
-| `acep7` | 7 | 4 | `black`, `white`, `green`, `blue`, `red`, `yellow`, `orange` | 91 | `red`, `yellow`, `orange` | yes |
+| scheme | inks | bits/px | names | spread | spot inks | accent | `palette_underused` can fire |
+|---|---|---|---|---|---|---|---|
+| `mono` | 2 | 1 | `black`, `white` | 352 | — | — | no |
+| `bwr` | 3 | 2 | `black`, `white`, `red` | 179 | `red` | `red` (3.0:1, text) | no |
+| `bwy` | 3 | 2 | `black`, `white`, `yellow` | 190 | `yellow` | `yellow` (1.3:1, fill) | no |
+| `bwry` | 4 | 2 | `black`, `white`, `yellow`, `red` | 145 | `yellow`, `red` | `red` (3.0:1, text) | no |
+| `gray4` | 4 | 2 | `black`, `grey1`, `grey2`, `white` | 117 | — | — | no |
+| `gray8` | 8 | 4 | `black`, `grey1`, `grey2`, `grey3`, `grey4`, `grey5`, `grey6`, `white` | 50 | — | — | yes |
+| `gray16` | 16 | 4 | `black`, `grey1`, `grey2`, `grey3`, `grey4`, `grey5`, `grey6`, `grey7`, `grey8`, `grey9`, `grey10`, `grey11`, `grey12`, `grey13`, `grey14`, `white` | 23 | — | — | yes |
+| `spectra6` | 6 | 4 | `black`, `white`, `yellow`, `red`, `blue`, `green` | 114 | `yellow`, `red`, `blue`, `green` | `red` (3.0:1, text) | yes |
+| `acep7` | 7 | 4 | `black`, `white`, `green`, `blue`, `red`, `yellow`, `orange` | 91 | `green`, `blue`, `red`, `yellow`, `orange` | `red` (3.0:1, text) | yes |
 
 `_scheme_css` in `theme.py` emits a different block for each class, in this
 order: mono, then spot-ink, then greyscale, then full colour.
@@ -387,11 +385,12 @@ card's own fill survives onto a mono panel, this is why.
 ### Spot ink — the accent is for alerts
 
 `bwr`, `bwy` and `bwry` add one or two accent pigments to black and white. The
-stylesheet reserves the accent for genuine alerts:
+stylesheet reserves the accent for genuine alerts — nothing else on the frame
+is allowed to ask for it:
 
 ```css
 .alert, .warning, .error, [data-state="unavailable"], .state-unavailable {
-  color: <accent> !important;
+  color: <accent> !important;     /* or a fill; see below */
 }
 ```
 
@@ -410,11 +409,27 @@ Two mechanisms explain why the linter polices spot coverage at
 - **It is the only attention-grabbing tool the panel has.** Spend 18% of the
   frame on red and nothing on the frame is emphasised any more.
 
-> **Gap.** `use_spot_colour` resolves the accent by looking up the ink named
-> `red` and falling back to the foreground when it is absent
-> (`theme._ink(palette, "red", fg)`). A `bwy` panel has no `red`, so its accent
-> resolves to `#000000` and the yellow ink is never used by the stylesheet — the
-> quantiser will still reach for it, but nothing is styled to ask for it.
+**Which ink, and whether it is the figure or the ground.** `theme._accent_ink`
+takes the first of `red`, `orange`, `yellow` the palette has — blue and green
+are categorical inks on a full-colour panel, not alert inks, so they are never
+chosen — and then checks it against the panel's own white. At or above
+`MIN_ACCENT_CONTRAST` (2.0:1) the pigment colours the text. Below it the
+pigment cannot be read as a foreground at body size, so the text stays black
+and the pigment becomes the fill underneath it:
+
+```css
+/* bwy: yellow is 1.3:1 as text, 6.9:1 under black */
+.alert, .warning, .error, [data-state="unavailable"], .state-unavailable {
+  background: rgb(206,186,70) !important;
+  color: #000000 !important;
+  padding: 0 0.2em;
+}
+```
+
+That rule is why the `accent` column above carries a ratio and a role. It also
+means a BWY panel uses its one spot pigment at all: resolving the accent by
+looking up `red` alone used to leave it black, with the yellow ink never asked
+for by the stylesheet.
 
 ### Greyscale — secondary text gets a real grey
 
@@ -650,15 +665,21 @@ display's card in the setup UI, returned by the HTTP API, and written to
 `<data_dir>/debug/<id>/lint.json` when `render.debug_artifacts` is on — they
 never stop a frame.
 
-> **Gap: the thresholds are not configurable.** `LintThresholds` says "every
-> threshold is a judgement call; all are overridable per display", and
-> `PipelineOptions` does carry a `lint_thresholds` field — but
-> `Engine._pipeline_options` never populates it, and no key in
-> `src/maverick/config.py` maps to it. Today every display lints against the
-> defaults. The only lint controls in configuration are the top-level
-> `block_on_lint_error` and `maverick render --force` for a single render. The
-> "which key relaxes it" column below therefore names keys that change the
-> *frame* until it passes, not keys that move the threshold.
+Every threshold in that table is a judgement call, and each one is overridable
+per display under [`displays[].lint`](reference/configuration.md#displayslint),
+using the field names in the threshold column:
+
+```yaml
+displays:
+  - id: kitchen
+    lint:
+      max_ink_coverage: 0.75     # a dense panel, deliberately
+      max_hairline_ratio: 1.0    # stop reporting what you have decided to live with
+```
+
+A value outside its range fails at load rather than at the first render. Moving
+a threshold is the blunt instrument, though: each finding below also says what
+to change in the dashboard or the theme so the frame passes on its merits.
 
 ### `empty_frame`
 
@@ -704,9 +725,10 @@ the pre-quantisation screenshot lands at
 `<data_dir>/debug/<id>/screenshot.png` and will show you a login page if that is
 what happened.
 
-**Relaxed by:** [`block_on_lint_error: false`](reference/configuration.md#top-level-keys)
-globally, or `maverick render <id> --force` for one render. Both are for the case
-where you genuinely want an almost-blank panel.
+**Relaxed by:** `lint.blank_ratio` on the display, or
+[`block_on_lint_error: false`](reference/configuration.md#top-level-keys)
+globally, or `maverick render <id> --force` for one render. The last three are
+for the case where you genuinely want an almost-blank panel.
 
 ### `heavy_ink`
 
@@ -725,7 +747,7 @@ theme already removes card backgrounds and shadows; what is left at 62% is
 usually a photograph, a camera thumbnail, a dark custom card, or a graph with a
 filled area.
 
-**Relaxed by:** `image.white_level` below 255 — the level stretch clips
+**Relaxed by:** `lint.max_ink_coverage`, or `image.white_level` below 255 — the level stretch clips
 everything at or above it to pure white, which is the direct way to take ink out
 of a frame — and `image.exposure` above 1, which lightens everything before the
 stretch. `image.contrast` moves where the midtones fall and can go either way.
@@ -739,8 +761,10 @@ mounted to show a negative, and swaps the budget rather than reducing it.
 name: `spot_ink_overuse.red`, `spot_ink_overuse.yellow`,
 `spot_ink_overuse.orange`.
 
-Fires when a named spot ink exceeds `max_spot_coverage` (0.18). Checked only for
-`red`, `yellow` and `orange`, and only when the palette has that ink.
+Fires when any one spot ink exceeds `max_spot_coverage` (0.18). Checked for
+every pigment the palette has beyond black, white and the grey ramp — so `red`
+and `yellow` on a BWRY panel, and `yellow`, `red`, `blue` and `green` on a
+Spectra 6 one, each counted separately against the same budget.
 
 **On the panel:** large areas of accent pigment, and a refresh that takes
 markedly longer than black and white alone.
@@ -750,14 +774,12 @@ colours `.alert`, `.warning`, `.error`, `[data-state="unavailable"]` and
 `.state-unavailable` with the accent; if a fifth of the frame is red, a fifth of
 the frame is claiming to be an alert.
 
-**Relaxed by:** [`theme.use_spot_colour: false`](reference/configuration.md#displaystheme),
+**Relaxed by:** `lint.max_spot_coverage`, or
+[`theme.use_spot_colour: false`](reference/configuration.md#displaystheme),
 which drops the accent back to the foreground ink and leaves the spot pigment
 unused by the stylesheet. The quantiser can still reach for it if the source
 image contains a matching colour.
 
-> **Gap.** `blue` and `green` are not checked, although on `spectra6` and
-> `acep7` they cost the same refresh time as red. The loop in `lint_frame` is
-> literally `for spot in ("red", "yellow", "orange")`.
 
 ### `hairlines`
 
@@ -773,7 +795,8 @@ an angle, icon outlines that come and go between refreshes.
 **Fix in the dashboard:** there is rarely anything to fix in the dashboard. Fix
 it in the theme.
 
-**Relaxed by:** [`theme.body_mm`](reference/configuration.md#displaystheme) up
+**Relaxed by:** `lint.max_hairline_ratio`, or
+[`theme.body_mm`](reference/configuration.md#displaystheme) up
 (bigger glyphs have thicker stems), `theme.min_font_weight` up from 400,
 `theme.rule_mm` up from 0.25, and
 [`render.supersample`](reference/configuration.md#displaysrender) at 2 — rendering
@@ -796,7 +819,8 @@ filled area under a graph, a gauge's tonal arc, or a gradient in a custom card
 — the [dither probe table](#the-auto-rule-in-plain-words) names the usual
 suspects.
 
-**Relaxed by:** [`image.dither`](reference/configuration.md#dither-modes) — `auto`
+**Relaxed by:** `lint.max_speckle_ratio`, or
+[`image.dither`](reference/configuration.md#dither-modes) — `auto`
 is the default and already the right answer for most dashboards; `none` removes
 the possibility entirely at the cost of every midtone. Also `image.sharpen`: the
 unsharp mask runs *before* quantisation and creates halos of intermediate tone
@@ -819,8 +843,8 @@ will see.
 **Fix in the dashboard:** nothing to fix. Take it as permission to use the extra
 resolution for smooth type rather than for fine detail.
 
-**Relaxed by:** nothing, and there is no reason to. It is informational and
-depends only on the panel's `dpi`.
+**Relaxed by:** `lint.min_feature_mm`, though there is little reason to. It is
+informational and depends only on the panel's `dpi`.
 
 ### `palette_underused`
 
