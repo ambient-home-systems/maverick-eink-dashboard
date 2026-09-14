@@ -12,8 +12,7 @@ Two details do most of the work for battery life:
     e-ink refresh, which is what actually costs the energy.
 ``Date``
     Every response carries the server clock, so firmware can keep time without
-    an SNTP client. This is how the ESPHome and Kindle recipes in ``docs/``
-    stay small.
+    an SNTP client.
 """
 
 from __future__ import annotations

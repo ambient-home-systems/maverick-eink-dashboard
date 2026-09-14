@@ -48,7 +48,7 @@ Issues = "https://github.com/ambient-home-systems/maverick-eink-dashboard/issues
 where = ["src"]
 
 [tool.setuptools.package-data]
-maverick = ["devices/*.yaml", "eink/*.css", "esphome/templates/*.j2", "server/static/*", "server/templates/*"]
+maverick = ["devices/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

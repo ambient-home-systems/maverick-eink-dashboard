@@ -84,10 +84,10 @@ class Base(BaseModel):
 class HomeAssistantConfig(Base):
     """How to reach Home Assistant.
 
-    Inside the add-on both values are injected automatically, so users never
-    see them. ``token`` must be a long-lived access token: the supervisor token
-    authenticates against the REST API but not the frontend, and rendering a
-    dashboard requires a frontend session.
+    Both values come from the config file, or from ``${HA_TOKEN}``-style
+    environment substitution. ``token`` must be a long-lived access token: the
+    supervisor token authenticates against the REST API but not the frontend,
+    and rendering a dashboard requires a frontend session.
     """
 
     url: str = "http://homeassistant.local:8123"
@@ -376,13 +376,13 @@ class PackOptionsConfig(Base):
 
 def _default_format_for(transport_type: str) -> FrameFormat:
     """Pick the wire format a transport actually wants."""
+    # Keys must match registered Transport.name values.
     return {
         "opendisplay": FrameFormat.PNG,  # the library takes a PIL image
         "mqtt": FrameFormat.PNG,
         "file": FrameFormat.PNG,
         "http_pull": FrameFormat.PNG,
         "webhook": FrameFormat.PNG,
-        "esphome": FrameFormat.PNG,
     }.get(transport_type, FrameFormat.PACKED)
 
 

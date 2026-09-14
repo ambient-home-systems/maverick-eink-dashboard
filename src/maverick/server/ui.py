@@ -160,7 +160,8 @@ def render_ui(application: Application) -> str:
             "<section class='card'><h2>No displays configured</h2>"
             "<div class='meta'>Add a <code>displays:</code> entry to your config "
             "and restart. See the "
-            "<a href='https://github.com/ambient-home-systems/maverick-eink-dashboard'>docs</a>."
+            "<a href='https://github.com/ambient-home-systems/maverick-eink-dashboard"
+            "#configuration'>docs</a>."
             "</div></section>"
         )
 
