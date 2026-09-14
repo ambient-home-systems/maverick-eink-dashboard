@@ -12,8 +12,8 @@ refuses to ship a frame that is blank or illegible, and delivers it over BLE
 
 What it is not yet: there is no Home Assistant add-on and no custom
 integration. Maverick runs as a standalone service and talks to Home Assistant
-over its APIs. [docs/architecture.md](docs/architecture.md) holds the roadmap
-for both.
+over its APIs. [docs/architecture.md](docs/architecture.md) describes how the
+service works today; [docs/roadmap.md](docs/roadmap.md) holds the plan for both.
 
 ## Status
 
@@ -400,7 +400,7 @@ pull protocol a battery panel needs.
 ## Running as a service
 
 There is **no Dockerfile and no Home Assistant add-on yet**; both are on the
-roadmap in [docs/architecture.md](docs/architecture.md). For now, run it under
+roadmap in [docs/roadmap.md](docs/roadmap.md). For now, run it under
 systemd.
 
 ```ini
@@ -517,7 +517,7 @@ you get a traceback. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Roadmap
 
-From [docs/architecture.md](docs/architecture.md):
+From [docs/roadmap.md](docs/roadmap.md):
 
 - **An add-on and an integration**, so Maverick installs as an app: a sidebar
   entry with ingress, UI setup instead of YAML, one device per panel, and
