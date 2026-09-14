@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .palette import ColorScheme, Palette, get_palette
+from .palette import RGB, ColorScheme, Palette, get_palette
 
 #: Typefaces chosen for large x-height, open apertures and sturdy stems at small
 #: physical sizes. All are commonly present on Linux container images; the
@@ -91,6 +91,11 @@ class ThemeOptions:
     #: Multiplies the dpi-derived zoom. Use it to fit more or less on the panel
     #: without changing the physical type size relationship.
     zoom_multiplier: float = 1.0
+    #: Measured ink values for this panel, keyed by palette name. The same
+    #: overrides drive quantisation (see :class:`PipelineOptions`); feeding them
+    #: in here too keeps the CSS the page is styled with and the inks it is
+    #: quantised to describing the same panel.
+    palette_overrides: dict[str, RGB] = field(default_factory=dict)
     #: Appended verbatim, last, so users can override anything above.
     extra_css: str = ""
 
@@ -106,7 +111,7 @@ def build_css(options: ThemeOptions) -> str:
     """Generate the stylesheet for one panel."""
     dpi = options.dpi
     scale = options.type_scale
-    palette = get_palette(options.scheme)
+    palette = get_palette(options.scheme, options.palette_overrides or None)
 
     # Physical target for body text, then everything else is expressed in
     # *reference space* and scaled by `zoom`. Expressing sizes in final device

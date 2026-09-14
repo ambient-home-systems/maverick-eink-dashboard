@@ -28,7 +28,7 @@ import logging
 from typing import Any
 
 from ..config import Config, DisplayConfig
-from ..transports.mqtt import MqttPublisher
+from ..transports.mqtt import MqttPublisher, availability_topic
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class MqttDiscovery:
 
     @property
     def availability_topic(self) -> str:
-        return f"{self._base}/status"
+        return availability_topic(self._base)
 
     def display_base(self, display_id: str) -> str:
         return f"{self._base}/display/{display_id}"

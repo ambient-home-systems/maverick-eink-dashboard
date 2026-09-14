@@ -33,7 +33,13 @@ from .eink.dither import DitherMode
 from .eink.pipeline import FitMode
 from .ha import HomeAssistantClient
 from .render import BrowserPool, DashboardRenderer, RenderError
-from .transports import DeliveryContext, DeliveryResult, MqttPublisher, get_transport
+from .transports import (
+    DeliveryContext,
+    DeliveryResult,
+    MqttPublisher,
+    availability_topic,
+    get_transport,
+)
 from .transports.base import Transport
 
 log = logging.getLogger(__name__)
@@ -292,7 +298,10 @@ class Engine:
         self._renderer = DashboardRenderer(self.config.home_assistant, self._pool)
 
         if self.config.mqtt.enabled:
-            self._mqtt = MqttPublisher(self.config.mqtt)
+            # The will has to be registered before the client connects, so it
+            # is built here rather than bolted on once discovery exists.
+            will = (availability_topic(self.config.mqtt.base_topic), "offline")
+            self._mqtt = MqttPublisher(self.config.mqtt, will=will)
             try:
                 await self._mqtt.start()
             except Exception as exc:  # noqa: BLE001
@@ -467,11 +476,20 @@ class Engine:
             await self._notify(outcome)
             return outcome
 
-    async def render_all(self, trigger: str = "manual") -> list[RenderOutcome]:
-        """Render every enabled display concurrently."""
+    async def render_all(
+        self, trigger: str = "manual", force: bool = False
+    ) -> list[RenderOutcome]:
+        """Render every enabled display concurrently.
+
+        ``force`` is passed through to each display, so a service-wide "redraw
+        everything now" really does bypass the unchanged-checksum shortcut.
+        """
         return list(
             await asyncio.gather(
-                *(self.render(d.id, trigger=trigger) for d in self.config.enabled_displays)
+                *(
+                    self.render(d.id, trigger=trigger, force=force)
+                    for d in self.config.enabled_displays
+                )
             )
         )
 

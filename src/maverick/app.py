@@ -40,9 +40,10 @@ class Application:
 
         mqtt: MqttPublisher | None = self.engine.mqtt
         if mqtt is not None:
+            # The broker already holds our last will: Engine.start() registers
+            # it, because paho can only attach one to a client that has not
+            # connected yet.
             self.discovery = MqttDiscovery(mqtt, self.config, VERSION)
-            # Re-publish the last will now that we know the availability topic.
-            mqtt._will = (self.discovery.availability_topic, "offline")  # noqa: SLF001
             await self.discovery.announce()
             self._subscribe_commands(mqtt)
             self.engine.add_listener(self._publish_outcome)
@@ -154,8 +155,8 @@ class Application:
     async def render(self, display_id: str, trigger: str = "api", force: bool = False):
         return await self.engine.render(display_id, trigger=trigger, force=force)
 
-    async def render_all(self, trigger: str = "api"):
-        return await self.engine.render_all(trigger=trigger)
+    async def render_all(self, trigger: str = "api", force: bool = False):
+        return await self.engine.render_all(trigger=trigger, force=force)
 
 
 __all__ = ["Application", "VERSION"]
