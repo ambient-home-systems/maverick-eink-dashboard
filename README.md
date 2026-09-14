@@ -341,6 +341,11 @@ and a media path both processes can see — Maverick writes the PNG to
 `media_dir` (default `/media/maverick`) and Home Assistant reads it back from
 its media folder. See `src/maverick/transports/opendisplay.py:9-27`.
 
+[docs/guides/home-assistant.md](docs/guides/home-assistant.md) is the full
+guide to all of this: making the token, getting the URL rule right, the
+automations worth writing, and rendering when your data changes rather than on
+a timer.
+
 Every topic, discovery payload, command word and state key is documented in
 [docs/reference/mqtt.md](docs/reference/mqtt.md), which is what to read if you
 are writing your own MQTT client rather than using Home Assistant.
