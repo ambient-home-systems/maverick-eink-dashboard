@@ -1,0 +1,551 @@
+<title>Maverick Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  /* Measured e-ink inks, taken from the renderer's own palette table.
+     A panel's white is a warm scattered grey, never #fff. */
+  --paper:#e9e7e0;
+  --surface:#f3f2ed;
+  --sunk:#dedbd2;
+  --ink:#1a1a1a;
+  --muted:#63625c;
+  --faint:#8b8a82;
+  --line:#c9c6bb;
+  --accent:#304281;        /* Spectra 6 blue */
+  --accent-soft:#e0e3f0;
+  --spot:#9c2c28;          /* BWR red - risk only, as on a real panel */
+  --spot-soft:#f0dedc;
+  --verified:#3e6e48;      /* Spectra 6 green */
+  --verified-soft:#dde9de;
+  --shadow:rgba(26,26,26,.10);
+  --measure:37rem;
+  --wide:58rem;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#141418; --surface:#1d1d23; --sunk:#26262e;
+    --ink:#e8e8ec; --muted:#a3a2ab; --faint:#7d7c86; --line:#33333d;
+    --accent:#93a6e6; --accent-soft:#232a44;
+    --spot:#e0756b; --spot-soft:#3a2523;
+    --verified:#78c08d; --verified-soft:#1f2f24;
+    --shadow:rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141418; --surface:#1d1d23; --sunk:#26262e;
+  --ink:#e8e8ec; --muted:#a3a2ab; --faint:#7d7c86; --line:#33333d;
+  --accent:#93a6e6; --accent-soft:#232a44;
+  --spot:#e0756b; --spot-soft:#3a2523;
+  --verified:#78c08d; --verified-soft:#1f2f24;
+  --shadow:rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  font-size:17px; line-height:1.62;
+  margin:0; padding-inline:24px; padding-block:0 72px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--wide);margin-inline:auto}
+.col{max-width:var(--measure)}
+h1,h2,h3,h4{font-family:Archivo,"Helvetica Neue",sans-serif;text-wrap:balance;margin:0}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);font-weight:700;letter-spacing:-.025em;line-height:1.05}
+h2{font-size:clamp(1.4rem,3.4vw,1.85rem);font-weight:650;letter-spacing:-.015em;line-height:1.15}
+h3{font-size:1.12rem;font-weight:650;letter-spacing:-.006em;line-height:1.3}
+h4{font-size:.95rem;font-weight:600}
+p{margin:0}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+strong{font-weight:600}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.86em}
+code{background:var(--sunk);padding:.1em .35em;border-radius:3px}
+
+/* An ordered-dither ramp: a 50% checkerboard faded out. The page's one
+   decorative device, and it is the subject's own halftone. */
+.dither{height:10px;margin-block:0;
+  background-image:repeating-conic-gradient(var(--line) 0 25%,transparent 0 50%);
+  background-size:4px 4px;
+  -webkit-mask-image:linear-gradient(to right,#000,transparent 72%);
+  mask-image:linear-gradient(to right,#000,transparent 72%)}
+
+header{padding-block:56px 0}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:.72rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint)}
+.lede{font-size:1.16rem;color:var(--muted);margin-top:18px;max-width:34rem}
+.status{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}
+.tag{font-family:"JetBrains Mono",monospace;font-size:.72rem;letter-spacing:.04em;
+  padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.tag.warn{border-color:var(--spot);color:var(--spot);background:var(--spot-soft)}
+
+section{padding-block:44px 0}
+.sechead{display:flex;align-items:baseline;gap:14px;margin-bottom:8px}
+.secnum{font-family:"JetBrains Mono",monospace;font-size:.78rem;color:var(--faint)}
+.stack{display:flex;flex-direction:column;gap:18px}
+.stack-tight{display:flex;flex-direction:column;gap:10px}
+
+/* Verdict: the one lifted element on the page. */
+.verdict{background:var(--surface);border-left:3px solid var(--accent);
+  padding:26px 28px;border-radius:2px;margin-top:26px;
+  display:flex;flex-direction:column;gap:12px}
+.verdict .big{font-family:Archivo,sans-serif;font-size:1.32rem;font-weight:650;
+  letter-spacing:-.012em;line-height:1.28}
+
+/* Findings: evidence table, not cards. */
+.findings{display:flex;flex-direction:column;border-top:1px solid var(--line);margin-top:24px}
+.finding{display:grid;grid-template-columns:minmax(0,11rem) minmax(0,1fr);gap:4px 26px;
+  padding-block:18px;border-bottom:1px solid var(--line);align-items:start}
+.finding dt{font-family:Archivo,sans-serif;font-weight:600;font-size:.98rem}
+.finding dd{margin:0;color:var(--muted);font-size:.95rem}
+.evidence{display:block;margin-top:8px;font-family:"JetBrains Mono",monospace;
+  font-size:.78rem;color:var(--verified);font-variant-numeric:tabular-nums}
+.evidence::before{content:"✓ ";font-weight:700}
+
+/* Pipeline: a real sequence, so it is drawn as one. */
+.pipe{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin-top:24px}
+.stage{flex:1 1 8rem;min-width:0;background:var(--surface);border:1px solid var(--line);
+  border-radius:2px;padding:13px 14px;display:flex;flex-direction:column;gap:5px}
+.stage .n{font-family:"JetBrains Mono",monospace;font-size:.68rem;color:var(--faint)}
+.stage .t{font-family:Archivo,sans-serif;font-weight:600;font-size:.92rem;line-height:1.2}
+.stage .d{font-size:.8rem;color:var(--muted);line-height:1.4}
+
+/* Bundle: three HA layers. */
+.layers{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+.layer{border:1px solid var(--line);border-radius:2px;background:var(--surface);
+  display:grid;grid-template-columns:minmax(0,9.5rem) minmax(0,1fr);align-items:stretch}
+.layer .who{background:var(--sunk);padding:14px 16px;display:flex;flex-direction:column;
+  gap:3px;justify-content:center;border-right:1px solid var(--line)}
+.layer .who b{font-family:Archivo,sans-serif;font-size:.9rem;font-weight:650}
+.layer .who span{font-family:"JetBrains Mono",monospace;font-size:.7rem;color:var(--faint)}
+.layer .what{padding:14px 16px;display:flex;flex-direction:column;gap:7px}
+.layer .what p{font-size:.88rem;color:var(--muted);line-height:1.45}
+.parts{display:flex;flex-wrap:wrap;gap:6px}
+.part{font-family:"JetBrains Mono",monospace;font-size:.72rem;padding:3px 8px;border-radius:2px;
+  background:var(--accent-soft);color:var(--accent);border:1px solid transparent}
+.part.opt{background:transparent;border-color:var(--line);color:var(--muted)}
+
+/* Decision blocks. */
+.choice{display:grid;gap:14px;margin-top:20px;grid-template-columns:1fr}
+.opt{border:1px solid var(--line);border-radius:2px;padding:16px 18px;
+  display:flex;flex-direction:column;gap:7px;background:var(--surface)}
+.opt.picked{border-color:var(--accent);border-width:2px;padding:15px 17px}
+.opt .badge{font-family:"JetBrains Mono",monospace;font-size:.68rem;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint)}
+.opt.picked .badge{color:var(--accent);font-weight:500}
+.opt h4{font-family:Archivo,sans-serif}
+.opt p{font-size:.9rem;color:var(--muted);line-height:1.5}
+
+ul{margin:0;padding-left:1.15em}
+li{margin-block:5px}
+li::marker{color:var(--faint)}
+.checks{list-style:none;padding:0}
+.checks li{padding-left:1.4em;position:relative;font-size:.95rem}
+.checks li::before{content:"—";position:absolute;left:0;color:var(--faint)}
+
+/* Risks: the only place spot ink appears, mirroring the system's own rule. */
+.risk{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;
+  padding-block:15px;border-bottom:1px solid var(--line);align-items:start}
+.risk:first-of-type{border-top:1px solid var(--line)}
+.sev{font-family:"JetBrains Mono",monospace;font-size:.68rem;letter-spacing:.06em;
+  padding:2px 7px;border-radius:2px;white-space:nowrap;margin-top:3px}
+.sev.hi{background:var(--spot-soft);color:var(--spot)}
+.sev.md{background:var(--sunk);color:var(--muted)}
+.risk b{font-family:Archivo,sans-serif;font-size:.97rem;font-weight:600;grid-column:2}
+.risk p{grid-column:2;font-size:.9rem;color:var(--muted);line-height:1.5}
+
+/* Roadmap: genuinely ordered, so it is numbered. */
+.phases{display:flex;flex-direction:column;margin-top:24px;border-top:1px solid var(--line)}
+.phase{display:grid;grid-template-columns:2.4rem minmax(0,1fr) auto;gap:4px 18px;
+  padding-block:17px;border-bottom:1px solid var(--line);align-items:baseline}
+.phase .idx{font-family:Archivo,sans-serif;font-size:1.3rem;font-weight:700;color:var(--line);
+  font-variant-numeric:tabular-nums;line-height:1}
+.phase b{font-family:Archivo,sans-serif;font-size:1rem;font-weight:650}
+.phase .wks{font-family:"JetBrains Mono",monospace;font-size:.78rem;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.phase p{grid-column:2/4;font-size:.9rem;color:var(--muted);line-height:1.5}
+
+.open{background:var(--surface);border:1px dashed var(--line);border-radius:2px;
+  padding:20px 22px;margin-top:24px}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);
+  color:var(--faint);font-size:.83rem;line-height:1.6}
+
+@media (max-width:640px){
+  body{font-size:16px}
+  .finding{grid-template-columns:1fr;gap:3px}
+  .layer{grid-template-columns:1fr}
+  .layer .who{border-right:none;border-bottom:1px solid var(--line)}
+  .phase{grid-template-columns:1.9rem minmax(0,1fr);gap:3px 12px}
+  .phase .wks{grid-column:2;margin-top:2px}
+  .phase p{grid-column:1/3}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="dither" aria-hidden="true"></div>
+  <p class="eyebrow" style="margin-top:22px">Maverick · Architecture evaluation</p>
+  <h1>Home Assistant<br>dashboards, on ink</h1>
+  <p class="lede">How to render a live Home Assistant dashboard onto monochrome
+     and colour e-paper — and how it should install, be authored, and be controlled
+     from inside Home Assistant itself.</p>
+  <div class="status">
+    <span class="tag">Feasibility evaluation</span>
+    <span class="tag">Prototype validated</span>
+    <span class="tag warn">Not built · no hardware testing</span>
+  </div>
+</header>
+
+<section>
+  <div class="col stack">
+    <div class="verdict">
+      <p class="big">Feasible. The rendering is the easy part — the difficulty is
+        e-ink design enforcement and battery-aware delivery.</p>
+      <p style="color:var(--muted);font-size:.95rem">Screenshotting a dashboard is a
+        solved problem. What decides whether this is any good is whether the output is
+        <em>legible on ink</em>, and whether a battery panel survives more than a week.
+        Both are addressable, and both are where the existing projects in this space
+        stop short.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <div class="sechead"><h2>What a prototype proved</h2></div>
+    <p style="color:var(--muted)">A working spike rendered real dashboards across five
+      panel types. Four findings changed the design — each was a silent failure before
+      it was fixed.</p>
+  </div>
+
+  <dl class="findings">
+    <div class="finding">
+      <dt>Frontend auth</dt>
+      <dd>Home Assistant's frontend ignores an <code>Authorization</code> header; it reads
+        a token bundle from <code>localStorage.hassTokens</code>. A long-lived token works,
+        but <code>hassUrl</code> must match the origin <em>exactly</em> — scheme and port
+        included. Any mismatch silently redirects to the login page, which then screenshots
+        as a blank frame.
+        <span class="evidence">bundle seeded pre-navigation; login-page detection blocks delivery</span>
+      </dd>
+    </div>
+    <div class="finding">
+      <dt>Shadow DOM</dt>
+      <dd>The frontend is web components throughout, so a stylesheet on
+        <code>document.head</code> reaches almost nothing. Styles must be adopted into
+        every shadow root, and <code>attachShadow</code> patched to catch roots created
+        by lazily-rendered cards.
+        <span class="evidence">shadows flattened, weights floored, grey text remapped inside card internals</span>
+      </dd>
+    </div>
+    <div class="finding">
+      <dt>Physical type size</dt>
+      <dd>The one that surprised. Home Assistant hard-codes pixel font sizes, so a
+        <code>font-size</code> rule never reaches cards. Scaling via root <code>zoom</code>
+        derived from panel DPI does — and legibility on ink is governed by millimetres,
+        not pixels.
+        <span class="evidence">a card's own 13px text → 3.03mm @124dpi · 2.97mm @111dpi · 2.99mm @300dpi</span>
+      </dd>
+    </div>
+    <div class="finding">
+      <dt>Dithering</dt>
+      <dd>Naive error diffusion destroys dashboards. Text has more local contrast than
+        anything else on screen, so "dither where there's contrast" eats the glyphs.
+        Classifying by broad midtone fields (photographs, gradients) versus bimodal
+        regions (text) fixes it.
+        <span class="evidence">eroded, blotchy headings → crisp 1-bit text; speckle ratio 0.000</span>
+      </dd>
+    </div>
+  </dl>
+</section>
+
+<section>
+  <div class="col">
+    <div class="sechead"><h2>The pipeline</h2></div>
+    <p style="color:var(--muted)">Five stages, each reversible and independently testable.
+      Order matters: resizing after quantisation destroys the dither pattern, and
+      sharpening after it does nothing at all.</p>
+  </div>
+  <div class="pipe">
+    <div class="stage"><span class="n">01</span><span class="t">Render</span>
+      <span class="d">Headless Chromium at panel geometry, e-ink stylesheet injected</span></div>
+    <div class="stage"><span class="n">02</span><span class="t">Quantise</span>
+      <span class="d">Content-aware dither against measured ink values</span></div>
+    <div class="stage"><span class="n">03</span><span class="t">Pack</span>
+      <span class="d">Native byte layout: 1/2/4bpp, or per-ink planes</span></div>
+    <div class="stage"><span class="n">04</span><span class="t">Gate</span>
+      <span class="d">Lint blocks blank or illegible frames before they ship</span></div>
+    <div class="stage"><span class="n">05</span><span class="t">Deliver</span>
+      <span class="d">BLE, MQTT, or HTTP pull with conditional GET</span></div>
+  </div>
+</section>
+
+<div class="dither" aria-hidden="true" style="margin-top:48px"></div>
+
+<section>
+  <div class="col">
+    <div class="sechead"><span class="secnum">Decision 01</span></div>
+    <h2>Installing it as an app</h2>
+    <p style="color:var(--muted);margin-top:10px">Home Assistant has no single "app"
+      primitive. What feels like one is a bundle of three artifacts that install as a
+      single experience — each living in a different layer.</p>
+  </div>
+
+  <div class="layers">
+    <div class="layer">
+      <div class="who"><b>Frontend</b><span>dashboard</span></div>
+      <div class="what">
+        <div class="parts">
+          <span class="part">control card</span>
+          <span class="part">tile feature</span>
+          <span class="part">dashboard strategy</span>
+        </div>
+        <p>Shipped <em>inside</em> the integration and auto-registered, so the card
+          appears without the manual "add resource" step — the single most common
+          failure in custom-card installs.</p>
+      </div>
+    </div>
+    <div class="layer">
+      <div class="who"><b>HA Core</b><span>integration</span></div>
+      <div class="what">
+        <div class="parts">
+          <span class="part">config flow</span>
+          <span class="part">devices &amp; entities</span>
+          <span class="part">services</span>
+          <span class="part opt">MQTT fallback</span>
+        </div>
+        <p>Distributed via HACS. Provides UI setup with no YAML, one device per panel,
+          and <code>maverick.render</code> / <code>set_page</code> actions —
+          <strong>with no MQTT broker required</strong>.</p>
+      </div>
+    </div>
+    <div class="layer">
+      <div class="who"><b>Supervisor</b><span>add-on</span></div>
+      <div class="what">
+        <div class="parts">
+          <span class="part">render engine</span>
+          <span class="part">Chromium</span>
+          <span class="part">ingress UI</span>
+        </div>
+        <p>Ingress embeds the UI in the sidebar with auth handled by Home Assistant —
+          no exposed port, no second login. <strong>Add-ons exist only on HA OS and
+          Supervised</strong>, so Container and Core users need the same image as plain
+          Docker plus the integration pointed at its URL.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col" style="margin-top:22px">
+    <p style="color:var(--muted);font-size:.95rem"><strong>On the token problem:</strong>
+      the add-on still needs a long-lived token, because the supervisor token authenticates
+      the REST API but not the frontend. The cleanest path is the integration's config flow
+      asking once and pushing it to the add-on over the Supervisor API, so nobody copies a
+      secret between two places.</p>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <div class="sechead"><span class="secnum">Decision 02</span></div>
+    <h2>Authoring e-ink dashboards</h2>
+    <p style="color:var(--muted);margin-top:10px">The hardest question, and the one where
+      the obvious answer is wrong. Designing for e-ink in Home Assistant's editor is
+      genuinely difficult — but the difficulty is not <em>placing cards</em>.</p>
+  </div>
+
+  <div class="col choice">
+    <div class="opt">
+      <span class="badge">Rejected</span>
+      <h4>Build a bespoke dashboard designer</h4>
+      <p>Perfect WYSIWYG, and constraints enforceable by construction. But it means
+        rebuilding entity pickers, templating and history graphs, and abandoning the
+        entire custom-card ecosystem — months of work to land somewhere less capable.
+        The right call for a product aimed at non-HA users; the wrong one here.</p>
+    </div>
+    <div class="opt picked">
+      <span class="badge">Recommended</span>
+      <h4>Generate a correct starting point, then show the truth</h4>
+      <p>The real problem is that you cannot see what 1-bit 800×480 looks like until it
+        is on the wall. Solve the feedback loop and Home Assistant's own editor becomes
+        adequate — and you keep every custom card ever written.</p>
+    </div>
+  </div>
+
+  <div class="col stack" style="margin-top:28px">
+    <div class="stack-tight">
+      <h3>Layer 1 — a dashboard strategy</h3>
+      <p style="color:var(--muted);font-size:.95rem">The strongest Home Assistant-native
+        answer, and it improved recently: as of <strong>2026.5</strong> strategies are
+        registerable and UI-discoverable like custom cards, with a config element.
+        The user picks a panel model and some areas; the strategy emits an e-ink-correct
+        dashboard — column count matched to resolution, safe card types only, no gauges
+        or sparklines that dither into mush. Then "Take control" and edit normally.
+        This turns <em>"designing for e-ink is hard"</em> into <em>"pick your areas."</em></p>
+    </div>
+    <div class="stack-tight">
+      <h3>Layer 2 — see the real output while editing</h3>
+      <ul class="checks">
+        <li>Side-by-side in the ingress UI: browser view versus the actual quantised render</li>
+        <li>Linter feedback that is specific, not aesthetic — <em>"this label is 1.9mm at
+          124dpi, below the 2.5mm threshold"</em>, <em>"42% of inked pixels are hairlines"</em></li>
+        <li>A shipped Home Assistant theme users switch to while editing, so the native
+          editor itself previews flat and monochrome. Not pixel-exact, but it removes the
+          large surprises for almost no work.</li>
+      </ul>
+    </div>
+    <div class="stack-tight">
+      <h3>Layer 3 — a template escape hatch</h3>
+      <p style="color:var(--muted);font-size:.95rem">Let a display's source be HTML and
+        Jinja instead of a dashboard. For dense layouts — a wall calendar, a status board —
+        hand-written markup beats card layout comfortably. Supporting both paths is the
+        differentiator: the easy one through Home Assistant's editor, the precise one
+        through a template.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <div class="sechead"><span class="secnum">Decision 03</span></div>
+    <h2>Controlling panels from a dashboard</h2>
+    <p style="color:var(--muted);margin-top:10px">A control tile is straightforward, but
+      asking for one exposes a gap: <strong>there is no concept of pages.</strong> That is
+      worth adding on its own merits — it is how a panel shows weather in the morning and
+      a calendar in the evening.</p>
+  </div>
+
+  <div class="col stack" style="margin-top:22px">
+    <div class="stack-tight">
+      <h3>Backend first</h3>
+      <p style="color:var(--muted);font-size:.95rem">Each display gains an ordered
+        <code>pages</code> list — a dashboard or template per page, with an optional dwell
+        time and rotation — plus <code>next_page</code>, <code>previous_page</code>,
+        <code>set_page</code> and <code>refresh</code> actions. Automations get this for
+        free; the tile is then a thin client over it.</p>
+    </div>
+    <div class="stack-tight">
+      <h3>Then the surface</h3>
+      <ul class="checks">
+        <li><strong>A tile-card feature</strong> — the control strip under a standard tile.
+          More idiomatic for current Home Assistant than a bespoke card, and far less code.
+          Page cycling belongs here.</li>
+        <li><strong>A full card</strong> for when you want the live thumbnail of what the
+          panel is showing, refresh and full-refresh, a page picker, and status: last
+          render, battery, signal, error state.</li>
+        <li><strong>Fleet mode</strong> — one compact row per display, for anyone running
+          more than three panels.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="dither" aria-hidden="true" style="margin-top:48px"></div>
+
+<section>
+  <div class="col">
+    <div class="sechead"><h2>Risks worth pricing in</h2></div>
+  </div>
+  <div class="col" style="max-width:var(--measure)">
+    <div class="risk">
+      <span class="sev hi">critical</span>
+      <b>A failed render persists for hours</b>
+      <p>An expired token screenshots a login page, and a battery panel then displays it
+        until its next wake — potentially a full day. This is why delivery must be gated
+        on an automated check: a frame that is 99.5% one colour is a failure, not content.</p>
+    </div>
+    <div class="risk">
+      <span class="sev hi">high</span>
+      <b>Refreshes dominate battery life, not renders</b>
+      <p>An e-ink refresh costs orders of magnitude more energy than the render producing
+        it. Content checksums plus conditional GET are not an optimisation — they are the
+        design. Most renders of most dashboards change nothing.</p>
+    </div>
+    <div class="risk">
+      <span class="sev md">medium</span>
+      <b>Chromium on ARM</b>
+      <p>Playwright ships no aarch64 build, so Home Assistant OS on a Raspberry Pi needs a
+        distro Chromium and a path override. Straightforward once known; a hard stop until
+        then.</p>
+    </div>
+    <div class="risk">
+      <span class="sev md">medium</span>
+      <b>ESP32 memory ceiling</b>
+      <p>A seven-colour 800×480 frame needs roughly 640&nbsp;KB to decode; a plain ESP32
+        has about 200&nbsp;KB of usable heap. Colour panels need PSRAM, or a Raspberry Pi
+        pushing over MQTT instead.</p>
+    </div>
+    <div class="risk">
+      <span class="sev md">medium</span>
+      <b>Colour gamut and refresh cost</b>
+      <p>Spectra 6 and ACeP panels take 20–30 seconds per refresh and have a small, muted
+        gamut. Quantising against sRGB primaries looks muddy; measured ink values are
+        required, and spot colour has to be rationed.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <div class="sechead"><h2>Sequence</h2></div>
+    <p style="color:var(--muted)">These phases are genuinely ordered — each depends on the
+      one before it. Phases 1 and 2 make it feel like a product; phase 3 is what makes it
+      good.</p>
+  </div>
+  <div class="col phases" style="max-width:var(--measure)">
+    <div class="phase">
+      <span class="idx">1</span><b>Add-on, ingress and integration</b><span class="wks">3–4 wks</span>
+      <p>It becomes an app: sidebar entry, UI setup, devices and actions in Home Assistant.</p>
+    </div>
+    <div class="phase">
+      <span class="idx">2</span><b>Pages and control surface</b><span class="wks">2 wks</span>
+      <p>It becomes controllable: page rotation, tile feature, full card, fleet view.</p>
+    </div>
+    <div class="phase">
+      <span class="idx">3</span><b>Strategy, live preview and linting</b><span class="wks">2–3 wks</span>
+      <p>It becomes authorable by someone who has never thought about dithering.</p>
+    </div>
+    <div class="phase">
+      <span class="idx">4</span><b>Template source</b><span class="wks">1–2 wks</span>
+      <p>Power users get precise control for dense layouts.</p>
+    </div>
+  </div>
+  <div class="col" style="margin-top:20px">
+    <p style="color:var(--muted);font-size:.95rem"><strong>8–12 weeks</strong> for all four,
+      against 3–5 for the render service alone. The three questions above roughly double the
+      scope — which is an argument for sequencing them, not for dropping them.</p>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <div class="sechead"><h2>Still open</h2></div>
+    <div class="open">
+      <ul class="checks" style="font-size:.93rem">
+        <li>No hardware testing has happened. Every panel-side claim — refresh timing,
+          ghosting cadence, measured ink values — is from documentation, not a bench.</li>
+        <li>Whether the dashboard strategy can produce layouts good enough that users
+          accept them rather than immediately taking control.</li>
+        <li>Whether OpenDisplay's BLE-proxy path is reliable enough at range to be the
+          default, or whether direct BLE needs to stay first-class.</li>
+        <li>Memory headroom for the renderer on a Raspberry Pi 4 running Home Assistant
+          OS alongside everything else.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer class="col">
+  <p>Set in Archivo, Source Sans 3 and JetBrains Mono — the same faces the renderer
+     recommends for e-ink, chosen for large x-height and sturdy stems at small physical
+     sizes. Colours are the project's measured ink values: paper
+     <span class="mono">#E9E7E0</span>, ink <span class="mono">#1A1A1A</span>, Spectra 6
+     blue <span class="mono">#304281</span>. The red appears only against risk, which is
+     how a real panel should spend its spot ink.</p>
+</footer>
+
+</div>
