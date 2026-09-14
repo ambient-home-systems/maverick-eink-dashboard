@@ -110,7 +110,7 @@ print a starter config
 | `MAVERICK_DEBUG` | Skip the top-level error handler in `cli.main`, so an unexpected exception raises with a full traceback instead of being caught and printed with exit code 1. Any non-empty value turns this on. |
 | `MAVERICK_MAX_RENDERS` | Maximum number of Chromium pages rendered concurrently (`engine.Engine`). Default 2. Each concurrent render can spike Chromium's memory by tens of megabytes, so raise this only with memory to spare. |
 | `MAVERICK_CHROMIUM_PATH` | Path to a Chromium or Chrome executable Playwright did not install itself (`render.browser.BrowserPool`). Needed wherever Playwright ships no matching build — notably arm64/aarch64, where the distro `chromium` package is the only option. |
-| `NO_COLOR` | Disable ANSI colour in log output (`logging_setup.setup_logging`), even when stderr is a terminal. The de facto standard; unset it, or leave it empty, to get colour back on a TTY. |
+| `NO_COLOR` | Disable ANSI color in log output (`logging_setup.setup_logging`), even when stderr is a terminal. The de facto standard; unset it, or leave it empty, to get color back on a TTY. |
 
 ## Exit codes
 

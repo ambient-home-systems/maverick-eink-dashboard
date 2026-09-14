@@ -82,9 +82,9 @@ ENVIRONMENT_VARIABLES: tuple[tuple[str, str], ...] = (
     ),
     (
         "NO_COLOR",
-        "Disable ANSI colour in log output (`logging_setup.setup_logging`), even when "
+        "Disable ANSI color in log output (`logging_setup.setup_logging`), even when "
         "stderr is a terminal. The de facto standard; unset it, or leave it empty, to "
-        "get colour back on a TTY.",
+        "get color back on a TTY.",
     ),
 )
 
@@ -610,14 +610,14 @@ def render_transports(required_by: dict[str, dict[str, bool]]) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# The panel catalogue page
+# The panel catalog page
 # --------------------------------------------------------------------------- #
 
 def render_panels() -> str:
     out: list[str] = [
         f"<!-- {BANNER} -->",
         "",
-        "# Panel catalogue",
+        "# Panel catalog",
         "",
         f"> {BANNER}",
         "> Edit `src/maverick/devices/panels.yaml`, or the prose in",
@@ -630,7 +630,7 @@ def render_panels() -> str:
         out.append(f"## {vendor}")
         out.append("")
         out.append(
-            "| id | Name | Resolution | Colour scheme | dpi | Partial refresh "
+            "| id | Name | Resolution | Color scheme | dpi | Partial refresh "
             "| Full-refresh cadence | Default transport | ESPHome model | Notes |"
         )
         out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")

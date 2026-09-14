@@ -1,4 +1,4 @@
-Maverick ships a catalogue of physical panels so a display config can say
+Maverick ships a catalog of physical panels so a display config can say
 `panel: waveshare-7in5-mono` and be done with the hardware. This page lists
 every entry in `src/maverick/devices/panels.yaml`, grouped by vendor the same
 way `maverick panels` prints them.
@@ -10,8 +10,8 @@ way `maverick panels` prints them.
 | `id` | The value a display's `panel:` key names. | `get_panel` in `devices/profiles.py`. |
 | Name | The panel's marketable name. | Printed by `maverick panels` and `maverick check`. |
 | Resolution | Native width × height, in pixels, before rotation. | `DisplayConfig.resolved()` falls back to it when a display sets no `width`/`height`. |
-| Colour scheme | One of the [`ColorScheme`](configuration.md#colour-schemes) values. | Picks the quantisation palette and, through `has_spot_colour`, the linter's spot-ink checks. |
-| dpi | Approximate pixel density, from the datasheet. | Drives the millimetre-to-pixel type scale in `eink/theme.py` (`mm_to_px`, `TypeScale.px`) and the hairline-width check in `eink/lint.py` (`25.4 / dpi`). A wrong dpi makes body text the wrong physical size on the panel, not just the wrong pixel size. |
+| Color scheme | One of the [`ColorScheme`](configuration.md#colour-schemes) values. | Picks the quantization palette and, through `has_spot_colour`, the linter's spot-ink checks. |
+| dpi | Approximate pixel density, from the datasheet. | Drives the millimeter-to-pixel type scale in `eink/theme.py` (`mm_to_px`, `TypeScale.px`) and the hairline-width check in `eink/lint.py` (`25.4 / dpi`). A wrong dpi makes body text the wrong physical size on the panel, not just the wrong pixel size. |
 | Partial refresh | Whether the controller can update part of the panel without a full flash. | `Engine._needs_full_refresh` forces a full refresh on every render when this is `no`. |
 | Full-refresh cadence | How often a full (flashing) refresh is forced to clear ghosting, from `full_refresh_every`. | Same method; a display's `schedule.full_refresh_every` overrides it. |
 | Default transport | The transport a display uses if it sets none of its own. | `DisplayConfig.resolved()`, via `default_transport`. |
@@ -40,7 +40,7 @@ displays:
 
 Any panel profile can be overridden the same way — `width`, `height`,
 `color_scheme`, `dpi`, `rotation` and `frame_format` are all per-display keys
-that win over the catalogue entry (see
+that win over the catalog entry (see
 [Panel profiles and per-display overrides](configuration.md#panel-profiles-and-per-display-overrides)).
 
 ## Adding a panel
@@ -69,6 +69,6 @@ No code change is required: `all_panels()` reads the YAML at import time, so
 a new entry appears in `maverick panels` and this page as soon as the file is
 regenerated.
 
-Every value in this catalogue is transcribed from a datasheet or a vendor
+Every value in this catalog is transcribed from a datasheet or a vendor
 product page, not measured on a physical unit, unless an entry's notes say
 otherwise.

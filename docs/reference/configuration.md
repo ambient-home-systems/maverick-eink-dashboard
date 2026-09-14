@@ -391,7 +391,7 @@ Write frames to a directory (Kindle screensaver, Samba, debugging). Pushes to th
 | --- | --- | --- |
 | `path` | no | Directory to write frames into, created if it does not exist. Default `./out`. |
 | `filename` | no | Name of the frame file. Unset uses the display id with an extension from the frame format (`.png`, `.bmp`, or `.bin` for a raw layout). |
-| `write_preview` | no | Also write `<display id>-preview.png`, a viewable render of the quantised frame. Default false. |
+| `write_preview` | no | Also write `<display id>-preview.png`, a viewable render of the quantized frame. Default false. |
 
 ### `http_pull`
 

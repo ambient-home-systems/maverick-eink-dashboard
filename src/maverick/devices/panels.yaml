@@ -85,7 +85,7 @@ panels:
     full_refresh_every: 20
 
   - id: opendisplay-spectra-7in3
-    name: Spectra 6 7.3" 6-colour (OpenDisplay)
+    name: Spectra 6 7.3" 6-color (OpenDisplay)
     vendor: opendisplay
     width: 800
     height: 480
@@ -94,7 +94,7 @@ panels:
     default_transport: opendisplay
     measured_palette: SPECTRA_7_3_6COLOR
     supports_partial: false
-    notes: Full-colour Spectra 6. Refreshes are slow (~20s); schedule sparingly.
+    notes: Full-color Spectra 6. Refreshes are slow (~20s); schedule sparingly.
 
   - id: opendisplay-flex-2in9
     name: OpenDisplay Flex 2.9"
@@ -184,7 +184,7 @@ panels:
     supports_partial: false
 
   - id: waveshare-5in65-acep
-    name: Waveshare 5.65" ACeP 7-colour
+    name: Waveshare 5.65" ACeP 7-color
     vendor: waveshare
     width: 600
     height: 448
@@ -192,7 +192,7 @@ panels:
     dpi: 132
     esphome_model: 5.65in-acep7
     supports_partial: false
-    notes: Seven-colour ACeP. Refresh takes ~30s and is visually noisy.
+    notes: Seven-color ACeP. Refresh takes ~30s and is visually noisy.
 
   - id: waveshare-7in3-spectra
     name: Waveshare 7.3" Spectra 6
@@ -204,7 +204,7 @@ panels:
     supports_partial: false
 
   - id: waveshare-10in3-gray16
-    name: Waveshare 10.3" 16-level greyscale
+    name: Waveshare 10.3" 16-level grayscale
     vendor: waveshare
     width: 1872
     height: 1404
@@ -212,10 +212,10 @@ panels:
     dpi: 227
     supports_partial: true
     full_refresh_every: 10
-    notes: IT8951 controller. Greyscale depth makes it the best panel for dense dashboards.
+    notes: IT8951 controller. Grayscale depth makes it the best panel for dense dashboards.
 
   - id: waveshare-13in3-gray16
-    name: Waveshare 13.3" 16-level greyscale
+    name: Waveshare 13.3" 16-level grayscale
     vendor: waveshare
     width: 1600
     height: 1200
@@ -225,7 +225,7 @@ panels:
     full_refresh_every: 10
 
   - id: lilygo-t5-4in7
-    name: LilyGO T5 4.7" (16-level greyscale)
+    name: LilyGO T5 4.7" (16-level grayscale)
     vendor: lilygo
     width: 960
     height: 540
@@ -256,7 +256,7 @@ panels:
     supports_partial: false
 
   - id: inky-impression-5in7
-    name: Pimoroni Inky Impression 5.7" (7-colour)
+    name: Pimoroni Inky Impression 5.7" (7-color)
     vendor: pimoroni
     width: 600
     height: 448
