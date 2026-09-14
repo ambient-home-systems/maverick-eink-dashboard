@@ -129,7 +129,9 @@ def lint_frame(
             f"Frame is {coverage[dominant]:.2%} '{palette.names[dominant]}' — "
             "the dashboard almost certainly did not render.",
             "Check the access token, the dashboard URL and whether a card threw. "
-            "Run `maverick render --debug` to keep the raw screenshot.",
+            "Set `render.debug_artifacts: true` on the display and re-run "
+            "`maverick render <id>`; the raw screenshot is written to "
+            "`<data_dir>/debug/<id>/screenshot.png`.",
         )
 
     # --- ink coverage ----------------------------------------------------

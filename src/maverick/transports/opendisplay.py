@@ -149,7 +149,7 @@ class OpenDisplayTransport(Transport):
         if not mac and not device_name:
             raise ValueError(
                 "opendisplay mode 'ble' needs either 'mac' or 'device_name'. "
-                "Run `maverick opendisplay scan` to find your tags."
+                "Run `maverick scan` to find your tags."
             )
 
         key = self.option("encryption_key")
