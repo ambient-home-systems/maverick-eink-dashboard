@@ -77,6 +77,12 @@ class Transport(ABC):
     pushes: ClassVar[bool] = True
     #: Human-readable, shown by ``maverick transports``.
     description: ClassVar[str] = ""
+    #: Option name -> description, for every key this transport reads from the
+    #: ``transport:`` section. ``TransportConfig`` allows extra keys, so this is
+    #: the only description of them there is; scripts/gen_docs.py turns it into
+    #: the reference page and fails if a ``self.option("x")`` call is missing
+    #: from it.
+    options_doc: ClassVar[dict[str, str]] = {}
 
     def __init__(self, options: dict[str, Any]) -> None:
         self.options = options

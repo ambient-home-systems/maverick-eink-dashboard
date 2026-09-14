@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 from ..eink import Frame
 from .base import DeliveryContext, DeliveryResult, Transport, register
@@ -132,6 +132,13 @@ class MqttTransport(Transport):
     name = "mqtt"
     pushes = True
     description = "Publish frames to MQTT for always-on clients (Inky, Pi, custom)"
+    options_doc: ClassVar[dict[str, str]] = {
+        "topic": (
+            "Base topic for this display. Unset uses `<mqtt.base_topic>/display/<display "
+            "id>`. The frame is published retained to `<topic>/frame` and its metadata to "
+            "`<topic>/meta`."
+        ),
+    }
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:
         publisher: MqttPublisher | None = context.services.get("mqtt")

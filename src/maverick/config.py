@@ -90,16 +90,40 @@ class HomeAssistantConfig(Base):
     and rendering a dashboard requires a frontend session.
     """
 
-    url: str = "http://homeassistant.local:8123"
-    token: str = ""
-    verify_ssl: bool = True
-    #: Used only when rendering, if the frontend must be reached on a different
-    #: host than the API (reverse proxies, add-on networking).
-    frontend_url: str | None = None
+    url: str = Field(
+        default="http://homeassistant.local:8123",
+        description=(
+            "Base URL of Home Assistant, used for the REST and WebSocket APIs and, "
+            "unless `frontend_url` is set, for loading the dashboard in the browser."
+        ),
+    )
+    token: str = Field(
+        default="",
+        description=(
+            "Long-lived access token from a Home Assistant profile. The supervisor token "
+            "does not work: it authenticates the REST API but not the frontend, and "
+            "rendering a dashboard needs a frontend session."
+        ),
+    )
+    verify_ssl: bool = Field(
+        default=True,
+        description=(
+            "Verify Home Assistant's TLS certificate. False also tells the renderer to "
+            "ignore certificate errors, which is what a self-signed certificate needs."
+        ),
+    )
+    frontend_url: str | None = Field(
+        default=None,
+        description=(
+            "Used only when rendering, if the frontend must be reached on a different "
+            "host than the API (reverse proxies, add-on networking)."
+        ),
+    )
 
     @field_validator("url", "frontend_url")
     @classmethod
     def _strip_slash(cls, v: str | None) -> str | None:
+        """A trailing slash on `url` or `frontend_url` is stripped."""
         return v.rstrip("/") if v else v
 
     @property
@@ -110,25 +134,93 @@ class HomeAssistantConfig(Base):
 class MqttConfig(Base):
     """MQTT is optional, but it is how displays appear natively in HA."""
 
-    enabled: bool = False
-    host: str = "core-mosquitto"
-    port: int = 1883
-    username: str = ""
-    password: str = ""
-    client_id: str = "maverick"
-    discovery_prefix: str = "homeassistant"
-    base_topic: str = "maverick"
-    tls: bool = False
+    enabled: bool = Field(
+        default=False,
+        description=(
+            "Connect to the broker, publish frames for the `mqtt` transport and announce "
+            "every display to Home Assistant by discovery. Off means displays never appear "
+            "as Home Assistant devices."
+        ),
+    )
+    host: str = Field(
+        default="core-mosquitto",
+        description="Broker hostname. `core-mosquitto` is the Home Assistant add-on broker.",
+    )
+    port: int = Field(
+        default=1883,
+        description="Broker port: usually 1883, or 8883 when `tls` is on.",
+    )
+    username: str = Field(
+        default="",
+        description="Broker username. Empty connects anonymously.",
+    )
+    password: str = Field(
+        default="",
+        description="Broker password, sent with `username`.",
+    )
+    client_id: str = Field(
+        default="maverick",
+        description=(
+            "MQTT client identifier used when connecting. It must be unique on the broker: "
+            "two clients sharing one identifier disconnect each other in a loop."
+        ),
+    )
+    discovery_prefix: str = Field(
+        default="homeassistant",
+        description=(
+            "Topic prefix Home Assistant watches for discovery messages. Change it only if "
+            "it was changed in the MQTT integration."
+        ),
+    )
+    base_topic: str = Field(
+        default="maverick",
+        description=(
+            "Root of Maverick's own topics: `<base_topic>/display/<id>/frame` and "
+            "`<base_topic>/display/<id>/meta` per display, commands on "
+            "`<base_topic>/display/+/command`, and availability on `<base_topic>/status`."
+        ),
+    )
+    tls: bool = Field(
+        default=False,
+        description="Connect to the broker over TLS.",
+    )
 
 
 class ServerConfig(Base):
-    host: str = "0.0.0.0"  # noqa: S104 - a container needs to bind all interfaces
-    port: int = 5000
-    #: Advertised to devices that pull frames. Must be reachable *from them*.
-    base_url: str = ""
-    #: Optional bearer token for the pull/trigger endpoints.
-    api_token: str = ""
-    enable_ui: bool = True
+    """Maverick's own HTTP server.
+
+    It serves the frames devices pull, the trigger and status API, and the setup
+    UI. Devices are told where to fetch from by ``base_url``, so that value is
+    the one worth getting right.
+    """
+
+    host: str = Field(
+        default="0.0.0.0",  # noqa: S104 - a container needs to bind all interfaces
+        description="Address the HTTP server binds to. `0.0.0.0` is right inside a container.",
+    )
+    port: int = Field(
+        default=5000,
+        description="Port the HTTP server listens on.",
+    )
+    base_url: str = Field(
+        default="",
+        description=(
+            "Advertised to devices that pull frames, and used for the links in Home "
+            "Assistant discovery. Must be reachable *from them*, not just from your laptop."
+        ),
+    )
+    api_token: str = Field(
+        default="",
+        description=(
+            "Optional token for the pull and trigger endpoints, accepted as a bearer token, "
+            "an `Access-Token` header or a `?token=` query parameter, and written into "
+            "generated ESPHome configurations. Empty leaves those endpoints unauthenticated."
+        ),
+    )
+    enable_ui: bool = Field(
+        default=True,
+        description="Serve the setup UI at `/`. False serves the JSON API alone.",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -138,40 +230,169 @@ class ServerConfig(Base):
 class ThemeConfig(Base):
     """Overrides for the injected e-ink stylesheet."""
 
-    enabled: bool = True
-    body_mm: float = 3.2
-    scale_ratio: float = 1.25
-    min_font_weight: int = Field(default=400, ge=100, le=900)
-    strong_font_weight: int = Field(default=700, ge=100, le=900)
-    rule_mm: float = 0.25
-    radius_mm: float = 0.0
-    font_stack: str | None = None
-    hide_chrome: bool = True
-    use_spot_colour: bool = True
-    letter_spacing_em: float | None = None
-    extra_css: str = ""
-    #: Path to a CSS file merged after ``extra_css``.
-    css_file: str | None = None
+    enabled: bool = Field(
+        default=True,
+        description=(
+            "Inject the generated e-ink stylesheet. False leaves Home Assistant's own "
+            "styling in place and applies `extra_css` alone."
+        ),
+    )
+    body_mm: float = Field(
+        default=3.2,
+        description=(
+            "Height of body text in millimetres on the panel, converted to pixels using the "
+            "panel's dpi. It is a physical size, not a browser font size."
+        ),
+    )
+    scale_ratio: float = Field(
+        default=1.25,
+        description="Ratio of the modular type scale: each step up multiplies by this.",
+    )
+    min_font_weight: int = Field(
+        default=400,
+        ge=100,
+        le=900,
+        description="Minimum font weight. 400 is the floor at which stems survive 1-bit output.",
+    )
+    strong_font_weight: int = Field(
+        default=700,
+        ge=100,
+        le=900,
+        description="Weight used for headings and numeric readouts.",
+    )
+    rule_mm: float = Field(
+        default=0.25,
+        description="Border width in millimetres — hairlines disappear below roughly 0.2 mm.",
+    )
+    radius_mm: float = Field(
+        default=0.0,
+        description="Card corner radius in millimetres. Sharp corners dither more cleanly.",
+    )
+    font_stack: str | None = Field(
+        default=None,
+        description=(
+            "CSS font stack for the page. Unset uses the built-in e-ink stack, which prefers "
+            "faces whose stems survive quantisation."
+        ),
+    )
+    hide_chrome: bool = Field(
+        default=True,
+        description="Hide the Home Assistant toolbar, sidebar and other frontend chrome.",
+    )
+    use_spot_colour: bool = Field(
+        default=True,
+        description=(
+            "Let the panel's spot ink carry alerts and state highlights. It has no effect on "
+            "a panel without a spot ink."
+        ),
+    )
+    letter_spacing_em: float | None = Field(
+        default=None,
+        description=(
+            "Letter spacing in em. Unset derives it from the panel's dpi: 0.012 below 150 dpi, "
+            "where adjacent stems smear together, and 0 above."
+        ),
+    )
+    extra_css: str = Field(
+        default="",
+        description=(
+            "CSS appended verbatim, last, so it can override anything the theme generates. "
+            "It is applied even when `enabled` is false."
+        ),
+    )
+    css_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to a CSS file merged after `extra_css`. A path that does not exist fails "
+            "the render rather than being skipped."
+        ),
+    )
 
 
 class ImageConfig(Base):
     """Overrides for the image pipeline."""
 
-    dither: DitherMode = DitherMode.AUTO
-    fit: FitMode = FitMode.CONTAIN
-    serpentine: bool = True
-    exposure: float = 1.0
-    contrast: float = 1.08
-    gamma: float = 1.0
-    saturation: float = 1.0
-    sharpen: float = 0.6
-    black_level: int = Field(default=0, ge=0, le=255)
-    white_level: int = Field(default=255, ge=0, le=255)
-    invert: bool = False
-    palette_overrides: dict[str, tuple[int, int, int]] = Field(default_factory=dict)
+    dither: DitherMode = Field(
+        default=DitherMode.AUTO,
+        description="How continuous tone is mapped onto the panel's inks; see Dither modes.",
+    )
+    fit: FitMode = Field(
+        default=FitMode.CONTAIN,
+        description="How the screenshot is resized onto the panel; see Fit modes.",
+    )
+    serpentine: bool = Field(
+        default=True,
+        description=(
+            "Alternate the scan direction on each row while diffusing error, which hides "
+            "directional artefacts. Only the error-diffusion kernels use it: `none` and "
+            "`ordered` have no error to carry, and `auto` diffuses through Pillow, whose "
+            "implementation is always left-to-right."
+        ),
+    )
+    exposure: float = Field(
+        default=1.0,
+        description="Multiplies luminance before quantisation. Above 1 lightens.",
+    )
+    contrast: float = Field(
+        default=1.08,
+        description=(
+            "Contrast stretch before quantisation. E-ink benefits from a little more than a "
+            "screen wants."
+        ),
+    )
+    gamma: float = Field(
+        default=1.0,
+        description=(
+            "Gamma applied before quantisation. Panels are closer to linear than sRGB, so a "
+            "mild decode keeps midtones from crushing to black."
+        ),
+    )
+    saturation: float = Field(
+        default=1.0,
+        description=(
+            "Saturation boost for colour panels. Their gamut is small; pushing saturation "
+            "first means more pixels land on a real ink instead of dithering between two."
+        ),
+    )
+    sharpen: float = Field(
+        default=0.6,
+        description=(
+            "Unsharp mask radius in pixels. Ink bleeds slightly; a light sharpen restores the "
+            "edge the panel loses. 0 disables it."
+        ),
+    )
+    black_level: int = Field(
+        default=0,
+        ge=0,
+        le=255,
+        description="Black clip point, 0-255, applied as a level stretch before quantisation.",
+    )
+    white_level: int = Field(
+        default=255,
+        ge=0,
+        le=255,
+        description="White clip point, 0-255, applied as a level stretch before quantisation.",
+    )
+    invert: bool = Field(
+        default=False,
+        description=(
+            "Invert the image before quantisation, for a panel wired or mounted to show a "
+            "negative. Distinct from `pack.invert`, which inverts the packed indices instead."
+        ),
+    )
+    palette_overrides: dict[str, tuple[int, int, int]] = Field(
+        default_factory=dict,
+        description=(
+            "Measured ink values for this panel, keyed by palette name (`black`, `white`, "
+            "`red`, ...) with `[r, g, b]` values. Despite sitting under `image`, they drive "
+            "both the quantisation palette and the injected stylesheet, so the page is styled "
+            "with the same inks the frame is quantised to."
+        ),
+    )
 
     @model_validator(mode="after")
     def _levels(self) -> ImageConfig:
+        """`black_level` must be below `white_level`."""
         if self.black_level >= self.white_level:
             raise ConfigError("black_level must be below white_level")
         return self
@@ -180,29 +401,81 @@ class ImageConfig(Base):
 class RenderConfig(Base):
     """How the browser should capture the dashboard."""
 
-    #: Extra wait after load. Cards that fetch history need a moment.
-    settle: str | float = "2s"
-    timeout: str | float = "45s"
-    #: Render at N times panel resolution then downsample. 2 gives markedly
-    #: better text on low-dpi panels; costs memory and time.
-    supersample: int = Field(default=2, ge=1, le=4)
-    #: Browser viewport, if it should differ from the panel's logical size.
-    viewport_width: int | None = None
-    viewport_height: int | None = None
-    #: Zoom the page before capture (HA's own layout breakpoints respond to it).
-    zoom: float = 1.0
-    #: CSS selector to wait for, and optionally to crop to.
-    wait_for_selector: str | None = None
-    crop_to_selector: str | None = None
-    #: Wait until every <img> has decoded. Weather icons are usually the
-    #: slowest thing on the page.
-    wait_for_images: bool = True
-    #: Keep the pre-quantisation screenshot next to the frame for debugging.
-    debug_artifacts: bool = False
+    settle: str | float = Field(
+        default="2s",
+        description="Extra wait after load. Cards that fetch history need a moment.",
+    )
+    timeout: str | float = Field(
+        default="45s",
+        description=(
+            "Budget for navigation and for waiting on `wait_for_selector`. Exceeding it "
+            "fails the render."
+        ),
+    )
+    supersample: int = Field(
+        default=2,
+        ge=1,
+        le=4,
+        description=(
+            "Render at N times panel resolution then downsample. 2 gives markedly better text "
+            "on low-dpi panels; it costs memory and time."
+        ),
+    )
+    viewport_width: int | None = Field(
+        default=None,
+        description=(
+            "Browser viewport width, if it should differ from the panel's logical size. Used "
+            "only when `viewport_height` is set as well."
+        ),
+    )
+    viewport_height: int | None = Field(
+        default=None,
+        description=(
+            "Browser viewport height, if it should differ from the panel's logical size. Used "
+            "only when `viewport_width` is set as well."
+        ),
+    )
+    zoom: float = Field(
+        default=1.0,
+        description=(
+            "Zoom the page before capture; Home Assistant's own layout breakpoints respond to "
+            "it. With the theme enabled it multiplies the dpi-derived zoom rather than "
+            "fighting it."
+        ),
+    )
+    wait_for_selector: str | None = Field(
+        default=None,
+        description=(
+            "CSS selector to wait for before capturing. Unset waits for `home-assistant`, "
+            "which is present on every Home Assistant page."
+        ),
+    )
+    crop_to_selector: str | None = Field(
+        default=None,
+        description=(
+            "CSS selector to capture instead of the whole page. A selector that matches "
+            "nothing fails the render rather than capturing the page."
+        ),
+    )
+    wait_for_images: bool = Field(
+        default=True,
+        description=(
+            "Wait until every `<img>` has decoded. Weather icons are usually the slowest thing "
+            "on the page."
+        ),
+    )
+    debug_artifacts: bool = Field(
+        default=False,
+        description=(
+            "Keep the pre-quantisation screenshot next to the frame preview and the lint "
+            "report, under `<data_dir>/debug/<id>/`."
+        ),
+    )
 
     @field_validator("settle", "timeout")
     @classmethod
     def _duration(cls, v: str | float) -> float:
+        """`settle` and `timeout` accept a duration and are stored as seconds."""
         return parse_duration(v)
 
 
@@ -214,30 +487,69 @@ class ScheduleConfig(Base):
     instead of a clock.
     """
 
-    enabled: bool = True
-    every: str | float | None = None
-    cron: str | None = None
-    #: Skip scheduled renders in this window. Format "23:00-06:30".
-    quiet_hours: str | None = None
-    #: Re-render when any of these entities changes state.
-    on_change: list[str] = Field(default_factory=list)
-    #: Ignore on_change bursts closer together than this.
-    debounce: str | float = "10s"
-    #: Force a flashing full refresh every N frames to clear ghosting.
-    #: 0 uses the panel profile's recommendation.
-    full_refresh_every: int = 0
-    #: Skip delivery when the frame is byte-identical to the last one.
-    skip_unchanged: bool = True
-    #: Render once at startup.
-    render_on_start: bool = True
+    enabled: bool = Field(
+        default=True,
+        description=(
+            "Include this display in the scheduler. False leaves it renderable on demand "
+            "only; a Home Assistant switch can also pause it at runtime without editing "
+            "this file."
+        ),
+    )
+    every: str | float | None = Field(
+        default=None,
+        description="Render on a fixed interval. Mutually exclusive with `cron`.",
+    )
+    cron: str | None = Field(
+        default=None,
+        description=(
+            "Render on a five-field crontab expression, in the server's local time zone. "
+            "Mutually exclusive with `every`."
+        ),
+    )
+    quiet_hours: str | None = Field(
+        default=None,
+        description=(
+            'Skip scheduled and state-triggered renders in this window. Format "23:00-06:30"; '
+            "a window may wrap midnight. Renders asked for by hand, by the API or at startup "
+            "ignore it."
+        ),
+    )
+    on_change: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Entity ids to watch: a state change on any of them re-renders the display. It "
+            "needs a Home Assistant connection, and attribute-only updates are ignored."
+        ),
+    )
+    debounce: str | float = Field(
+        default="10s",
+        description="Ignore `on_change` bursts closer together than this.",
+    )
+    full_refresh_every: int = Field(
+        default=0,
+        description=(
+            "Force a flashing full refresh every N frames to clear ghosting. 0 uses the panel "
+            "profile's recommendation."
+        ),
+    )
+    skip_unchanged: bool = Field(
+        default=True,
+        description="Skip delivery when the frame is byte-identical to the last one.",
+    )
+    render_on_start: bool = Field(
+        default=True,
+        description="Render once at startup rather than waiting out the first interval.",
+    )
 
     @field_validator("debounce")
     @classmethod
     def _debounce(cls, v: str | float) -> float:
+        """`debounce` accepts a duration and is stored as seconds."""
         return parse_duration(v)
 
     @model_validator(mode="after")
     def _exclusive(self) -> ScheduleConfig:
+        """Set `every` or `cron`, not both, and `quiet_hours` must look like "23:00-06:30"."""
         if self.every and self.cron:
             raise ConfigError("set either 'every' or 'cron', not both")
         if self.every is not None:
@@ -260,7 +572,13 @@ class TransportConfig(Base):
 
     model_config = ConfigDict(extra="allow")
 
-    type: str = "http_pull"
+    type: str = Field(
+        default="http_pull",
+        description=(
+            "Registry name of the transport that delivers the frame. Every other key in this "
+            "section is that transport's own option; see Transport options."
+        ),
+    )
 
 
 class EsphomeConfig(Base):
@@ -271,53 +589,161 @@ class EsphomeConfig(Base):
     a Waveshare panel via the vendor's HAT.
     """
 
-    board: str = "esp32dev"
-    #: Wiring. Override per board; the defaults are the Waveshare ESP32 driver
-    #: board pinout, which is what most people actually have.
-    clk_pin: str = "GPIO13"
-    mosi_pin: str = "GPIO14"
-    cs_pin: str = "GPIO15"
-    dc_pin: str = "GPIO27"
-    busy_pin: str = "GPIO25"
-    reset_pin: str = "GPIO26"
-    #: Sleep between fetches instead of staying awake. Essential on battery,
-    #: and it means the device is unreachable between wakes.
-    deep_sleep: bool = False
-    #: Bytes reserved for the downloaded frame. Too small and the fetch fails;
-    #: generated from the panel size when left at 0.
-    buffer_size: int = 0
-    verify_ssl: bool = False
-    node_name: str | None = None
+    board: str = Field(
+        default="esp32dev",
+        description="PlatformIO board id written into the generated `esp32:` block.",
+    )
+    clk_pin: str = Field(
+        default="GPIO13",
+        description=(
+            "SPI clock pin. The pin defaults are the Waveshare ESP32 driver board pinout, "
+            "which is what most people actually have; override them per board."
+        ),
+    )
+    mosi_pin: str = Field(default="GPIO14", description="SPI data (MOSI) pin.")
+    cs_pin: str = Field(default="GPIO15", description="SPI chip-select pin.")
+    dc_pin: str = Field(default="GPIO27", description="Data/command pin.")
+    busy_pin: str = Field(default="GPIO25", description="Panel busy pin.")
+    reset_pin: str = Field(default="GPIO26", description="Panel reset pin.")
+    deep_sleep: bool = Field(
+        default=False,
+        description=(
+            "Sleep between fetches instead of staying awake, waking on the display's own "
+            "interval. Essential on battery, and it means the device is unreachable — and so "
+            "cannot be flashed over the air — between wakes."
+        ),
+    )
+    buffer_size: int = Field(
+        default=0,
+        description=(
+            "Bytes reserved for the downloaded frame. Too small and the fetch fails; 0 "
+            "generates a size from the panel's resolution and colour scheme."
+        ),
+    )
+    verify_ssl: bool = Field(
+        default=False,
+        description=(
+            "Whether the generated firmware verifies the server's TLS certificate. Off by "
+            "default: certificate validation costs an ESP32 memory the frame buffer needs."
+        ),
+    )
+    node_name: str | None = Field(
+        default=None,
+        description=(
+            "ESPHome node name. Unset derives one from the display id, as `<id>-panel` with "
+            "underscores replaced by hyphens."
+        ),
+    )
 
 
 class DisplayConfig(Base):
     """One physical panel."""
 
-    id: str
-    name: str = ""
-    panel: str = "generic-mono"
-    dashboard: str = "/lovelace/0"
-    enabled: bool = True
+    id: str = Field(
+        description=(
+            "Identifier for this display, unique within the file. It becomes a URL path "
+            "segment and an MQTT topic level."
+        ),
+    )
+    name: str = Field(
+        default="",
+        description=(
+            "Human-readable name, shown in the setup UI and used for the Home Assistant "
+            "device. Empty derives one from the id."
+        ),
+    )
+    panel: str = Field(
+        default="generic-mono",
+        description=(
+            "Panel id from the catalogue, as listed by `maverick panels`. It supplies the "
+            "resolution, colour scheme, dpi, rotation, frame format and refresh behaviour "
+            "that the keys below override."
+        ),
+    )
+    dashboard: str = Field(
+        default="/lovelace/0",
+        description=(
+            "What to render: a Home Assistant dashboard path such as "
+            "`/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as "
+            "absolute, so `file:///...` renders a local page."
+        ),
+    )
+    enabled: bool = Field(
+        default=True,
+        description="Render and deliver this display. False keeps it configured but idle.",
+    )
 
     # Panel overrides — all default to the catalogue entry.
-    width: int | None = None
-    height: int | None = None
-    color_scheme: ColorScheme | None = None
-    dpi: int | None = None
-    rotation: int | None = None
-    frame_format: FrameFormat | None = None
+    width: int | None = Field(
+        default=None,
+        description="Panel width in pixels. Unset uses the catalogue value for `panel`.",
+    )
+    height: int | None = Field(
+        default=None,
+        description="Panel height in pixels. Unset uses the catalogue value for `panel`.",
+    )
+    color_scheme: ColorScheme | None = Field(
+        default=None,
+        description=(
+            "Inks to quantise to; see Colour schemes. Unset uses the catalogue value for "
+            "`panel`."
+        ),
+    )
+    dpi: int | None = Field(
+        default=None,
+        description=(
+            "Pixels per inch, used to turn the theme's millimetre sizes into pixels. Unset "
+            "uses the catalogue value for `panel`."
+        ),
+    )
+    rotation: int | None = Field(
+        default=None,
+        description=(
+            "Rotation in degrees applied after fitting, for a panel mounted sideways. Unset "
+            "uses the panel's native rotation."
+        ),
+    )
+    frame_format: FrameFormat | None = Field(
+        default=None,
+        description=(
+            "Wire format for the delivered frame; see Frame formats. Unset uses the panel's "
+            "default format, and failing that a default for the configured transport."
+        ),
+    )
 
-    theme: ThemeConfig = Field(default_factory=ThemeConfig)
-    image: ImageConfig = Field(default_factory=ImageConfig)
-    render: RenderConfig = Field(default_factory=RenderConfig)
-    schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
-    transport: TransportConfig = Field(default_factory=TransportConfig)
-    pack: PackOptionsConfig = Field(default_factory=lambda: PackOptionsConfig())
-    esphome: EsphomeConfig = Field(default_factory=lambda: EsphomeConfig())
+    theme: ThemeConfig = Field(
+        default_factory=ThemeConfig,
+        description="Overrides for the injected e-ink stylesheet.",
+    )
+    image: ImageConfig = Field(
+        default_factory=ImageConfig,
+        description="Overrides for the image pipeline.",
+    )
+    render: RenderConfig = Field(
+        default_factory=RenderConfig,
+        description="How the browser should capture the dashboard.",
+    )
+    schedule: ScheduleConfig = Field(
+        default_factory=ScheduleConfig,
+        description="When to re-render.",
+    )
+    transport: TransportConfig = Field(
+        default_factory=TransportConfig,
+        description="Where the finished frame goes.",
+    )
+    pack: PackOptionsConfig = Field(
+        default_factory=lambda: PackOptionsConfig(),
+        description="Controller quirks for raw-frame transports.",
+    )
+    esphome: EsphomeConfig = Field(
+        default_factory=lambda: EsphomeConfig(),
+        description="Inputs for the ESPHome configuration `maverick esphome <id>` generates.",
+    )
 
     @field_validator("id")
     @classmethod
     def _slug(cls, v: str) -> str:
+        """`id` must be lowercase alphanumeric with `-` or `_`, starting with a letter or digit."""
         if not re.match(r"^[a-z0-9][a-z0-9_-]*$", v):
             raise ConfigError(
                 f"display id {v!r} must be lowercase alphanumeric with - or _ "
@@ -327,6 +753,7 @@ class DisplayConfig(Base):
 
     @model_validator(mode="after")
     def _defaults(self) -> DisplayConfig:
+        """`panel` must name a catalogue entry, and `rotation` must be 0, 90, 180 or 270."""
         if not self.name:
             object.__setattr__(self, "name", self.id.replace("-", " ").replace("_", " ").title())
         # Validate the panel now so a typo fails at load, not at first render.
@@ -360,10 +787,34 @@ class DisplayConfig(Base):
 class PackOptionsConfig(Base):
     """Controller quirks for raw-frame transports."""
 
-    msb_first: bool = True
-    invert: bool = False
-    plane_order: list[str] | None = None
-    plane_active_low: bool = False
+    msb_first: bool = Field(
+        default=True,
+        description=(
+            "Pack the leftmost pixel of each byte into the most significant bit. False packs "
+            "it into the least significant bit."
+        ),
+    )
+    invert: bool = Field(
+        default=False,
+        description=(
+            "Invert the packed indices, so index 0 becomes the last ink. For controllers that "
+            "clock 1 for white. Distinct from `image.invert`, which inverts the image itself."
+        ),
+    )
+    plane_order: list[str] | None = Field(
+        default=None,
+        description=(
+            "Ink order for the `planes` frame format, by palette name. Unset packs black "
+            "first, then the spot colours."
+        ),
+    )
+    plane_active_low: bool = Field(
+        default=False,
+        description=(
+            "Some controllers clock 1 for the *absence* of an ink on the black plane; this "
+            "inverts each plane to suit them."
+        ),
+    )
 
     def to_options(self) -> PackOptions:
         return PackOptions(
@@ -391,15 +842,17 @@ class ResolvedDisplay(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    config: DisplayConfig
-    profile: PanelProfile
-    width: int
-    height: int
-    color_scheme: ColorScheme
-    dpi: int
-    rotation: int
-    frame_format: FrameFormat
-    full_refresh_every: int
+    config: DisplayConfig = Field(description="The display as the user wrote it.")
+    profile: PanelProfile = Field(description="The catalogue entry named by `panel`.")
+    width: int = Field(description="Panel width in pixels, after overrides.")
+    height: int = Field(description="Panel height in pixels, after overrides.")
+    color_scheme: ColorScheme = Field(description="Ink capability to quantise to, after overrides.")
+    dpi: int = Field(description="Pixels per inch, after overrides.")
+    rotation: int = Field(description="Rotation in degrees, after overrides.")
+    frame_format: FrameFormat = Field(description="Wire format for the frame, after overrides.")
+    full_refresh_every: int = Field(
+        description="Frames between forced full refreshes, after overrides.",
+    )
 
     @property
     def id(self) -> str:
@@ -415,18 +868,41 @@ class ResolvedDisplay(BaseModel):
 # --------------------------------------------------------------------------- #
 
 class Config(Base):
-    home_assistant: HomeAssistantConfig = Field(default_factory=HomeAssistantConfig)
-    mqtt: MqttConfig = Field(default_factory=MqttConfig)
-    server: ServerConfig = Field(default_factory=ServerConfig)
-    displays: list[DisplayConfig] = Field(default_factory=list)
-    #: Directory for rendered frames, previews and state.
-    data_dir: str = "./data"
-    log_level: Literal["debug", "info", "warning", "error"] = "info"
-    #: Refuse to deliver a frame whose lint report has errors.
-    block_on_lint_error: bool = True
+    home_assistant: HomeAssistantConfig = Field(
+        default_factory=HomeAssistantConfig,
+        description="How to reach Home Assistant.",
+    )
+    mqtt: MqttConfig = Field(
+        default_factory=MqttConfig,
+        description="MQTT broker and discovery settings.",
+    )
+    server: ServerConfig = Field(
+        default_factory=ServerConfig,
+        description="Maverick's own HTTP server.",
+    )
+    displays: list[DisplayConfig] = Field(
+        default_factory=list,
+        description="The panels to render. Each entry needs at least an `id`.",
+    )
+    data_dir: str = Field(
+        default="./data",
+        description="Directory for rendered frames, previews, debug artefacts and state.",
+    )
+    log_level: Literal["debug", "info", "warning", "error"] = Field(
+        default="info",
+        description="Logging verbosity. The `--log-level` flag overrides it for one run.",
+    )
+    block_on_lint_error: bool = Field(
+        default=True,
+        description=(
+            "Refuse to deliver a frame whose lint report has errors — a blank render, most "
+            "often. `maverick render --force` overrides it for one render."
+        ),
+    )
 
     @model_validator(mode="after")
     def _unique_ids(self) -> Config:
+        """Display ids must be unique."""
         seen = set()
         for display in self.displays:
             if display.id in seen:

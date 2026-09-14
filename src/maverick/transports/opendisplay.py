@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from ..eink import Frame
 from ..eink.dither import DitherMode
@@ -61,6 +61,51 @@ class OpenDisplayTransport(Transport):
     name = "opendisplay"
     pushes = True
     description = "OpenDisplay BLE tags, via Home Assistant BLE proxies or a local adapter"
+    options_doc: ClassVar[dict[str, str]] = {
+        "mode": (
+            "`ha` uploads through Home Assistant's own Bluetooth, including ESPHome "
+            "Bluetooth proxies; `ble` talks to the tag from this host and needs a local "
+            "adapter. Default `auto`, which is `ha` when Home Assistant is connected and "
+            "`ble` otherwise."
+        ),
+        "device_id": (
+            "Device registry id from the OpenDisplay integration — not the entity id and "
+            "not the MAC. Required in `ha` mode."
+        ),
+        "media_dir": (
+            "Directory both Maverick and Home Assistant can read, where the frame is "
+            "written as a PNG for the upload action to pick up. Default `/media/maverick`; "
+            "the add-on needs the `media:rw` mapping for it."
+        ),
+        "media_root": (
+            "Root of Home Assistant's media folder. `media_dir` must sit inside it, because "
+            "Home Assistant can only read images from there. Default `/media`."
+        ),
+        "media_source_prefix": (
+            "Media source prefix prepended to the frame's path in the upload action. "
+            "Default `media-source://media_source/local`."
+        ),
+        "rotation": (
+            "Rotation passed to `opendisplay.upload_image` in `ha` mode. Unset leaves it to "
+            "the integration. This is the tag's own rotation, not `displays[].rotation`, "
+            "which Maverick has already applied to the image."
+        ),
+        "mac": (
+            "Tag MAC address, for `ble` mode. Either this or `device_name` is required "
+            "there; `maverick scan` lists both for the tags in range."
+        ),
+        "device_name": "Advertised tag name, for `ble` mode when `mac` is not known.",
+        "encryption_key": (
+            "AES-128 key as hex, for tags that require encrypted transfers. Unset sends "
+            "unencrypted."
+        ),
+        "timeout": "Seconds to wait for a BLE connection, in `ble` mode. Default 20.",
+        "max_attempts": "BLE connection attempts before giving up, in `ble` mode. Default 4.",
+        "scan_timeout": (
+            "Seconds to scan for tags when `maverick check` probes a `ble` transport. "
+            "Default 10."
+        ),
+    }
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:
         mode = str(self.option("mode", "auto")).lower()
