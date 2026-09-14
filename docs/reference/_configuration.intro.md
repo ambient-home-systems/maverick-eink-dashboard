@@ -67,9 +67,9 @@ render.
 
 ## Panel profiles and per-display overrides
 
-A display names a panel from the catalogue (`maverick panels`), and the catalogue
-entry supplies the resolution, colour scheme, dpi, native rotation, frame format
-and ghosting behaviour. That is the point of it: `panel: waveshare-7in5-mono` is
+A display names a panel from the catalog (`maverick panels`), and the catalog
+entry supplies the resolution, color scheme, dpi, native rotation, frame format
+and ghosting behavior. That is the point of it: `panel: waveshare-7in5-mono` is
 meant to be the last thing you have to know about the hardware.
 
 Each of those values can still be overridden per display, and `DisplayConfig.resolved()`
@@ -91,5 +91,5 @@ exception that tells unset from zero, so `rotation: 0` really does mean "no
 rotation, whatever the profile says".
 
 Everything else — theme, image pipeline, render, schedule, transport, packing and
-ESPHome generation — is per display with no catalogue involvement, and defaults to
+ESPHome generation — is per display with no catalog involvement, and defaults to
 the values in the tables below.

@@ -18,7 +18,7 @@ way `maverick panels` prints them.
 | `id` | The value a display's `panel:` key names. | `get_panel` in `devices/profiles.py`. |
 | Name | The panel's marketable name. | Printed by `maverick panels` and `maverick check`. |
 | Resolution | Native width × height, in pixels, before rotation. | `DisplayConfig.resolved()` falls back to it when a display sets no `width`/`height`. |
-| Color scheme | One of the [`ColorScheme`](configuration.md#colour-schemes) values. | Picks the quantization palette and, through `has_spot_colour`, the linter's spot-ink checks. |
+| Color scheme | One of the [`ColorScheme`](configuration.md#color-schemes) values. | Picks the quantization palette and, through `has_spot_colour`, the linter's spot-ink checks. |
 | dpi | Approximate pixel density, from the datasheet. | Drives the millimeter-to-pixel type scale in `eink/theme.py` (`mm_to_px`, `TypeScale.px`) and the hairline-width check in `eink/lint.py` (`25.4 / dpi`). A wrong dpi makes body text the wrong physical size on the panel, not just the wrong pixel size. |
 | Partial refresh | Whether the controller can update part of the panel without a full flash. | `Engine._needs_full_refresh` forces a full refresh on every render when this is `no`. |
 | Full-refresh cadence | How often a full (flashing) refresh is forced to clear ghosting, from `full_refresh_every`. | Same method; a display's `schedule.full_refresh_every` overrides it. |

@@ -135,20 +135,20 @@ ENUM_VALUE_DOCS: dict[str, dict[str, str]] = {
             "An 8x8 Bayer matrix. Regular texture rather than noise, and cheap; it patterns "
             "large flat fills visibly."
         ),
-        "floyd_steinberg": "Classic error diffusion over four neighbours. A good general default.",
+        "floyd_steinberg": "Classic error diffusion over four neighbors. A good general default.",
         "atkinson": (
             "Diffuses only three quarters of the error, which keeps contrast high and light "
             "areas clean at the cost of some detail."
         ),
         "burkes": "Error diffusion over two rows; smoother than Floyd-Steinberg, slightly softer.",
         "sierra": "Error diffusion over three rows. Smooth gradients, the slowest of the family.",
-        "sierra_lite": "A two-row, three-neighbour Sierra. Fast, with more visible structure.",
+        "sierra_lite": "A two-row, three-neighbor Sierra. Fast, with more visible structure.",
         "stucki": "Three-row diffusion with a wide kernel. Clean gradients, soft edges.",
         "jarvis": "Jarvis, Judice and Ninke: the widest kernel here. Smoothest, and the softest.",
     },
     "FitMode": {
         "contain": (
-            "Scale to fit inside the panel, preserving aspect ratio, and centre it on white. "
+            "Scale to fit inside the panel, preserving aspect ratio, and center it on white. "
             "Nothing is lost and nothing is stretched."
         ),
         "cover": (
@@ -164,7 +164,7 @@ ENUM_VALUE_DOCS: dict[str, dict[str, str]] = {
     "FrameFormat": {
         "packed": (
             "N bits per pixel, pixels left to right, rows top to bottom, each row padded to a "
-            "byte boundary. Most greyscale controllers and index-addressed colour panels."
+            "byte boundary. Most grayscale controllers and index-addressed color panels."
         ),
         "planes": (
             "One 1-bit plane per ink, concatenated. The classic Waveshare black/white plus red "
@@ -185,11 +185,11 @@ ENUM_VALUE_DOCS: dict[str, dict[str, str]] = {
         "bwr": "Black, white and red: one spot ink.",
         "bwy": "Black, white and yellow: one spot ink.",
         "bwry": "Black, white, red and yellow: two spot inks.",
-        "gray4": "Four levels of grey.",
-        "gray8": "Eight levels of grey.",
-        "gray16": "Sixteen levels of grey, as IT8951 controllers drive.",
+        "gray4": "Four levels of gray.",
+        "gray8": "Eight levels of gray.",
+        "gray16": "Sixteen levels of gray, as IT8951 controllers drive.",
         "spectra6": "E Ink Spectra 6: black, white, red, yellow, blue and green.",
-        "acep7": "Advanced Colour ePaper: the Spectra 6 inks plus orange.",
+        "acep7": "Advanced Color ePaper: the Spectra 6 inks plus orange.",
     },
 }
 
@@ -200,7 +200,7 @@ ENUM_SECTIONS: tuple[tuple[type[Enum], str], ...] = (
     (DitherMode, "Dither modes"),
     (FitMode, "Fit modes"),
     (FrameFormat, "Frame formats"),
-    (ColorScheme, "Colour schemes"),
+    (ColorScheme, "Color schemes"),
 )
 
 ENUM_INTROS: dict[str, str] = {
@@ -276,9 +276,9 @@ def build_sections() -> list[Section]:
             DisplayConfig,
             intro=(
                 "One entry per physical panel. `id` is the only required key: the keys "
-                "beside it override something the panel catalogue already knows, and the "
+                "beside it override something the panel catalog already knows, and the "
                 "sections they point at are all optional too, so a display that names a "
-                "catalogue panel and a dashboard needs almost nothing else."
+                "catalog panel and a dashboard needs almost nothing else."
             ),
         )
     )
@@ -581,7 +581,7 @@ def render_transports(required_by: dict[str, dict[str, bool]]) -> str:
         "`displays[].transport.type` picks a transport; every other key in that section is "
         "the transport's own. They are listed here rather than in the table above because "
         "`TransportConfig` allows extra keys, so the transport, not the model, owns them. "
-        "An option a transport does not recognise is ignored rather than rejected.",
+        "An option a transport does not recognize is ignored rather than rejected.",
         "",
     ]
     for name, cls in sorted(available_transports().items()):
