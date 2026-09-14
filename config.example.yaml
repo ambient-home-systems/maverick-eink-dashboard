@@ -1,0 +1,154 @@
+# Maverick — example configuration.
+#
+# Copy this to config.yaml and edit the three keys marked CHANGE ME.
+# `maverick check` validates the result without rendering anything.
+#
+# Unknown keys are an error, not a warning: if you misspell one the config
+# fails to load and tells you which key it did not recognise.
+#
+# ${VAR} reads an environment variable and fails if it is unset.
+# ${VAR:-default} falls back to the default instead. Both work anywhere in
+# this file, so secrets never have to live in it.
+#
+# Durations accept "30s", "5m", "1h", "2d", or a bare number of seconds.
+
+home_assistant:
+  # CHANGE ME. This must be the exact origin your Home Assistant frontend is
+  # served from — scheme, host and port. A mismatch renders the login page
+  # instead of your dashboard.
+  url: http://homeassistant.local:8123
+  # CHANGE ME. A long-lived access token from your profile -> Security.
+  # The supervisor token will not work: it authenticates the REST API but not
+  # the frontend, and rendering a dashboard needs a frontend session.
+  token: ${HA_TOKEN}
+  # Set false for a self-signed certificate.
+  verify_ssl: true
+  # Only if the frontend lives somewhere other than `url` — a reverse proxy,
+  # or add-on networking. Leave unset otherwise.
+  # frontend_url: https://ha.example.com
+
+mqtt:
+  # Turn this on to make every display a Home Assistant device with refresh
+  # buttons, a scheduled-renders switch, a screen image and status sensors.
+  # It needs a broker; leave it off until you have one.
+  enabled: false
+  host: core-mosquitto
+  port: 1883
+  username: ${MQTT_USER:-}
+  password: ${MQTT_PASSWORD:-}
+  client_id: maverick
+  # Where Home Assistant looks for discovery messages. Change only if you
+  # changed it in the MQTT integration.
+  discovery_prefix: homeassistant
+  # Root of Maverick's own topics: <base_topic>/display/<id>/frame, and so on.
+  base_topic: maverick
+  tls: false
+
+server:
+  host: 0.0.0.0
+  port: 5000
+  # CHANGE ME. Devices that pull frames are told to fetch from here, so it
+  # must be reachable *from the panel*, not just from your laptop.
+  base_url: http://maverick.local:5000
+  # Optional. When set, the pull and render endpoints require it as a bearer
+  # token, an Access-Token header, or a ?token= query parameter.
+  api_token: ${MAVERICK_API_TOKEN:-}
+  # The setup UI at /. Turn it off to serve the API alone.
+  enable_ui: true
+
+# Rendered frames, previews and state live here.
+data_dir: ./data
+
+log_level: info
+
+# Refuse to deliver a frame the linter calls an error — a blank render, most
+# often. Leave this on: a bad frame can sit on a battery panel for a day.
+block_on_lint_error: true
+
+displays:
+
+  # ----------------------------------------------------------------------
+  # A Waveshare 7.5" monochrome panel on an ESP32, fetching over HTTP.
+  # The device wakes, asks for a frame, draws it if the ETag changed, sleeps.
+  # ----------------------------------------------------------------------
+  - id: kitchen
+    name: Kitchen panel
+    panel: waveshare-7in5-mono
+    dashboard: /lovelace-eink/kitchen
+    enabled: true
+
+    schedule:
+      every: 5m
+      # Nobody reads the kitchen panel at 3am, and every refresh costs battery.
+      quiet_hours: "23:00-06:30"
+      # Skip delivery when the new frame is byte-identical to the last one.
+      skip_unchanged: true
+      # Render once when Maverick starts rather than waiting out the interval.
+      render_on_start: true
+
+    transport:
+      type: http_pull
+
+    render:
+      # Extra wait after load. Cards that fetch history need a moment.
+      settle: 3s
+      timeout: 45s
+      # Render at 2x panel resolution and downsample. Markedly better text.
+      supersample: 2
+
+    image:
+      # auto classifies each region and dithers only what benefits from it,
+      # which is what keeps text crisp. Use none for flat dashboards.
+      dither: auto
+      contrast: 1.08
+      sharpen: 0.6
+
+    theme:
+      # Body text in millimetres on the panel, not pixels in the browser.
+      body_mm: 3.2
+      # Drop the sidebar, toolbar and other frontend chrome.
+      hide_chrome: true
+
+    # Used by `maverick esphome kitchen` to generate device firmware.
+    esphome:
+      board: esp32dev
+      deep_sleep: true
+
+  # ----------------------------------------------------------------------
+  # An OpenDisplay BLE shelf-label tag, delivered through Home Assistant's
+  # own Bluetooth — including ESPHome Bluetooth proxies, so Maverick needs
+  # no Bluetooth adapter of its own.
+  # This one re-renders when the data changes rather than on a timer.
+  # ----------------------------------------------------------------------
+  - id: hallway-tag
+    name: Hallway tag
+    panel: opendisplay-solum-2in9-bwr
+    dashboard: /lovelace-eink/tag
+
+    schedule:
+      # No `every` and no `cron`: this display only renders when one of these
+      # entities changes state.
+      on_change:
+        - binary_sensor.front_door
+        - person.sam
+      # Ignore bursts closer together than this.
+      debounce: 30s
+
+    transport:
+      type: opendisplay
+      mode: ha
+      # CHANGE ME. The device registry id from the OpenDisplay integration —
+      # not the entity id and not the MAC.
+      device_id: ${OPENDISPLAY_DEVICE_ID:-replace-with-device-registry-id}
+      # Home Assistant reads the image from its media folder, so the frame has
+      # to land somewhere both processes can see.
+      media_dir: /media/maverick
+      media_root: /media
+
+    image:
+      # 152x296 of ink is not the place for dither noise.
+      dither: none
+
+    theme:
+      # A tag is read from arm's length, so the type has to be larger.
+      body_mm: 4.0
