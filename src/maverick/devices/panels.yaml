@@ -1,0 +1,321 @@
+# Maverick panel catalogue.
+#
+# Each entry describes a physical e-ink panel well enough that Maverick can
+# render, quantise, pack and deliver a frame without the user hand-tuning
+# anything. `dpi` is approximate and is used by the render linter to convert
+# pixel sizes into physical millimetres, which is what actually governs
+# legibility on e-ink.
+#
+# color_scheme values match maverick.eink.palette.ColorScheme:
+#   mono, bwr, bwy, bwry, gray4, gray8, gray16, spectra6, acep7
+
+panels:
+
+  # ---------------------------------------------------------------- generic --
+  - id: generic-mono
+    name: Generic monochrome e-paper
+    vendor: generic
+    width: 800
+    height: 480
+    color_scheme: mono
+    dpi: 124
+    supports_partial: false
+    notes: Safe default when your panel is not listed. Override width/height.
+
+  # ------------------------------------------------- OpenDisplay / ESL tags --
+  - id: opendisplay-solum-2in6-bwr
+    name: Solum 2.6" BWR (OpenDisplay)
+    vendor: solum
+    width: 152
+    height: 296
+    color_scheme: bwr
+    dpi: 128
+    native_rotation: 270
+    default_transport: opendisplay
+    measured_palette: SOLUM_BWR
+    supports_partial: true
+    full_refresh_every: 12
+    notes: Common electronic shelf label reflashed with OpenDisplay firmware.
+
+  - id: opendisplay-solum-2in9-bwr
+    name: Solum 2.9" BWR (OpenDisplay)
+    vendor: solum
+    width: 296
+    height: 128
+    color_scheme: bwr
+    dpi: 111
+    default_transport: opendisplay
+    measured_palette: SOLUM_BWR
+    supports_partial: true
+    full_refresh_every: 12
+
+  - id: opendisplay-solum-4in2-bwr
+    name: Solum 4.2" BWR (OpenDisplay)
+    vendor: solum
+    width: 400
+    height: 300
+    color_scheme: bwr
+    dpi: 119
+    default_transport: opendisplay
+    measured_palette: SOLUM_BWR
+    supports_partial: true
+    full_refresh_every: 12
+
+  - id: opendisplay-solum-7in5-bwr
+    name: Solum 7.5" BWR (OpenDisplay)
+    vendor: solum
+    width: 800
+    height: 480
+    color_scheme: bwr
+    dpi: 124
+    default_transport: opendisplay
+    measured_palette: SOLUM_BWR
+    supports_partial: false
+
+  - id: opendisplay-mono-4in26
+    name: 4.26" Monochrome (OpenDisplay)
+    vendor: opendisplay
+    width: 800
+    height: 480
+    color_scheme: mono
+    dpi: 219
+    default_transport: opendisplay
+    measured_palette: MONO_4_26
+    supports_partial: true
+    full_refresh_every: 20
+
+  - id: opendisplay-spectra-7in3
+    name: Spectra 6 7.3" 6-colour (OpenDisplay)
+    vendor: opendisplay
+    width: 800
+    height: 480
+    color_scheme: spectra6
+    dpi: 128
+    default_transport: opendisplay
+    measured_palette: SPECTRA_7_3_6COLOR
+    supports_partial: false
+    notes: Full-colour Spectra 6. Refreshes are slow (~20s); schedule sparingly.
+
+  - id: opendisplay-flex-2in9
+    name: OpenDisplay Flex 2.9"
+    vendor: opendisplay
+    width: 296
+    height: 128
+    color_scheme: bwr
+    dpi: 111
+    default_transport: opendisplay
+    supports_partial: true
+    full_refresh_every: 12
+    notes: Has physical buttons exposed to HA as event entities.
+
+  - id: opendisplay-xiao-7in5
+    name: Seeed XIAO ePaper 7.5" (OpenDisplay)
+    vendor: seeed
+    width: 800
+    height: 480
+    color_scheme: mono
+    dpi: 124
+    default_transport: opendisplay
+    supports_partial: false
+
+  # ------------------------------------------------------ Waveshare / ESP32 --
+  - id: waveshare-2in13-mono
+    name: Waveshare 2.13" monochrome
+    vendor: waveshare
+    width: 250
+    height: 122
+    color_scheme: mono
+    dpi: 131
+    esphome_model: 2.13in-ttgo-b74
+    supports_partial: true
+    full_refresh_every: 20
+
+  - id: waveshare-2in9-mono
+    name: Waveshare 2.9" monochrome
+    vendor: waveshare
+    width: 296
+    height: 128
+    color_scheme: mono
+    dpi: 111
+    esphome_model: 2.90in
+    supports_partial: true
+    full_refresh_every: 20
+
+  - id: waveshare-4in2-mono
+    name: Waveshare 4.2" monochrome
+    vendor: waveshare
+    width: 400
+    height: 300
+    color_scheme: mono
+    dpi: 119
+    esphome_model: 4.20in
+    supports_partial: true
+    full_refresh_every: 20
+
+  - id: waveshare-4in2-bwr
+    name: Waveshare 4.2" black/white/red
+    vendor: waveshare
+    width: 400
+    height: 300
+    color_scheme: bwr
+    dpi: 119
+    esphome_model: 4.20in-bv2-bwr
+    supports_partial: false
+
+  - id: waveshare-7in5-mono
+    name: Waveshare 7.5" monochrome (V2)
+    vendor: waveshare
+    width: 800
+    height: 480
+    color_scheme: mono
+    dpi: 124
+    esphome_model: 7.50inV2
+    supports_partial: false
+    notes: The most common DIY HA dashboard panel.
+
+  - id: waveshare-7in5-bwr
+    name: Waveshare 7.5" black/white/red
+    vendor: waveshare
+    width: 800
+    height: 480
+    color_scheme: bwr
+    dpi: 124
+    esphome_model: 7.50in-bv2-bwr
+    supports_partial: false
+
+  - id: waveshare-5in65-acep
+    name: Waveshare 5.65" ACeP 7-colour
+    vendor: waveshare
+    width: 600
+    height: 448
+    color_scheme: acep7
+    dpi: 132
+    esphome_model: 5.65in-acep7
+    supports_partial: false
+    notes: Seven-colour ACeP. Refresh takes ~30s and is visually noisy.
+
+  - id: waveshare-7in3-spectra
+    name: Waveshare 7.3" Spectra 6
+    vendor: waveshare
+    width: 800
+    height: 480
+    color_scheme: spectra6
+    dpi: 128
+    supports_partial: false
+
+  - id: waveshare-10in3-gray16
+    name: Waveshare 10.3" 16-level greyscale
+    vendor: waveshare
+    width: 1872
+    height: 1404
+    color_scheme: gray16
+    dpi: 227
+    supports_partial: true
+    full_refresh_every: 10
+    notes: IT8951 controller. Greyscale depth makes it the best panel for dense dashboards.
+
+  - id: waveshare-13in3-gray16
+    name: Waveshare 13.3" 16-level greyscale
+    vendor: waveshare
+    width: 1600
+    height: 1200
+    color_scheme: gray16
+    dpi: 150
+    supports_partial: true
+    full_refresh_every: 10
+
+  - id: lilygo-t5-4in7
+    name: LilyGO T5 4.7" (16-level greyscale)
+    vendor: lilygo
+    width: 960
+    height: 540
+    color_scheme: gray16
+    dpi: 234
+    supports_partial: true
+    full_refresh_every: 10
+
+  # ---------------------------------------------------------- Pimoroni Inky --
+  - id: inky-phat-bwr
+    name: Pimoroni Inky pHAT (BWR)
+    vendor: pimoroni
+    width: 212
+    height: 104
+    color_scheme: bwr
+    dpi: 111
+    default_transport: mqtt
+    supports_partial: false
+
+  - id: inky-what-bwr
+    name: Pimoroni Inky wHAT (BWR)
+    vendor: pimoroni
+    width: 400
+    height: 300
+    color_scheme: bwr
+    dpi: 119
+    default_transport: mqtt
+    supports_partial: false
+
+  - id: inky-impression-5in7
+    name: Pimoroni Inky Impression 5.7" (7-colour)
+    vendor: pimoroni
+    width: 600
+    height: 448
+    color_scheme: acep7
+    dpi: 132
+    default_transport: mqtt
+    supports_partial: false
+
+  - id: inky-impression-7in3
+    name: Pimoroni Inky Impression 7.3" (Spectra 6)
+    vendor: pimoroni
+    width: 800
+    height: 480
+    color_scheme: spectra6
+    dpi: 128
+    default_transport: mqtt
+    supports_partial: false
+
+  # --------------------------------------------------- e-readers / TRMNL etc --
+  - id: kindle-paperwhite-3
+    name: Kindle Paperwhite 3 (jailbroken)
+    vendor: amazon
+    width: 1072
+    height: 1448
+    color_scheme: gray16
+    dpi: 300
+    default_transport: http_pull
+    default_format: png
+    supports_partial: false
+    notes: Pairs with the classic screensaver client. Serve via the HTTP pull transport.
+
+  - id: kindle-basic
+    name: Kindle 4/Touch (jailbroken)
+    vendor: amazon
+    width: 600
+    height: 800
+    color_scheme: gray16
+    dpi: 167
+    default_transport: http_pull
+    default_format: png
+
+  - id: kobo-clara
+    name: Kobo Clara HD (Nickel/KOReader)
+    vendor: kobo
+    width: 1072
+    height: 1448
+    color_scheme: gray16
+    dpi: 300
+    default_transport: http_pull
+    default_format: png
+
+  - id: trmnl-7in5
+    name: TRMNL 7.5" (BYOS)
+    vendor: trmnl
+    width: 800
+    height: 480
+    color_scheme: mono
+    dpi: 124
+    default_transport: http_pull
+    default_format: bmp
+    supports_partial: false
+    notes: Bring-your-own-server mode. Device polls the HTTP pull endpoint.
