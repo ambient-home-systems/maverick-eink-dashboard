@@ -110,7 +110,16 @@ def cmd_render(args: argparse.Namespace) -> int:
                             print(f"             {issue.hint}")
                     if args.out:
                         target = Path(args.out)
-                        if len(targets) > 1 or target.is_dir():
+                        # Treat --out as a directory when it plainly is one: more
+                        # than one display to write, an existing directory, a
+                        # trailing separator, or no file extension for Pillow to
+                        # infer a format from.
+                        if (
+                            len(targets) > 1
+                            or target.is_dir()
+                            or str(args.out).endswith(("/", os.sep))
+                            or not target.suffix
+                        ):
                             target.mkdir(parents=True, exist_ok=True)
                             target = target / f"{display_id}.png"
                         target.parent.mkdir(parents=True, exist_ok=True)
