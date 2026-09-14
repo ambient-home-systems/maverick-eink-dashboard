@@ -341,6 +341,10 @@ and a media path both processes can see — Maverick writes the PNG to
 `media_dir` (default `/media/maverick`) and Home Assistant reads it back from
 its media folder. See `src/maverick/transports/opendisplay.py:9-27`.
 
+Every topic, discovery payload, command word and state key is documented in
+[docs/reference/mqtt.md](docs/reference/mqtt.md), which is what to read if you
+are writing your own MQTT client rather than using Home Assistant.
+
 ## HTTP API
 
 Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
@@ -374,6 +378,10 @@ orders of magnitude more energy than the fetch. The response also carries
 `X-Maverick-Next-Refresh`, the number of seconds the device may sleep before
 asking again, taken from that display's schedule interval and defaulting to 900
 for cron schedules.
+
+[docs/reference/http-api.md](docs/reference/http-api.md) documents every route
+in full — request parameters, response keys, status codes, and the complete
+pull protocol a battery panel needs.
 
 ## Running as a service
 
