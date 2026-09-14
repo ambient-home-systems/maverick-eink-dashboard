@@ -218,6 +218,11 @@ Three things to know about the format:
 displays, one pulling over HTTP on a timer with quiet hours, one OpenDisplay
 tag re-rendering when an entity changes.
 
+[docs/reference/configuration.md](docs/reference/configuration.md) documents
+every key, with its type, default and what the code does with it, plus the
+options each transport takes. It is generated from the models, so it cannot
+drift from the software.
+
 ## Panels
 
 List everything in the catalogue:
@@ -477,7 +482,13 @@ listed, use `generic-mono` with `width` and `height` overrides.
 pip install -e ".[dev]"
 ruff check
 pytest
+python scripts/gen_docs.py --check   # the reference pages match the code
 ```
+
+`docs/reference/` is generated. Change a field in `src/maverick/config.py` — or
+the hand-written prose in `docs/reference/_configuration.intro.md` — then run
+`python scripts/gen_docs.py` and commit what it writes. Editing a generated page
+by hand is undone by the next run, and `--check` fails the build meanwhile.
 
 `MAVERICK_DEBUG=1` makes the CLI raise instead of printing a one-line error, so
 you get a traceback. See [CONTRIBUTING.md](CONTRIBUTING.md).

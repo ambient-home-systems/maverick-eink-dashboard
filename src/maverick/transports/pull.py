@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import ClassVar
 
 from ..eink import Frame
 from .base import DeliveryContext, DeliveryResult, Transport, register
@@ -38,6 +39,7 @@ class HttpPullTransport(Transport):
     name = "http_pull"
     pushes = False
     description = "Device fetches frames over HTTP (ESP32, ESPHome, Kindle, TRMNL)"
+    options_doc: ClassVar[dict[str, str]] = {}
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:
         store = context.services.get("frames")
@@ -71,6 +73,17 @@ class FileTransport(Transport):
     name = "file"
     pushes = True
     description = "Write frames to a directory (Kindle screensaver, Samba, debugging)"
+    options_doc: ClassVar[dict[str, str]] = {
+        "path": "Directory to write frames into, created if it does not exist. Default `./out`.",
+        "filename": (
+            "Name of the frame file. Unset uses the display id with an extension from the "
+            "frame format (`.png`, `.bmp`, or `.bin` for a raw layout)."
+        ),
+        "write_preview": (
+            "Also write `<display id>-preview.png`, a viewable render of the quantised "
+            "frame. Default false."
+        ),
+    }
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:
         directory = Path(self.option("path", "./out"))
@@ -108,6 +121,15 @@ class WebhookTransport(Transport):
     name = "webhook"
     pushes = True
     description = "POST frames to a custom HTTP endpoint"
+    options_doc: ClassVar[dict[str, str]] = {
+        "url": "Endpoint the frame is sent to.",
+        "method": "HTTP method. Default `POST`.",
+        "headers": (
+            "Extra request headers. `Content-Type`, `X-Maverick-Display` and "
+            "`X-Maverick-Checksum` are set for you unless you give them here."
+        ),
+        "timeout": "Request timeout in seconds. Default 30.",
+    }
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:
         import httpx
