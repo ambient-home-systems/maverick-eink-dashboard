@@ -19,6 +19,12 @@ something stale:
 Hand-written prose lives in ``docs/reference/_*.md`` and is included verbatim,
 so the generated page can say things the models cannot.
 
+``docs/reference/openapi.json`` is the odd one out: it is not Markdown but
+FastAPI's own description of the routes in :func:`maverick.server.api.create_app`,
+built here around an empty :class:`~maverick.config.Config` so it depends on no
+particular deployment. ``docs/reference/http-api.md`` is hand-written prose
+about the same routes and links to it.
+
 Usage::
 
     python scripts/gen_docs.py            # write the pages
@@ -30,6 +36,7 @@ from __future__ import annotations
 import argparse
 import ast
 import inspect
+import json
 import re
 import sys
 import textwrap
@@ -47,6 +54,7 @@ if str(ROOT / "src") not in sys.path:
 from pydantic import BaseModel  # noqa: E402
 from pydantic.fields import FieldInfo  # noqa: E402
 
+from maverick.app import Application  # noqa: E402
 from maverick.cli import build_parser  # noqa: E402
 from maverick.config import Config, DisplayConfig  # noqa: E402
 from maverick.devices import PanelProfile, panels_by_vendor  # noqa: E402
@@ -54,6 +62,7 @@ from maverick.eink.dither import DitherMode  # noqa: E402
 from maverick.eink.pack import FrameFormat  # noqa: E402
 from maverick.eink.palette import ColorScheme  # noqa: E402
 from maverick.eink.pipeline import FitMode  # noqa: E402
+from maverick.server.api import create_app  # noqa: E402
 from maverick.transports import available_transports  # noqa: E402
 from maverick.transports.base import Transport  # noqa: E402
 
@@ -822,6 +831,28 @@ def render_cli() -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
+# --------------------------------------------------------------------------- #
+# The OpenAPI document
+# --------------------------------------------------------------------------- #
+
+def render_openapi() -> str:
+    """FastAPI's own description of every route, as JSON.
+
+    Built around a default ``Config`` rather than anyone's config file, so the
+    document describes the routes themselves and not one deployment: with no
+    displays configured the path parameters stay generic and no base URL or
+    token leaks into the output.
+
+    The content is FastAPI's, so a FastAPI upgrade can legitimately change it
+    (the schema dialect, say). ``--check`` will fail; regenerating is the fix.
+    """
+    application = Application(Config())
+    document = create_app(application).openapi()
+    if not document.get("paths"):
+        raise GenerationError("create_app() produced an OpenAPI document with no paths")
+    return json.dumps(document, indent=2) + "\n"
+
+
 def read_include(name: str) -> str:
     path = DOCS / name
     if not path.exists():
@@ -838,6 +869,7 @@ PAGES: dict[str, Any] = {
     "panels.md": render_panels,
     "transports.md": render_transports_page,
     "cli.md": render_cli,
+    "openapi.json": render_openapi,
 }
 
 

@@ -10,6 +10,7 @@ it. `python scripts/gen_docs.py` fixes every failure here.
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 GENERATOR = ROOT / "scripts" / "gen_docs.py"
 REFERENCE = ROOT / "docs" / "reference" / "configuration.md"
+OPENAPI = ROOT / "docs" / "reference" / "openapi.json"
+HTTP_API = ROOT / "docs" / "reference" / "http-api.md"
 EXAMPLE = ROOT / "config.example.yaml"
 
 
@@ -125,3 +128,19 @@ def test_every_example_config_key_appears_in_the_reference() -> None:
 def test_required_keys_are_marked(required: str) -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     assert f"| `{required}` | `str` | **required** |" in text
+
+
+def test_every_route_is_documented() -> None:
+    """A new route must reach docs/reference/http-api.md, not just openapi.json.
+
+    The OpenAPI document is generated, so it follows `create_app` on its own.
+    The prose page is hand-written, and this is what stops a route being added
+    without anyone describing what it returns.
+    """
+    document = json.loads(OPENAPI.read_text(encoding="utf-8"))
+    page = HTTP_API.read_text(encoding="utf-8")
+    missing = sorted(path for path in document["paths"] if f"`{path}`" not in page)
+    assert not missing, (
+        "docs/reference/http-api.md does not mention these routes: "
+        f"{missing}. Document them, then run `python scripts/gen_docs.py`."
+    )
