@@ -263,6 +263,33 @@ class TransportConfig(Base):
     type: str = "http_pull"
 
 
+class EsphomeConfig(Base):
+    """Inputs for the generated ESPHome configuration.
+
+    Only needed if you want Maverick to write the device firmware config for
+    you. Pin defaults match the most common wiring for an ESP32 devkit driving
+    a Waveshare panel via the vendor's HAT.
+    """
+
+    board: str = "esp32dev"
+    #: Wiring. Override per board; the defaults are the Waveshare ESP32 driver
+    #: board pinout, which is what most people actually have.
+    clk_pin: str = "GPIO13"
+    mosi_pin: str = "GPIO14"
+    cs_pin: str = "GPIO15"
+    dc_pin: str = "GPIO27"
+    busy_pin: str = "GPIO25"
+    reset_pin: str = "GPIO26"
+    #: Sleep between fetches instead of staying awake. Essential on battery,
+    #: and it means the device is unreachable between wakes.
+    deep_sleep: bool = False
+    #: Bytes reserved for the downloaded frame. Too small and the fetch fails;
+    #: generated from the panel size when left at 0.
+    buffer_size: int = 0
+    verify_ssl: bool = False
+    node_name: str | None = None
+
+
 class DisplayConfig(Base):
     """One physical panel."""
 
@@ -286,6 +313,7 @@ class DisplayConfig(Base):
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     transport: TransportConfig = Field(default_factory=TransportConfig)
     pack: PackOptionsConfig = Field(default_factory=lambda: PackOptionsConfig())
+    esphome: EsphomeConfig = Field(default_factory=lambda: EsphomeConfig())
 
     @field_validator("id")
     @classmethod
@@ -434,5 +462,6 @@ DisplayConfig.model_rebuild()
 __all__ = [
     "Config", "DisplayConfig", "ResolvedDisplay", "HomeAssistantConfig", "MqttConfig",
     "ServerConfig", "ThemeConfig", "ImageConfig", "RenderConfig", "ScheduleConfig",
-    "TransportConfig", "PackOptionsConfig", "load_config", "ConfigError", "parse_duration",
+    "TransportConfig", "PackOptionsConfig", "EsphomeConfig", "load_config", "ConfigError",
+    "parse_duration",
 ]
