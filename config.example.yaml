@@ -17,10 +17,16 @@ home_assistant:
   # served from — scheme, host and port. A mismatch renders the login page
   # instead of your dashboard.
   url: http://homeassistant.local:8123
-  # CHANGE ME. A long-lived access token from your profile -> Security.
-  # The supervisor token will not work: it authenticates the REST API but not
-  # the frontend, and rendering a dashboard needs a frontend session.
+  # CHANGE ME, unless you link an account from the setup UI instead (press
+  # 'Link with Home Assistant' there and leave this empty).
+  # A long-lived access token from your profile -> Security. The supervisor
+  # token will not work: it authenticates the REST API but not the frontend,
+  # and rendering a dashboard needs a frontend session.
   token: ${HA_TOKEN}
+  # Written by the setup UI when you link an account. The two work as a pair,
+  # and take precedence over `token`.
+  # refresh_token: ${HA_REFRESH_TOKEN}
+  # client_id: http://192.168.1.10:5000/
   # Set false for a self-signed certificate.
   verify_ssl: true
   # Only if the frontend lives somewhere other than `url` — a reverse proxy,

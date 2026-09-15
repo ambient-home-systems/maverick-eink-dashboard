@@ -93,9 +93,16 @@ Python and Chromium, so none of this applies there.
   Maverick reads `MAVERICK_CHROMIUM_PATH` when it launches the browser
   (`src/maverick/render/browser.py:51-56`).
 
-- **A Home Assistant long-lived access token**, created under your profile →
-  Security. A supervisor token will not do: it authenticates the REST API but
-  not the frontend, and rendering a dashboard needs a frontend session.
+- **A Home Assistant credential that authenticates a frontend session.** A
+  supervisor token will not do: it authenticates the REST API but not the
+  frontend, and rendering a dashboard needs a frontend session.
+
+  The easy way is to press **Link with Home Assistant** in Maverick's setup UI,
+  which runs the same authorization flow the companion apps use and needs
+  nothing copied by hand (`src/maverick/ha/auth.py`). It requires
+  `server.base_url` to be set, because that is where Home Assistant redirects
+  back to. Otherwise, create a long-lived access token under your profile →
+  Security and set `home_assistant.token`.
 
   One rule matters more than any other here. `home_assistant.url` must be the
   exact origin your frontend is served from — scheme, host and port. The
@@ -511,7 +518,9 @@ home assistant: FAILED — Home Assistant rejected the token (401). Long-lived a
 
 Create a new long-lived access token under your profile → Security, on the
 instance you are pointing at. A token from another instance, or a supervisor
-token, will not work.
+token, will not work. If you linked an account rather than pasting a token, the
+message names that case instead and the fix is to link again — refresh tokens
+appear in the same profile page and can be deleted there.
 
 **3. Chromium will not start.**
 

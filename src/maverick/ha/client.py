@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 
 from ..config import HomeAssistantConfig
+from .auth import TokenSource, build_token_source
 
 log = logging.getLogger(__name__)
 
@@ -31,25 +32,57 @@ class HomeAssistantError(RuntimeError):
     """A Home Assistant call failed."""
 
 
+class _BearerAuth(httpx.Auth):
+    """Attach a bearer token resolved at request time.
+
+    httpx calls the sync flow unless the async one is defined, and resolving a
+    token may need a network round trip, so only the async flow is implemented.
+    """
+
+    def __init__(self, resolve: Callable[[], Awaitable[str]]) -> None:
+        self._resolve = resolve
+
+    async def async_auth_flow(self, request: httpx.Request) -> Any:
+        request.headers["Authorization"] = f"Bearer {await self._resolve()}"
+        yield request
+
+
 class HomeAssistantClient:
     """Thin async client over the HA REST and WebSocket APIs."""
 
-    def __init__(self, config: HomeAssistantConfig) -> None:
+    def __init__(
+        self, config: HomeAssistantConfig, tokens: TokenSource | None = None
+    ) -> None:
         self._config = config
+        self._tokens = tokens or build_token_source(config)
         self._client: httpx.AsyncClient | None = None
 
     @property
     def config(self) -> HomeAssistantConfig:
         return self._config
 
+    @property
+    def tokens(self) -> TokenSource | None:
+        return self._tokens
+
+    async def _access_token(self) -> str:
+        if self._tokens is None:
+            raise HomeAssistantError(
+                "No Home Assistant credential configured. Open Maverick's setup "
+                "UI and use 'Link with Home Assistant', or set "
+                "home_assistant.token to a long-lived access token."
+            )
+        return await self._tokens.token()
+
     async def _http(self) -> httpx.AsyncClient:
+        # The Authorization header cannot be baked into the client any more: a
+        # linked account's access token expires every 30 minutes, so it is
+        # attached per request from whatever the token source holds now.
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self._config.url,
-                headers={
-                    "Authorization": f"Bearer {self._config.token}",
-                    "Content-Type": "application/json",
-                },
+                headers={"Content-Type": "application/json"},
+                auth=_BearerAuth(self._access_token),
                 verify=self._config.verify_ssl,
                 timeout=30.0,
             )
@@ -63,11 +96,12 @@ class HomeAssistantClient:
     # ---------------------------------------------------------------- REST --
 
     async def check(self) -> dict[str, Any]:
-        """Verify the URL and token. Raises with an actionable message."""
-        if not self._config.token:
+        """Verify the URL and credential. Raises with an actionable message."""
+        if self._tokens is None:
             raise HomeAssistantError(
-                "No Home Assistant token configured. Create a long-lived access "
-                "token under your profile -> Security, and set "
+                "No Home Assistant credential configured. Open Maverick's setup "
+                "UI and use 'Link with Home Assistant', or create a long-lived "
+                "access token under your profile -> Security and set "
                 "home_assistant.token."
             )
         client = await self._http()
@@ -81,6 +115,10 @@ class HomeAssistantClient:
             raise HomeAssistantError(
                 "Home Assistant rejected the token (401). Long-lived access "
                 "tokens are bound to the instance that issued them."
+                if self._tokens.kind == "long-lived token"
+                else "Home Assistant rejected the token (401). The linked "
+                "account may have been revoked under profile -> Security; "
+                "link it again from Maverick's setup UI."
             )
         response.raise_for_status()
         return response.json()
@@ -189,7 +227,9 @@ class HomeAssistantClient:
         greeting = json.loads(await socket.recv())
         if greeting.get("type") != "auth_required":
             raise HomeAssistantError(f"unexpected WebSocket greeting: {greeting}")
-        await socket.send(json.dumps({"type": "auth", "access_token": self._config.token}))
+        await socket.send(
+            json.dumps({"type": "auth", "access_token": await self._access_token()})
+        )
         result = json.loads(await socket.recv())
         if result.get("type") != "auth_ok":
             raise HomeAssistantError(

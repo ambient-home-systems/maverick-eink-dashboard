@@ -155,20 +155,41 @@ value, with a "did you mean" suggestion in the message itself.
 `HomeAssistantClient` and always caught by its caller — it never crashes the
 process, but it is why rendering then fails.
 
-### The token
+### The credential
+
+Maverick accepts two, and both authenticate a browser session rather than just
+the REST API (`src/maverick/config.py`, `HomeAssistantConfig`): a long-lived
+access token in `home_assistant.token`, or a linked account
+(`home_assistant.refresh_token` plus `home_assistant.client_id`) obtained by
+the setup UI's **Link with Home Assistant** button.
 
 ```text
-No Home Assistant token configured. Create a long-lived access token under your profile -> Security, and set home_assistant.token.
+No Home Assistant credential configured. Open Maverick's setup UI and use 'Link with Home Assistant', or create a long-lived access token under your profile -> Security and set home_assistant.token.
 ```
 
 **Where:** raised inside `HomeAssistantClient.check()`. Both current callers
-(`maverick check` and `Engine.start()`) check `home_assistant.token` first and
-skip calling `check()` when it is empty, printing the shorter warning below
+(`maverick check` and `Engine.start()`) test for a credential first and skip
+calling `check()` when there is none, printing the shorter warning below
 instead — so you are more likely to meet those. This message is the guard
 inside `check()` itself, for any future or scripted caller.
-**Fix:** create a long-lived access token (your Home Assistant profile →
-Security → Long-lived access tokens) and set
+**Fix:** open the setup UI and press **Link with Home Assistant**, or create a
+long-lived access token (your Home Assistant profile → Security → Long-lived
+access tokens) and set
 [`home_assistant.token`](reference/configuration.md#home_assistant).
+
+```text
+No Home Assistant credential configured. Open Maverick's setup UI and use 'Link with Home Assistant', or set home_assistant.token to a long-lived access token.
+```
+
+**Where:** raised by `HomeAssistantClient` when a REST or WebSocket call needs
+a token and none is configured. Same fix as above.
+
+```text
+No Home Assistant credential configured. Open Maverick's setup UI and use 'Link with Home Assistant', or set home_assistant.token.
+```
+
+**Where:** `RenderError` from `build_auth_bundle()`, so it names the display it
+failed for. Same fix as above.
 
 ```text
 home assistant: no token configured — rendering will fail
@@ -177,11 +198,21 @@ home assistant: no token configured — rendering will fail
 **Where:** CLI, printed by `maverick check`.
 
 ```text
-no Home Assistant token configured — dashboard rendering will fail until home_assistant.token is set
+no Home Assistant credential configured — dashboard rendering will fail until an account is linked from the setup UI or home_assistant.token is set
 ```
 
-**Where:** log (warning), from `Engine.start()` at every startup while the
-token is empty. **Surfaces:** log only.
+**Where:** log (warning), from `Engine.start()` at every startup while no
+credential is configured. **Surfaces:** log only. The service still starts, on
+purpose: the setup UI is how you link an account, and it has to be reachable
+to do that.
+
+```text
+No Home Assistant credential to apply.
+```
+
+**Where:** raised by `Engine.relink()`, which the setup UI calls after a
+successful link. Reaching it means the exchange produced no usable credential
+— retry the link.
 
 ```text
 Home Assistant rejected the token (401). Long-lived access tokens are bound to the instance that issued them.
@@ -191,6 +222,15 @@ Home Assistant rejected the token (401). Long-lived access tokens are bound to t
 token copied from a different Home Assistant, or a supervisor token.
 **Fix:** create a new token on the exact instance `home_assistant.url` points
 at.
+
+```text
+Home Assistant rejected the token (401). The linked account may have been revoked under profile -> Security; link it again from Maverick's setup UI.
+```
+
+**Cause:** the same 401, but against a linked account rather than a pasted
+token. Refresh tokens appear in Home Assistant's profile page alongside
+long-lived tokens and can be deleted there.
+**Fix:** press **Link with Home Assistant** again.
 
 ### Reachability
 
@@ -298,7 +338,7 @@ silently rendering without it.
 ```
 
 ```text
-[{display.id}] Home Assistant showed the login form. Check home_assistant.token is a long-lived access token.
+[{display.id}] Home Assistant showed the login form. The credential was rejected: re-link the account from the setup UI, or check home_assistant.token is a long-lived access token.
 ```
 
 **Cause (both):** the frontend never accepted the seeded `hassTokens` bundle

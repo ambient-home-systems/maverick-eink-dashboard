@@ -11,7 +11,10 @@
 
 home_assistant:
   url: ${HA_URL}
-  token: ${HA_TOKEN}
+  token: ${HA_TOKEN:-}
+  # Set by 'Link with Home Assistant' in the web UI; leave them alone.
+  refresh_token: ${HA_REFRESH_TOKEN:-}
+  client_id: ${HA_CLIENT_ID:-}
 
 mqtt:
   enabled: ${MQTT_ENABLED:-false}

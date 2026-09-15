@@ -43,11 +43,15 @@ different layer.
   so the card appears without the manual "add resource" step — the most common
   failure in custom-card installs.
 
-**On the token problem:** an add-on would still need a long-lived token, because
-the supervisor token authenticates the REST API but not the frontend, which is
-the constraint the renderer already lives with. The cleanest path is the
-integration's config flow asking once and pushing it to the add-on over the
-Supervisor API, so nobody copies a secret between two places.
+**On the token problem:** *(largely solved — see
+[`src/maverick/ha/auth.py`](../src/maverick/ha/auth.py))* the supervisor token
+still cannot authenticate the frontend, so an app still needs a real user
+credential. But it no longer has to be copied by hand: the setup UI runs Home
+Assistant's IndieAuth flow itself and writes the result back to the app's own
+options through the Supervisor, which every app may do without extra
+permission. An integration's config flow would still be a tidier home for this,
+and would cover the case where `server.base_url` is not reachable from the
+user's browser, but the copy-a-secret-between-two-places problem is gone.
 
 ## Decision 2 — Authoring e-ink dashboards
 

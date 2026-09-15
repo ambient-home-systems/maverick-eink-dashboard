@@ -65,6 +65,21 @@ function authHeaders(){
   const t = new URLSearchParams(location.search).get('token');
   return t ? {'Authorization': 'Bearer ' + t} : {};
 }
+// The authorize URL is fetched rather than linked so the API token (when one
+// is set) travels in a header, and so a misconfigured base_url reports itself
+// here instead of on a Home Assistant error page.
+async function startLink(btn){
+  btn.disabled = true; btn.textContent = 'Opening Home Assistant…';
+  try {
+    const r = await fetch('/api/auth/start', {headers: authHeaders()});
+    const body = await r.json();
+    if(!r.ok) throw new Error(body.detail || 'could not start linking');
+    location.href = body.authorize_url;
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Link with Home Assistant';
+    alert(e.message);
+  }
+}
 async function refresh(id, force, btn){
   btn.disabled = true; const label = btn.textContent; btn.textContent = 'Rendering…';
   try {
@@ -175,6 +190,11 @@ def render_ui(application: Application) -> str:
     ha_state = "connected" if ha_connected else "not connected"
     mqtt_state = "connected" if mqtt_connected else "off"
 
+    # The link panel goes first: with no credential nothing else on the page
+    # can work, and "not connected" in the header is not an instruction.
+    if not ha_connected:
+        cards.insert(0, _link_card(application))
+
     summary = json.dumps(
         {
             "displays": len(config.displays),
@@ -199,6 +219,64 @@ def render_ui(application: Application) -> str:
 <main>{"".join(cards)}</main>
 <script>const SUMMARY={summary};{_JS}</script>
 </body></html>"""
+
+
+def _link_card(application: Application) -> str:
+    """The 'Link with Home Assistant' panel, shown until a credential works.
+
+    Maverick needs a credential that authenticates a *browser session*, not
+    just the REST API, because it renders the real dashboard rather than
+    redrawing it from entity states — which is why the supervisor token an app
+    gets for free is not enough. The IndieAuth flow gets one without the user
+    copying a secret by hand; the manual route stays documented underneath for
+    anyone whose `base_url` cannot be reached from their browser.
+    """
+    from ..ha import auth as ha_auth
+
+    ha = application.config.home_assistant
+    base_url = application.config.server.base_url
+
+    blocker = ""
+    if not base_url:
+        blocker = (
+            "Set <code>base_url</code> first — Home Assistant has to redirect "
+            "back to Maverick, and that is the address it will use."
+        )
+    else:
+        try:
+            ha_auth.client_id_for(base_url)
+        except ha_auth.AuthError:
+            blocker = (
+                f"<code>base_url</code> is {html.escape(base_url)}, which is not "
+                "an http(s) URL Home Assistant can redirect back to."
+            )
+
+    if blocker:
+        action = f"<div class='meta warn'>{blocker}</div>"
+    else:
+        action = (
+            "<div class='row'>"
+            "<button onclick='startLink(this)'>Link with Home Assistant</button>"
+            "</div>"
+            "<div class='meta'>Opens Home Assistant, asks you to log in once, "
+            "and comes back. Nothing to copy.</div>"
+        )
+
+    return f"""
+<section class="card">
+  <h2>Home Assistant <span class="pill err">not connected</span></h2>
+  <div class="meta">
+    Maverick renders your real dashboard in a browser, so it needs a login
+    session for <code>{html.escape(ha.url)}</code> — not just API access. The
+    app's own supervisor token cannot provide one.
+  </div>
+  {action}
+  <div class="meta">
+    Prefer to do it by hand? Create a long-lived access token under your Home
+    Assistant profile &rarr; Security, and set <code>home_assistant.token</code>
+    (the <code>home_assistant_token</code> option in the app).
+  </div>
+</section>"""
 
 
 def _sev_class(severity: str) -> str:

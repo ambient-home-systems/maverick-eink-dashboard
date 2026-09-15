@@ -106,15 +106,23 @@ involvement, and defaults to the values in the tables below.
 
 How to reach Home Assistant.
 
-Both values come from the config file, or from ``${HA_TOKEN}``-style
-environment substitution. ``token`` must be a long-lived access token: the
-supervisor token authenticates against the REST API but not the frontend,
-and rendering a dashboard requires a frontend session.
+Values come from the config file, or from ``${HA_TOKEN}``-style environment
+substitution. Whatever authenticates has to be good for a *frontend*
+session, not just the REST API: rendering a dashboard means loading it in a
+browser, and the supervisor token does not give a browser a session.
+
+Two credentials satisfy that. ``token`` is a long-lived access token copied
+from a profile page. ``refresh_token`` with ``client_id`` is an IndieAuth
+grant, which the setup UI obtains for itself — see
+`src/maverick/ha/auth.py`. A linked account takes precedence when both are
+present.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `url` | `str` | `"http://homeassistant.local:8123"` | Base URL of Home Assistant, used for the REST and WebSocket APIs and, unless `frontend_url` is set, for loading the dashboard in the browser. |
-| `token` | `str` | `""` | Long-lived access token from a Home Assistant profile. The supervisor token does not work: it authenticates the REST API but not the frontend, and rendering a dashboard needs a frontend session. |
+| `token` | `str` | `""` | Long-lived access token from a Home Assistant profile. The supervisor token does not work: it authenticates the REST API but not the frontend, and rendering a dashboard needs a frontend session. Leave empty to link an account from the setup UI instead. |
+| `refresh_token` | `str` | `""` | IndieAuth refresh token, normally obtained by the setup UI's *Link with Home Assistant* button rather than written by hand. Needs `client_id` set too, and takes precedence over `token`. |
+| `client_id` | `str` | `""` | The client identifier `refresh_token` was issued to, which Home Assistant requires on every refresh. The setup UI uses `server.base_url`. |
 | `verify_ssl` | `bool` | `true` | Verify Home Assistant's TLS certificate. False also tells the renderer to ignore certificate errors, which is what a self-signed certificate needs. |
 | `frontend_url` | `str` \| `None` | *unset* | Used only when rendering, if the frontend must be reached on a different host than the API (reverse proxies, add-on networking). |
 

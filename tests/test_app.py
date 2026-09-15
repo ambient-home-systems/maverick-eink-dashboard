@@ -90,6 +90,8 @@ def test_starter_config_loads(monkeypatch, mqtt: str) -> None:
     values = {
         "HA_URL": "http://homeassistant:8123",
         "HA_TOKEN": "test-token",
+        "HA_REFRESH_TOKEN": "",
+        "HA_CLIENT_ID": "",
         "MAVERICK_LOG_LEVEL": "debug",
         "MAVERICK_API_TOKEN": "",
         "MAVERICK_BASE_URL": "http://192.168.1.10:5000",

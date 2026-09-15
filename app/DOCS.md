@@ -30,9 +30,16 @@ project still say add-on; the two words mean the same thing.
 2. Open **Maverick** in the store and install it. There is no pre-built image
    yet, so the Supervisor builds one on your machine. Expect a few minutes and
    a few hundred megabytes: Debian's Chromium is most of it.
-3. On the **Configuration** tab, paste a **long-lived access token**. Create it
-   under your user profile, **Security** tab. Nothing else is required.
-4. **Start** the app, then open **Web UI**.
+3. **Start** the app and open its **Web UI**.
+4. Press **Link with Home Assistant**. You will be asked to log in once, and
+   sent straight back. That is the whole setup.
+
+   Rendering needs a *frontend* session, which the Supervisor's own token
+   cannot open, so the app has to hold a credential of its own. Linking obtains
+   one through the same authorization flow the companion apps use, and saves it
+   to this app's options for you. If you would rather do it by hand, paste a
+   long-lived access token (your user profile, **Security** tab) into
+   `home_assistant_token` on the **Configuration** tab instead.
 
 The first start writes `maverick.yaml`, with one example display, into the
 app's configuration folder. Edit it to describe your panels and restart the
@@ -43,7 +50,9 @@ app; see [The configuration file](#the-configuration-file).
 | Option | Required | Default | What it does |
 | --- | --- | --- | --- |
 | `home_assistant_url` | yes | `http://homeassistant:8123` | The origin the app loads dashboards from. Inside the app network, `homeassistant` is Home Assistant Core. Change it only if Home Assistant is served over HTTPS or on another port; it must match the origin the frontend is loaded from, scheme and port included, or every render becomes a login page and is refused. |
-| `home_assistant_token` | yes | | A long-lived access token from your profile's Security tab. Rendering needs a frontend session, and the Supervisor's own token cannot open one. |
+| `home_assistant_token` | no | | A long-lived access token from your profile's Security tab. Rendering needs a frontend session, and the Supervisor's own token cannot open one. Leave it empty and use **Link with Home Assistant** in the Web UI instead. |
+| `home_assistant_refresh_token` | no | | Written for you when you link an account. No need to touch it; clear it to unlink. |
+| `home_assistant_client_id` | no | | Written alongside the refresh token. Home Assistant needs it to renew the session, so the two only work as a pair. |
 | `log_level` | yes | `info` | `debug`, `info`, `warning` or `error`. |
 | `base_url` | no | derived | Where panels that pull frames (`http_pull`) should fetch from, reachable *from the panel*, for example `http://192.168.1.10:5000`. Left empty, the app uses the host's first IPv4 address on port 5000 and says so in the log. |
 | `api_token` | no | | Gates the render and frame endpoints. Panels and `rest_command`s must then send it as `Authorization: Bearer`, `Access-Token` or `?token=`. |
@@ -136,8 +145,19 @@ needs an adapter the process can see and is not supported inside the app.
 
 ## Troubleshooting
 
-**The app stops at once with "home_assistant_token is empty".** Paste a token
-on the Configuration tab and start it again.
+**The log warns "No Home Assistant credential yet".** The app starts anyway, on
+purpose — linking happens in the Web UI, so it has to be reachable first. Open
+the Web UI and press **Link with Home Assistant**.
+
+**The Web UI says it cannot link.** Home Assistant has to redirect back to the
+app, so it needs an address to redirect to. Set the `base_url` option to
+something reachable from your browser, for example `http://192.168.1.10:5000`,
+and restart.
+
+**Linking worked but the log says it could not be saved.** The credential is
+live for this run but was not written to the app options, so it will be lost on
+restart. The message names the Supervisor error; retry after a restart, or
+paste a long-lived token into `home_assistant_token` instead.
 
 **Every render is refused as a login page.** The log says
 `Home Assistant redirected to the login page` or `showed the login form`.

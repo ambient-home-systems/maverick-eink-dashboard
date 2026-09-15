@@ -23,6 +23,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from ..app import VERSION, Application
 from ..devices import all_panels
+from ..ha import auth as ha_auth
+from ..ha import supervisor
 from ..transports import available_transports
 from .ui import render_ui
 
@@ -300,6 +302,147 @@ def create_app(application: Application) -> FastAPI:
             }
         )
 
+    # --------------------------------------------------------------- link --
+    #
+    # The IndieAuth flow that gets Maverick a Home Assistant credential without
+    # the user copying a secret between two pages. Three steps: report what we
+    # have, bounce the browser to Home Assistant, take the code back.
+
+    #: Outstanding authorization attempts, nonce -> the client_id it was started
+    #: with. Home Assistant requires the token exchange to present the same
+    #: client_id as the authorize step, and `server.base_url` could change in
+    #: between, so it is remembered rather than recomputed. Kept in memory on
+    #: purpose: a nonce that does not survive a restart cannot be replayed
+    #: after one.
+    pending_links: dict[str, str] = {}
+
+    @api.get("/api/auth/status")
+    async def auth_status() -> dict[str, Any]:
+        ha = application.config.home_assistant
+        source = application.engine.tokens
+        base_url = application.config.server.base_url
+        reason = ""
+        if not base_url:
+            reason = (
+                "server.base_url is not set, so Maverick does not know which URL "
+                "to ask Home Assistant to redirect back to."
+            )
+        else:
+            try:
+                ha_auth.client_id_for(base_url)
+            except ha_auth.AuthError as exc:
+                reason = str(exc)
+        return {
+            "linked": source is not None,
+            "kind": source.kind if source else "none",
+            "connected": application.engine.ha is not None,
+            "url": ha.url,
+            "can_link": not reason,
+            "reason": reason,
+            "client_id": ha_auth.client_id_for(base_url) if not reason else "",
+            "persists": supervisor.running_under_supervisor(),
+        }
+
+    @api.get("/api/auth/start", dependencies=[auth])
+    async def auth_start() -> Response:
+        base_url = application.config.server.base_url
+        if not base_url:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "server.base_url must be set before linking, because Home "
+                    "Assistant redirects back to it. In the app, set the "
+                    "base_url option."
+                ),
+            )
+        try:
+            client_id = ha_auth.client_id_for(base_url)
+            redirect_uri = ha_auth.redirect_uri_for(base_url)
+        except ha_auth.AuthError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        import secrets
+
+        nonce = secrets.token_urlsafe(24)
+        # One attempt at a time; a stale nonce from an abandoned attempt would
+        # otherwise stay valid indefinitely.
+        pending_links.clear()
+        pending_links[nonce] = client_id
+        target = ha_auth.authorize_url(
+            application.config.home_assistant.url, client_id, redirect_uri, nonce
+        )
+        return JSONResponse({"authorize_url": target})
+
+    @api.get("/api/auth/callback", response_class=HTMLResponse)
+    async def auth_callback(
+        code: str = "", state: str = "", error: str = ""
+    ) -> HTMLResponse:
+        """Where Home Assistant sends the browser back.
+
+        Home Assistant knows nothing of ``server.api_token``, so this endpoint
+        cannot sit behind it. The ``state`` nonce is what authenticates the
+        callback: it was minted by ``/api/auth/start``, which *is* behind the
+        token, and it is spent on first use.
+        """
+        if error:
+            return _link_result(f"Home Assistant refused the request: {error}", False)
+        client_id = pending_links.pop(state, None)
+        if client_id is None:
+            return _link_result(
+                "This link attempt is not one Maverick started, or it has already "
+                "been used. Start again from the setup UI.",
+                False,
+            )
+        if not code:
+            return _link_result("Home Assistant returned no authorization code.", False)
+
+        ha = application.config.home_assistant
+        try:
+            grant = await ha_auth.exchange_code(
+                ha.url, client_id, code, verify_ssl=ha.verify_ssl
+            )
+        except ha_auth.AuthError as exc:
+            return _link_result(str(exc), False)
+
+        # Apply first, persist second: a credential that works but was not
+        # written down is recoverable by linking again, whereas one written
+        # down without being checked leaves a broken app that looks configured.
+        ha.refresh_token = grant.refresh_token
+        ha.client_id = client_id
+        ha.token = ""
+        try:
+            await application.engine.relink()
+        except Exception as exc:  # noqa: BLE001 - reported to the user's browser
+            return _link_result(f"Linked, but Home Assistant rejected it: {exc}", False)
+
+        note = ""
+        if supervisor.running_under_supervisor():
+            try:
+                await supervisor.save_options(
+                    {
+                        "home_assistant_refresh_token": grant.refresh_token,
+                        "home_assistant_client_id": client_id,
+                        "home_assistant_token": "",
+                    }
+                )
+            except supervisor.SupervisorError as exc:
+                log.warning("could not save the credential to the app options: %s", exc)
+                note = (
+                    "The link works now, but it could not be saved to the app "
+                    f"options ({exc}), so it will be lost on restart."
+                )
+        else:
+            # Not under the Supervisor, so there is no options store to write
+            # to. The user owns the config file; show them what to put in it.
+            note = (
+                "Maverick is not running as a Home Assistant app, so there is "
+                "nowhere to save this automatically. To keep the link across "
+                "restarts, put this in your config file under home_assistant:\n"
+                f"  refresh_token: {grant.refresh_token}\n"
+                f"  client_id: {client_id}"
+            )
+        return _link_result("Linked to Home Assistant.", True, note)
+
     # ----------------------------------------------------------------- UI --
 
     @api.get("/", response_class=HTMLResponse)
@@ -315,6 +458,34 @@ def create_app(application: Application) -> FastAPI:
 
 
 # --------------------------------------------------------------- helpers --
+
+def _link_result(message: str, ok: bool, note: str = "") -> HTMLResponse:
+    """The page Home Assistant's redirect lands on.
+
+    Standalone rather than part of the setup UI: it is reached by a redirect
+    from another origin, and it has to say something useful even when the whole
+    reason the user is here is that nothing is connected yet.
+    """
+    import html as _html
+
+    colour = "#2c6e3f" if ok else "#a3271f"
+    # pre-wrap because the standalone note carries the YAML to paste, and HTML
+    # would otherwise collapse it onto one line.
+    body = (
+        f"<p style='white-space:pre-wrap'>{_html.escape(note)}</p>" if note else ""
+    )
+    return HTMLResponse(
+        "<!doctype html><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Maverick</title>"
+        "<body style=\"font:15px/1.6 ui-sans-serif,system-ui,sans-serif;"
+        'margin:0;padding:48px 24px;max-width:38em">'
+        f"<h1 style=\"font-size:20px;color:{colour}\">{_html.escape(message)}</h1>"
+        f"{body}"
+        "<p><a href='/'>Back to Maverick</a></p></body>",
+        status_code=200 if ok else 400,
+    )
+
 
 def _lookup(application: Application, display_id: str):
     try:
