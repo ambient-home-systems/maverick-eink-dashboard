@@ -1,7 +1,7 @@
 # Home Assistant app manifest.
 # https://developers.home-assistant.io/docs/apps/configuration
 name: Maverick
-version: "0.2.4"
+version: "0.2.5"
 slug: maverick
 description: Render Home Assistant dashboards to e-ink panels, monochrome and colour, scheduled or automation-driven
 url: https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/app/DOCS.md
@@ -24,9 +24,11 @@ ports_description:
 # a remote connection (Nabu Casa, a reverse proxy). The app linter rejects
 # `webui` once ingress is enabled, since the button always uses ingress then.
 # Panels that pull frames still reach the app directly on the published port
-# below; only the button's target changes. Every path the UI emits is
-# already host-relative (src/maverick/server/ui.py), so it needs no code
-# changes to work behind the Supervisor's path-based ingress proxy.
+# below; only the button's target changes. The UI emits every URL relative to
+# the document (src/maverick/server/ui.py), which is what survives the prefix:
+# the Supervisor strips it before proxying and sends no X-Ingress-Path, so a
+# root-relative path would resolve against Home Assistant's own origin and
+# never reach the app.
 ingress: true
 ingress_port: 5000
 map:

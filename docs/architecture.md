@@ -353,11 +353,12 @@ assume works.
   catalogue — resolution, native rotation, refresh timing, measured ink values,
   ghosting cadence — comes from documentation, not a bench. No transport has
   been exercised end to end against real hardware.
-- **There is no custom integration, and the app has no ingress.** The Home
-  Assistant app ([`app/`](../app/DOCS.md)) packages the service with Chromium
-  and exposes port 5000; there is no sidebar entry, no config flow, no HACS
-  listing and no `maverick.*` actions. Outside the app, Maverick is a
-  standalone service that talks to Home Assistant over its APIs.
+- **There is no custom integration.** The Home Assistant app
+  ([`app/`](../app/DOCS.md)) packages the service with Chromium, exposes port
+  5000 and serves its setup UI through ingress (`app/config.yaml`), but there
+  is no sidebar panel, no config flow, no HACS listing and no `maverick.*`
+  actions. Outside the app, Maverick is a standalone service that talks to
+  Home Assistant over its APIs.
 - **There is no standalone Dockerfile.** The app image is built by the
   Supervisor and expects the app's options; elsewhere, running it means a
   Python 3.11+ environment and systemd, as the README describes.

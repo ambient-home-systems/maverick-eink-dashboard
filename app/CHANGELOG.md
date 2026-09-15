@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.5
+
+- **Fixes the web UI when opened through Home Assistant.** Since 0.2.3 the
+  **Open Web UI** button opened the page embedded in Home Assistant, but the
+  page's own links did not survive the move: previews showed as broken images
+  and **Link with Home Assistant** failed with an error instead of sending you
+  to the login page. It works now, embedded or on port 5000.
+- **Fixes a broken credential leaving you stuck.** If the app held a
+  credential Home Assistant would not accept, the page claimed "Home Assistant
+  connected" and offered no **Link with Home Assistant** button, so there was
+  no way to replace it. The page now tells you it is not connected and offers
+  the button.
+
 ## 0.2.4
 
 - **Fixes a fresh install failing with "Invalid client id".** Before you had
