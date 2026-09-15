@@ -53,4 +53,10 @@ LABEL \
     org.opencontainers.image.source="https://github.com/ambient-home-systems/maverick-eink-dashboard" \
     org.opencontainers.image.licenses="MIT"
 
+# The Supervisor watches this instead of a `watchdog` key in config.yaml, which
+# its linter now rejects. /health answers as soon as the server is up, before
+# any browser has started, so a slow first render does not read as a crash.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+    CMD python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).status == 200 else 1)"
+
 CMD ["/run.sh"]
