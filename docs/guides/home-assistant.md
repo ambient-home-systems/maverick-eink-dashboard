@@ -751,8 +751,7 @@ already-exact image would undo the text-preserving work the pipeline just did.
 ## What is not there yet
 
 Maverick runs as a standalone service. These pieces are described in
-[docs/architecture.md](../architecture.md) as a roadmap, and none of them
-exists today:
+[docs/roadmap.md](../roadmap.md) as proposals, and none of them exists today:
 
 * **No add-on.** Nothing to install from the Home Assistant add-on store, no
   sidebar entry, no ingress. Run it under systemd or alongside Home Assistant

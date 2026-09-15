@@ -647,7 +647,7 @@ from `RenderScheduler._build_trigger`), which surfaces the same way as
 ## Risks that hurt most
 
 These are the four risks from
-[the architecture evaluation's risk table](architecture.md#risks-worth-pricing-in),
+[the roadmap's risk table](roadmap.md#risks-worth-pricing-in),
 restated as things to check rather than things to price.
 
 ### A stale login-page frame on a battery panel
