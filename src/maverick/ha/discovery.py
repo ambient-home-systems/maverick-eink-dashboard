@@ -155,11 +155,27 @@ class MqttDiscovery:
         await self._publish_config(config_topic("image", "screen"), image_config)
 
         sensors = [
-            ("last_render", "Last render", "timestamp", "value_json.last_render_at", "mdi:clock-outline", None),
-            ("status", "Status", None, "value_json.status", "mdi:information-outline", None),
-            ("render_duration", "Render duration", "duration", "value_json.render_duration", "mdi:timer-sand", "s"),
-            ("ink_coverage", "Ink coverage", None, "value_json.ink_coverage", "mdi:water-percent", "%"),
-            ("frames", "Frames delivered", None, "value_json.sequence", "mdi:counter", None),
+            # key, name, device class, value template, icon, unit
+            (
+                "last_render", "Last render", "timestamp",
+                "value_json.last_render_at", "mdi:clock-outline", None,
+            ),
+            (
+                "status", "Status", None,
+                "value_json.status", "mdi:information-outline", None,
+            ),
+            (
+                "render_duration", "Render duration", "duration",
+                "value_json.render_duration", "mdi:timer-sand", "s",
+            ),
+            (
+                "ink_coverage", "Ink coverage", None,
+                "value_json.ink_coverage", "mdi:water-percent", "%",
+            ),
+            (
+                "frames", "Frames delivered", None,
+                "value_json.sequence", "mdi:counter", None,
+            ),
         ]
         for key, name, device_class, template, icon, unit in sensors:
             payload = {

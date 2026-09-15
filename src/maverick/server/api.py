@@ -15,14 +15,14 @@ Serves three audiences:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from ..app import VERSION, Application
-from ..devices import all_panels, get_panel
+from ..devices import all_panels
 from ..transports import available_transports
 from .ui import render_ui
 
@@ -214,7 +214,7 @@ def create_app(application: Application) -> FastAPI:
         application.engine.frames.mark_pulled(display_id)
         state = application.engine.states.get(display_id)
         if state is not None:
-            state.last_pulled_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            state.last_pulled_at = datetime.now(UTC).isoformat(timespec="seconds")
 
         headers = {
             # Note: the ASGI server emits `Date` itself, so we must not add one
@@ -305,7 +305,10 @@ def create_app(application: Application) -> FastAPI:
     @api.get("/", response_class=HTMLResponse)
     async def index() -> str:
         if not application.config.server.enable_ui:
-            return "<h1>Maverick</h1><p>The UI is disabled. See <a href='/api/docs'>/api/docs</a>.</p>"
+            return (
+                "<h1>Maverick</h1>"
+                "<p>The UI is disabled. See <a href='/api/docs'>/api/docs</a>.</p>"
+            )
         return render_ui(application)
 
     return api

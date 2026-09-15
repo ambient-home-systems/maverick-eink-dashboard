@@ -340,7 +340,9 @@ html, body {{
 * {{
   font-family: inherit !important;
   /* Light and thin weights break up into dotted stems once quantised. */
-  font-weight: max({options.min_font_weight}, var(--mv-weight, {options.min_font_weight})) !important;
+  font-weight: max(
+    {options.min_font_weight}, var(--mv-weight, {options.min_font_weight})
+  ) !important;
   letter-spacing: inherit !important;
 }}
 

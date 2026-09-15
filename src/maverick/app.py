@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 
@@ -146,7 +146,7 @@ class Application:
             "ink_coverage": ink,
             "lint": outcome.frame.lint.summary() if outcome and outcome.frame else None,
             "trigger": outcome.trigger if outcome else None,
-            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         await self.discovery.publish_state(display_id, payload)
 

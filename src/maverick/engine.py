@@ -22,8 +22,8 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from io import BytesIO
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -174,7 +174,7 @@ class FrameStore:
         return self._frames.get(display_id)
 
     def mark_pulled(self, display_id: str) -> datetime:
-        stamp = datetime.now(timezone.utc)
+        stamp = datetime.now(UTC)
         self._pulled[display_id] = stamp
         return stamp
 
@@ -547,7 +547,10 @@ class Engine:
                 {
                     "summary": frame.lint.summary(),
                     "metrics": frame.metrics,
-                    "issues": [asdict(i) | {"severity": i.severity.value} for i in frame.lint.issues],
+                    "issues": [
+                        asdict(i) | {"severity": i.severity.value}
+                        for i in frame.lint.issues
+                    ],
                 },
                 indent=2,
             )
@@ -573,7 +576,8 @@ class Engine:
         try:
             self.data_dir.mkdir(parents=True, exist_ok=True)
             temporary = self._state_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps({k: asdict(v) for k, v in self.states.items()}, indent=2))
+            serialised = {k: asdict(v) for k, v in self.states.items()}
+            temporary.write_text(json.dumps(serialised, indent=2))
             temporary.replace(self._state_path)
         except OSError as exc:
             log.warning("could not persist state: %s", exc)
@@ -586,7 +590,7 @@ def _transport_options(display: Any) -> dict[str, Any]:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _env_int(name: str, default: int) -> int:

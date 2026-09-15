@@ -112,7 +112,8 @@ def render_ui(application: Application) -> str:
         issues = ""
         if frame and frame.lint_issues:
             items = "".join(
-                f"<li><span class='{_sev_class(i['severity'])}'>{html.escape(i['severity'])}</span> "
+                f"<li><span class='{_sev_class(i['severity'])}'>"
+                f"{html.escape(i['severity'])}</span> "
                 f"{html.escape(i['message'])}"
                 + (f"<div class='hint'>{html.escape(i['hint'])}</div>" if i.get("hint") else "")
                 + "</li>"
@@ -125,7 +126,10 @@ def render_ui(application: Application) -> str:
             f"src='/api/displays/{html.escape(display.id)}/preview.png' "
             f"alt='current frame for {html.escape(display.name)}' loading='lazy'>"
             if frame
-            else "<div class='shot' style='padding:40px;text-align:center;color:#888'>no frame yet</div>"
+            else (
+                "<div class='shot' style='padding:40px;text-align:center;color:#888'>"
+                "no frame yet</div>"
+            )
         )
 
         error_line = ""
@@ -135,7 +139,8 @@ def render_ui(application: Application) -> str:
         cards.append(
             f"""
 <section class="card">
-  <h2>{html.escape(display.name)} <span class="pill {status_class}">{html.escape(status_text)}</span></h2>
+  <h2>{html.escape(display.name)}
+    <span class="pill {status_class}">{html.escape(status_text)}</span></h2>
   <div class="meta">
     <code>{html.escape(display.id)}</code> &middot; {html.escape(resolved.profile.name)}<br>
     {resolved.width}&times;{resolved.height} &middot; {html.escape(resolved.color_scheme.value)}
@@ -165,11 +170,16 @@ def render_ui(application: Application) -> str:
             "</div></section>"
         )
 
+    ha_connected = bool(application.engine.ha)
+    mqtt_connected = bool(application.engine.mqtt and application.engine.mqtt.connected)
+    ha_state = "connected" if ha_connected else "not connected"
+    mqtt_state = "connected" if mqtt_connected else "off"
+
     summary = json.dumps(
         {
             "displays": len(config.displays),
-            "home_assistant": bool(application.engine.ha),
-            "mqtt": bool(application.engine.mqtt and application.engine.mqtt.connected),
+            "home_assistant": ha_connected,
+            "mqtt": mqtt_connected,
         }
     )
 
@@ -181,8 +191,8 @@ def render_ui(application: Application) -> str:
 <header>
   <h1>Maverick</h1>
   <span class="sub">{len(config.displays)} display(s)
-    &middot; Home Assistant {"connected" if application.engine.ha else "not connected"}
-    &middot; MQTT {"connected" if application.engine.mqtt and application.engine.mqtt.connected else "off"}
+    &middot; Home Assistant {ha_state}
+    &middot; MQTT {mqtt_state}
   </span>
   <span class="sub" style="margin-left:auto"><a href="/api/docs">API docs</a></span>
 </header>

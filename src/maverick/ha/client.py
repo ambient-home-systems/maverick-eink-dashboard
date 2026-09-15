@@ -181,7 +181,7 @@ class HomeAssistantClient:
                     await asyncio.wait_for(
                         stop.wait() if stop else asyncio.sleep(backoff), timeout=backoff
                     )
-                except (TimeoutError, asyncio.TimeoutError):
+                except TimeoutError:
                     pass
                 backoff = min(backoff * 2, 60.0)
 
