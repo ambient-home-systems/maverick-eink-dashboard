@@ -164,6 +164,35 @@ def test_config_or_empty_turns_an_unset_option_into_an_empty_string() -> None:
     assert result.stdout == "[][a-value]", result.stdout
 
 
+def test_the_manifest_can_reach_the_api_run_sh_derives_base_url_from() -> None:
+    """`base_url`'s own description promises a fallback the Supervisor gates.
+
+    Left empty, ``run.sh`` derives it from ``bashio::network.ipv4_address``,
+    which calls ``GET /network/info`` (bashio ``lib/network.sh``). The
+    Supervisor's ``api_bypass`` list covers ``/addons/self/...`` — which is why
+    writing the app's own options needs no permission — but not ``/network/...``,
+    so without ``hassio_api`` the call is refused and every app left on the
+    default `base_url` gets none. The setup UI then refuses to offer *Link with
+    Home Assistant*, because Home Assistant has nowhere to redirect back to.
+    """
+    manifest = _manifest()
+    assert manifest.get("hassio_api") is True, (
+        "run.sh reads the host address from the Supervisor to fill base_url; "
+        "without hassio_api that request is refused and the link cannot start"
+    )
+    # The default role reaches `/.+/info` and nothing more, which is all this
+    # needs — so a raised role would be permission nobody asked for.
+    assert "hassio_role" not in manifest, "the default role already covers /network/info"
+
+    translated = yaml.safe_load(
+        (APP / "translations" / "en.yaml").read_text(encoding="utf-8")
+    )["configuration"]["base_url"]["description"]
+    assert "IPv4" in translated or "ipv4" in translated, (
+        "base_url's description no longer promises the host-address fallback; "
+        "if the promise is gone, this permission may be too"
+    )
+
+
 def test_every_schema_key_is_translated() -> None:
     translations = yaml.safe_load((APP / "translations" / "en.yaml").read_text(encoding="utf-8"))
     assert set(_manifest()["schema"]) <= set(translations["configuration"])

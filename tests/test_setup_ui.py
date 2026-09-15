@@ -143,3 +143,15 @@ def test_auth_status_reports_the_check_not_the_configuration(app: Application) -
     app.engine._ha_ok = True
     with TestClient(create_app(app)) as client:
         assert client.get("/api/auth/status").json()["connected"] is True
+
+
+def test_the_base_url_blocker_says_where_to_set_it(app: Application) -> None:
+    """A user reading this is in the app, not in a YAML file.
+
+    The card names `home_assistant_token`'s option for the manual route, so the
+    one blocking the button it is replacing has to do the same.
+    """
+    app.config.server.base_url = ""
+    page = _page(app)
+    assert "startLink(this)" not in page, "no base_url means nowhere to redirect back to"
+    assert "Configuration tab" in page, "the blocker does not say where to set base_url"

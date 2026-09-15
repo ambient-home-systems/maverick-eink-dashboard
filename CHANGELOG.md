@@ -6,6 +6,28 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-09-15
+
+### Fixed
+
+- **The app could not fill in `base_url`, so the setup UI refused to start the
+  link.** Left empty, `run.sh` derives it from the host's first IPv4 address —
+  which `base_url`'s own option description promises — through
+  `bashio::network.ipv4_address`, and that calls `GET /network/info`. The
+  manifest never asked for Supervisor API access, and while the Supervisor's
+  `api_bypass` list covers `/addons/self/...` (which is why writing the app's
+  own options needs no permission) it does not cover `/network/...`
+  (`supervisor/api/middleware/security.py`), so the call was refused with 403.
+  Every app left on the default `base_url` therefore had none, and
+  `_link_card` (`src/maverick/server/ui.py`) showed "Set `base_url` first"
+  instead of *Link with Home Assistant*. Until 0.2.4 this was hidden behind the
+  `"null"` bug, which made `base_url` a non-empty string and skipped the
+  fallback entirely. `app/config.yaml` now declares `hassio_api: true`, which at
+  the default role reaches the `/.+/info` endpoints and nothing else.
+- **That message did not say where to set it.** It named `base_url` without
+  saying that in the app it is an option on the Configuration tab, which is the
+  one place a user reading it can act. It now says so, with an example.
+
 ## [0.2.5] - 2026-09-15
 
 ### Fixed
