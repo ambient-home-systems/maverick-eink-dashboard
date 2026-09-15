@@ -6,6 +6,23 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `${VAR:-default}` in a configuration file now falls back for a variable that
+  is set to the empty string as well as one that is unset, which is what `:-`
+  means in a shell and what the reference page has always described it as
+  (`expand_env`, `src/maverick/config.py`). Previously only an *unset* variable
+  took the default, so `${MQTT_PORT:-1883}` yielded an empty string — and
+  failed validation — when something upstream exported `MQTT_PORT=`. The Home
+  Assistant app's `run.sh` exports a value for every substitution in the
+  starter config, empty for the options a user has not filled in, so that was
+  reachable rather than theoretical. `${VAR}` without a default is unchanged:
+  unset still fails the load, set-and-empty still yields the empty string.
+
+  If you relied on exporting an empty variable to blank a value whose
+  configuration file writes a non-empty default beside it, that now yields the
+  default. Write the value into the file, or use `${VAR}` without a default.
+
 ### Added
 
 - `tests/test_app.py::test_pinned_ref_accepts_the_starter_config` loads the
