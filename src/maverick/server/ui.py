@@ -109,6 +109,16 @@ async function refresh(id, force, btn){
     setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 2500);
   }
 }
+// The ESPHome link is a plain anchor, not a fetch, so authHeaders() cannot
+// carry the token: append it to the query string instead, from whatever
+// value the page itself was opened with.
+(function(){
+  const t = new URLSearchParams(location.search).get('token');
+  if (!t) return;
+  document.querySelectorAll('a.esphome-link').forEach(a => {
+    a.href += (a.href.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(t);
+  });
+})();
 """
 
 
@@ -183,7 +193,8 @@ def render_ui(application: Application) -> str:
   <div class="row">
     <button onclick="refresh('{html.escape(display.id)}', false, this)">Refresh</button>
     <button onclick="refresh('{html.escape(display.id)}', true, this)">Full refresh</button>
-    <a href="api/displays/{html.escape(display.id)}/esphome.yaml">ESPHome config</a>
+    <a class="esphome-link" data-id="{html.escape(display.id)}"
+       href="api/displays/{html.escape(display.id)}/esphome.yaml">ESPHome config</a>
   </div>
   {error_line}
   {issues}

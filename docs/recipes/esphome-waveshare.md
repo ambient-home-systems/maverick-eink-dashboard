@@ -64,8 +64,13 @@ is served while `maverick serve` is running:
 $ curl -s http://maverick.local:5000/api/displays/kitchen/esphome.yaml -o kitchen.yaml
 ```
 
-and the setup UI links it on each display's card as **ESPHome config**
-(`server/ui.py`).
+That route requires `server.api_token` when one is set, the same as the other
+`/api/displays/...` routes (`src/maverick/server/api.py`) — the generated
+document embeds the token itself, so serving it without a check would hand it
+out to anyone who could reach the port. Add `-H "Authorization: Bearer
+<token>"` to the command above when a token is configured. The setup UI links
+it on each display's card as **ESPHome config**, appending `?token=` itself
+when the page was opened with one (`server/ui.py`).
 
 Two things about that endpoint are worth knowing before you use it:
 
@@ -422,8 +427,9 @@ Checked on this repository, at the commit this page was written against:
   the generated `type:` to `BINARY` and `buffer_size:` to `58624`, dropped the
   warning and the `psram:` block, and left `model: 7.50in-bv2-bwr` unchanged.
 * With `server.api_token` set, the generated document contains
-  `Authorization: "Bearer <token>"`, and the `esphome.yaml` endpoint served it
-  without any token of its own.
+  `Authorization: "Bearer <token>"`, and the `esphome.yaml` endpoint itself
+  now requires that same token (`src/maverick/server/api.py`); an
+  unauthenticated request gets **401**, not the document.
 
 Not checked: anything involving ESPHome or hardware — no `esphome compile`, no
 flash, no panel, no measurement of RAM, refresh time or battery life.

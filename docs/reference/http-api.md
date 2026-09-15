@@ -34,7 +34,7 @@ Sixteen routes, plus the two FastAPI adds for its own documentation.
 | `POST` | `/api/render` | **yes** | Render every enabled display now |
 | `GET` | `/api/displays/{display_id}/frame` | **yes** | The current frame, for a device that pulls |
 | `GET` | `/api/displays/{display_id}/preview.png` | no | The current frame as a viewable PNG |
-| `GET` | `/api/displays/{display_id}/esphome.yaml` | no | A ready-to-flash ESPHome configuration |
+| `GET` | `/api/displays/{display_id}/esphome.yaml` | **yes** | A ready-to-flash ESPHome configuration |
 | `GET` | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | `GET` | `/api/display` | no | TRMNL per-fetch metadata |
 | `GET` | `/api/auth/status` | no | Which Home Assistant credential is in use |
@@ -46,7 +46,7 @@ Sixteen routes, plus the two FastAPI adds for its own documentation.
 
 ## Authentication
 
-Authentication is off until `server.api_token` is set. Set it, and the six
+Authentication is off until `server.api_token` is set. Set it, and the seven
 routes marked **yes** above require it; `_require_token` is attached to those
 routes alone, and it returns immediately when the configured token is empty, so
 an unset token means every route is open.
@@ -75,15 +75,19 @@ A missing or wrong token fails the whole request with **401** and:
 {"detail": "invalid or missing API token"}
 ```
 
-Two consequences of the list above are worth stating plainly:
+One consequence of the list above is worth stating plainly: `/api/displays/{id}/preview.png`
+is **not** behind the token, so anyone who can reach the server can see what a
+panel is showing. The setup UI and the Home Assistant image entity both use
+it, which is why. Treat the server as something to keep on a trusted network
+rather than exposed to the internet.
 
-* `/api/displays/{id}/preview.png` is **not** behind the token, so anyone who
-  can reach the server can see what a panel is showing. The setup UI and the
-  Home Assistant image entity both use it, which is why.
-* `/api/displays/{id}/esphome.yaml` is **not** behind the token either, and the
-  configuration it generates contains `Authorization: "Bearer <api_token>"`
-  when `server.api_token` is set. Treat the server as something to keep on a
-  trusted network rather than exposed to the internet.
+`/api/displays/{id}/esphome.yaml` **is** behind the token: the configuration it
+generates embeds `Authorization: "Bearer <api_token>"` verbatim when
+`server.api_token` is set (`src/maverick/esphome/generator.py`), so the route
+that serves it carries the same `_require_token` dependency as the other
+`/api/displays/...` routes. The setup UI's "ESPHome config" link appends
+`?token=` itself when the page was opened with one, the same way its fetch
+calls send `Authorization: Bearer` (`src/maverick/server/ui.py`).
 
 ## Status and catalogue
 
@@ -396,12 +400,15 @@ no frame, or a frame with no preview.
 
 ### `GET /api/displays/{display_id}/esphome.yaml`
 
-No token. **200** `text/plain` containing a complete ESPHome YAML document for
-this display: the panel model, the display buffer, and an `online_image`
-pointing at this display's frame URL with the refresh interval already filled
-in. **404** for an unknown display. When `server.api_token` is set, the
-generated document embeds it as an `Authorization: Bearer` header, so treat the
-output as a secret.
+**Token required.** **200** `text/plain` containing a complete ESPHome YAML
+document for this display: the panel model, the display buffer, and an
+`online_image` pointing at this display's frame URL with the refresh interval
+already filled in. **404** for an unknown display. When `server.api_token` is
+set, the generated document embeds it as an `Authorization: Bearer` header
+(`src/maverick/esphome/generator.py`), so the route carries the same
+`_require_token` dependency as the other authenticated `/api/displays/...`
+routes — otherwise an unauthenticated request to this route would hand back
+the very token that gates every other endpoint.
 
 ## TRMNL (bring your own server)
 
