@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3
+
+- **Open Web UI now opens inside Home Assistant.** The button used to link to
+  `http://[HOST]:5000/`, which Home Assistant resolves to your external
+  address (for example a Nabu Casa URL) when you are connected remotely —
+  and a raw port is never reachable through that connection. Ingress support
+  proxies the setup UI through the Supervisor instead, so the button opens it
+  embedded in Home Assistant on any connection. Port 5000 stays published for
+  panels that pull frames directly.
+
 ## 0.2.2
 
 - **Fixes the app exiting the moment it starts.** The start script passed the
