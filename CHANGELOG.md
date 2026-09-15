@@ -8,6 +8,14 @@ yet made a tagged release, so everything so far sits under Unreleased.
 
 ### Added
 
+- Linking a Home Assistant account from the setup UI: **Link with Home
+  Assistant** runs the IndieAuth flow Home Assistant's companion apps use, so
+  no long-lived token has to be copied by hand (`src/maverick/ha/auth.py`,
+  `/api/auth/status`, `/api/auth/start`, `/api/auth/callback`). Running as an
+  app, the credential is saved back to the app's own options through the
+  Supervisor, which needs no extra permission (`src/maverick/ha/supervisor.py`).
+- `home_assistant.refresh_token` and `home_assistant.client_id` config keys,
+  holding a linked account. They take precedence over `home_assistant.token`.
 - Imaging core: the fit/rotate/tone/sharpen/greyscale/quantise/lint/pack
   pipeline, palettes and dithering for monochrome and colour panels
   (`src/maverick/eink/`).
@@ -41,3 +49,15 @@ yet made a tagged release, so everything so far sits under Unreleased.
   transport, the e-ink design guide, the troubleshooting catalogue, the
   architecture evaluation and a self-maintaining contributor workflow with CI
   (`docs/`, `CONTRIBUTING.md`, `CLAUDE.md`, `.github/workflows/ci.yml`).
+
+### Changed
+
+- The Home Assistant app starts without a credential rather than exiting. The
+  setup UI is where an account is linked, so it has to be reachable before one
+  exists (`app/run.sh`).
+- The access token is resolved per request instead of being baked into the REST
+  client and the renderer's auth bundle, because a linked account's token
+  expires every 30 minutes (`src/maverick/ha/auth.py`, `TokenSource`).
+- The renderer seeds its auth bundle per page rather than per browser context,
+  so a rotating token no longer changes the context cache key and strands a
+  context on every refresh (`src/maverick/render/dashboard.py`).

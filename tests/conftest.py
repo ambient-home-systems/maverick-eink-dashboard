@@ -176,7 +176,7 @@ def make_engine(minimal_config: Config, monkeypatch):
         minimal_config.display(DISPLAY_ID).transport.pushes = pushes
         renderer = FakeRenderer(image)
         monkeypatch.setattr(
-            engine_module, "DashboardRenderer", lambda ha, pool: renderer
+            engine_module, "DashboardRenderer", lambda ha, pool, tokens=None: renderer
         )
         engine = Engine(minimal_config)
         await engine.start()

@@ -31,7 +31,8 @@ from .config import Config, ResolvedDisplay
 from .eink import Frame, FrameFormat, PipelineOptions, process
 from .eink.dither import DitherMode
 from .eink.pipeline import FitMode
-from .ha import HomeAssistantClient
+from .ha import HomeAssistantClient, HomeAssistantError
+from .ha.auth import TokenSource, build_token_source
 from .render import BrowserPool, DashboardRenderer, RenderError
 from .transports import (
     DeliveryContext,
@@ -253,6 +254,7 @@ class Engine:
 
         self._pool = BrowserPool(max_concurrent=int(_env_int("MAVERICK_MAX_RENDERS", 2)))
         self._ha: HomeAssistantClient | None = None
+        self._tokens: TokenSource | None = None
         self._mqtt: MqttPublisher | None = None
         self._renderer: DashboardRenderer | None = None
         self._transports: dict[str, Transport] = {}
@@ -282,8 +284,13 @@ class Engine:
         self._load_state()
         self.frames.load([d.id for d in self.config.enabled_displays])
 
-        if self.config.home_assistant.token:
-            self._ha = HomeAssistantClient(self.config.home_assistant)
+        # One token source shared by the REST client, the WebSocket watcher and
+        # the renderer, so a linked account refreshes once rather than three
+        # times over.
+        self._tokens = build_token_source(self.config.home_assistant)
+
+        if self._tokens is not None:
+            self._ha = HomeAssistantClient(self.config.home_assistant, self._tokens)
             try:
                 info = await self._ha.check()
                 log.info("connected to Home Assistant %s", info.get("version", "?"))
@@ -291,11 +298,14 @@ class Engine:
                 log.error("Home Assistant check failed: %s", exc)
         else:
             log.warning(
-                "no Home Assistant token configured — dashboard rendering will "
-                "fail until home_assistant.token is set"
+                "no Home Assistant credential configured — dashboard rendering "
+                "will fail until an account is linked from the setup UI or "
+                "home_assistant.token is set"
             )
 
-        self._renderer = DashboardRenderer(self.config.home_assistant, self._pool)
+        self._renderer = DashboardRenderer(
+            self.config.home_assistant, self._pool, self._tokens
+        )
 
         if self.config.mqtt.enabled:
             # The will has to be registered before the client connects, so it
@@ -335,6 +345,35 @@ class Engine:
     @property
     def ha(self) -> HomeAssistantClient | None:
         return self._ha
+
+    @property
+    def tokens(self) -> TokenSource | None:
+        return self._tokens
+
+    async def relink(self) -> dict[str, Any]:
+        """Adopt the credential now in `config.home_assistant` without a restart.
+
+        The setup UI calls this the moment it finishes linking an account. The
+        alternative — telling the user to restart the app — is exactly the
+        friction the link button exists to remove.
+        """
+        if self._ha is not None:
+            await self._ha.close()
+            self._ha = None
+        self._tokens = build_token_source(self.config.home_assistant)
+        if self._tokens is None:
+            raise HomeAssistantError("No Home Assistant credential to apply.")
+        self._ha = HomeAssistantClient(self.config.home_assistant, self._tokens)
+        info = await self._ha.check()
+        self._renderer = DashboardRenderer(
+            self.config.home_assistant, self._pool, self._tokens
+        )
+        # Contexts cached before the link may hold a login-screen session, and
+        # the pool has no drop-all. stop() is heavier than needed but correct,
+        # and page() relaunches lazily; linking happens once.
+        await self._pool.stop()
+        log.info("relinked to Home Assistant %s", info.get("version", "?"))
+        return info
 
     @property
     def mqtt(self) -> MqttPublisher | None:

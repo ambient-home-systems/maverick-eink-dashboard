@@ -162,14 +162,18 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     async def check_ha() -> None:
         nonlocal problems
-        if not config.home_assistant.token:
+        if not config.home_assistant.has_credentials:
             print("home assistant: no token configured — rendering will fail")
             problems += 1
             return
         client = HomeAssistantClient(config.home_assistant)
         try:
             info = await client.check()
-            print(f"home assistant: ok ({config.home_assistant.url}, {info.get('version','?')})")
+            kind = client.tokens.kind if client.tokens else "?"
+            print(
+                f"home assistant: ok ({config.home_assistant.url}, "
+                f"{info.get('version','?')}, via {kind})"
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"home assistant: FAILED — {exc}")
             problems += 1

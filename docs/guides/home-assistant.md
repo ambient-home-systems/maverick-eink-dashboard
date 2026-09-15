@@ -14,7 +14,7 @@ This page picks up where [the README's quick start](../../README.md#quick-start)
 leaves off: you have Maverick installed and a `config.yaml`, and you want it
 reading a real dashboard and controllable from inside Home Assistant.
 
-1. [The token](#the-token)
+1. [The credential](#the-credential)
 2. [Which dashboard URL to use](#which-dashboard-url-to-use)
 3. [Making it a device: MQTT discovery](#making-it-a-device-mqtt-discovery)
 4. [Without MQTT: a rest_command](#without-mqtt-a-rest_command)
@@ -22,15 +22,52 @@ reading a real dashboard and controllable from inside Home Assistant.
 6. [OpenDisplay tags through Home Assistant's Bluetooth](#opendisplay-tags-through-home-assistants-bluetooth)
 7. [What is not there yet](#what-is-not-there-yet)
 
-## The token
+## The credential
 
 > Status: written from the source; not yet verified against a live Home Assistant instance.
 
-### Create it
+Maverick needs something that authenticates a **frontend session**, not just
+the REST API. It does not scrape entity states and draw its own layout — it
+loads your actual dashboard in headless Chromium. That is why the supervisor
+token an app is handed cannot be used, and why this step exists at all
+(`src/maverick/config.py`, `HomeAssistantConfig`).
 
-In Home Assistant, click your user name at the bottom of the sidebar, open the
-**Security** tab, scroll to **Long-lived access tokens** and create one. Home
-Assistant shows the token exactly once; copy it then.
+There are two ways to provide one.
+
+### Link an account (recommended)
+
+Open Maverick's setup UI and press **Link with Home Assistant**. It sends you
+to Home Assistant's own authorization page, you log in once, and it redirects
+back. Nothing to copy.
+
+This is the IndieAuth redirect flow Home Assistant's companion apps use
+(`src/maverick/ha/auth.py`). Maverick's `server.base_url` becomes the
+`client_id`, and `/api/auth/callback` on that same origin becomes the
+`redirect_uri` — sharing an origin is what lets Home Assistant approve the
+redirect without fetching anything. Home Assistant deliberately allows a local
+IP address as a `client_id` host, so the app's default `base_url` works.
+
+Two consequences worth knowing:
+
+* `server.base_url` must be set and must be an http(s) URL, because that is
+  where Home Assistant redirects back to. The setup UI says so rather than
+  offering the button when it is not.
+* The access token this yields lives 30 minutes, not a decade. Maverick
+  refreshes it as needed, and hands the frontend the `clientId` and
+  `refresh_token` too so a long render can renew its own session
+  (`src/maverick/ha/auth.py`, `RefreshingToken.bundle_fields`).
+
+Running as a Home Assistant app, the credential is written back to the app's
+own options through the Supervisor, so it survives a restart. The Supervisor
+lets every app change its own options without any extra permission
+(`src/maverick/ha/supervisor.py`). Standalone, the callback page shows you the
+two lines to put in your config file.
+
+### Or create a long-lived token by hand
+
+Click your user name at the bottom of the sidebar, open the **Security** tab,
+scroll to **Long-lived access tokens** and create one. Home Assistant shows the
+token exactly once; copy it then.
 
 Put it in `config.yaml` under
 [`home_assistant.token`](../reference/configuration.md#home_assistant). The
@@ -44,14 +81,7 @@ home_assistant:
   verify_ssl: true
 ```
 
-### Why it has to be that kind of token
-
-A **supervisor token will not do**, and neither will anything else that
-authenticates only the REST API. Maverick does not scrape entity states and
-draw its own layout — it loads your actual dashboard in headless Chromium, so
-it needs a *frontend* session, and the supervisor token does not give it one.
-That is the whole reason a long-lived token is a hard requirement rather than a
-convenience (`src/maverick/config.py`, `HomeAssistantConfig`).
+A **supervisor token will not do** here either, for the same reason as above.
 
 Long-lived tokens are also bound to the instance that issued them. Point
 Maverick at a different Home Assistant and the REST check fails with a 401:
@@ -148,7 +178,7 @@ what your browser's address bar shows. An expired or revoked token produces
 the same redirect, so check that second.
 
 ```text
-[kitchen] Home Assistant showed the login form. Check home_assistant.token is a long-lived access token.
+[kitchen] Home Assistant showed the login form. The credential was rejected: re-link the account from the setup UI, or check home_assistant.token is a long-lived access token.
 ```
 
 The page loaded and stayed put, but it is rendering `ha-authorize` or

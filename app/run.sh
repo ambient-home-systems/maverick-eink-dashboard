@@ -16,17 +16,24 @@ readonly CONFIG_DIR=/config
 readonly CONFIG_FILE="${CONFIG_DIR}/maverick.yaml"
 readonly TEMPLATE=/usr/share/maverick/maverick.yaml
 
-# ---------------------------------------------------------------- required --
-
-if ! bashio::config.has_value 'home_assistant_token'; then
-    bashio::log.fatal "home_assistant_token is empty."
-    bashio::log.fatal "Create a long-lived access token under your profile (Security tab),"
-    bashio::log.fatal "paste it into this app's Configuration tab, and start the app again."
-    bashio::exit.nok
-fi
+# ------------------------------------------------------------- credentials --
+# Starting without one is allowed on purpose. The setup UI can obtain a
+# credential itself (Link with Home Assistant), and it can only do that if the
+# service is running, so an empty token is a warning rather than a fatal error.
+# Refusing to start would leave the user with nothing but a log line.
 
 HA_URL="$(bashio::config 'home_assistant_url' 'http://homeassistant:8123')"
-HA_TOKEN="$(bashio::config 'home_assistant_token')"
+HA_TOKEN="$(bashio::config 'home_assistant_token' '')"
+HA_REFRESH_TOKEN="$(bashio::config 'home_assistant_refresh_token' '')"
+HA_CLIENT_ID="$(bashio::config 'home_assistant_client_id' '')"
+
+if [[ -z "${HA_TOKEN}" && -z "${HA_REFRESH_TOKEN}" ]]; then
+    bashio::log.warning "No Home Assistant credential yet, so rendering will fail."
+    bashio::log.warning "Open this app's web UI and press 'Link with Home Assistant'."
+    bashio::log.warning "You can instead paste a long-lived access token (your profile,"
+    bashio::log.warning "Security tab) into the home_assistant_token option."
+fi
+
 MAVERICK_LOG_LEVEL="$(bashio::config 'log_level' 'info')"
 MAVERICK_API_TOKEN="$(bashio::config 'api_token' '')"
 MAVERICK_BASE_URL="$(bashio::config 'base_url' '')"
@@ -78,7 +85,8 @@ else
     bashio::log.notice "displays will not appear as Home Assistant devices. Set mqtt_host to change that."
 fi
 
-export HA_URL HA_TOKEN MAVERICK_LOG_LEVEL MAVERICK_API_TOKEN MAVERICK_BASE_URL
+export HA_URL HA_TOKEN HA_REFRESH_TOKEN HA_CLIENT_ID
+export MAVERICK_LOG_LEVEL MAVERICK_API_TOKEN MAVERICK_BASE_URL
 export MQTT_ENABLED MQTT_HOST MQTT_PORT MQTT_USERNAME MQTT_PASSWORD
 
 # ------------------------------------------------------------------ config --

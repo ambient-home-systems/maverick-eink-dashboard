@@ -85,10 +85,16 @@ class Base(BaseModel):
 class HomeAssistantConfig(Base):
     """How to reach Home Assistant.
 
-    Both values come from the config file, or from ``${HA_TOKEN}``-style
-    environment substitution. ``token`` must be a long-lived access token: the
-    supervisor token authenticates against the REST API but not the frontend,
-    and rendering a dashboard requires a frontend session.
+    Values come from the config file, or from ``${HA_TOKEN}``-style environment
+    substitution. Whatever authenticates has to be good for a *frontend*
+    session, not just the REST API: rendering a dashboard means loading it in a
+    browser, and the supervisor token does not give a browser a session.
+
+    Two credentials satisfy that. ``token`` is a long-lived access token copied
+    from a profile page. ``refresh_token`` with ``client_id`` is an IndieAuth
+    grant, which the setup UI obtains for itself — see
+    `src/maverick/ha/auth.py`. A linked account takes precedence when both are
+    present.
     """
 
     url: str = Field(
@@ -103,7 +109,23 @@ class HomeAssistantConfig(Base):
         description=(
             "Long-lived access token from a Home Assistant profile. The supervisor token "
             "does not work: it authenticates the REST API but not the frontend, and "
-            "rendering a dashboard needs a frontend session."
+            "rendering a dashboard needs a frontend session. Leave empty to link an "
+            "account from the setup UI instead."
+        ),
+    )
+    refresh_token: str = Field(
+        default="",
+        description=(
+            "IndieAuth refresh token, normally obtained by the setup UI's *Link with "
+            "Home Assistant* button rather than written by hand. Needs `client_id` set "
+            "too, and takes precedence over `token`."
+        ),
+    )
+    client_id: str = Field(
+        default="",
+        description=(
+            "The client identifier `refresh_token` was issued to, which Home Assistant "
+            "requires on every refresh. The setup UI uses `server.base_url`."
         ),
     )
     verify_ssl: bool = Field(
@@ -130,6 +152,11 @@ class HomeAssistantConfig(Base):
     @property
     def render_url(self) -> str:
         return (self.frontend_url or self.url).rstrip("/")
+
+    @property
+    def has_credentials(self) -> bool:
+        """Whether anything here can authenticate a frontend session."""
+        return bool(self.token or (self.refresh_token and self.client_id))
 
 
 class MqttConfig(Base):

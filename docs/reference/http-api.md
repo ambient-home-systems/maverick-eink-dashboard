@@ -21,7 +21,7 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Thirteen routes, plus the two FastAPI adds for its own documentation.
+Sixteen routes, plus the two FastAPI adds for its own documentation.
 
 | Method | Path | Token | Purpose |
 | --- | --- | --- | --- |
@@ -37,13 +37,16 @@ Thirteen routes, plus the two FastAPI adds for its own documentation.
 | `GET` | `/api/displays/{display_id}/esphome.yaml` | no | A ready-to-flash ESPHome configuration |
 | `GET` | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | `GET` | `/api/display` | no | TRMNL per-fetch metadata |
+| `GET` | `/api/auth/status` | no | Which Home Assistant credential is in use |
+| `GET` | `/api/auth/start` | **yes** | Begin linking a Home Assistant account |
+| `GET` | `/api/auth/callback` | no | Where Home Assistant redirects back to |
 | `GET` | `/` | no | The setup UI |
 | `GET` | `/api/docs` | no | Swagger UI (FastAPI) |
 | `GET` | `/api/openapi.json` | no | The OpenAPI document (FastAPI) |
 
 ## Authentication
 
-Authentication is off until `server.api_token` is set. Set it, and the five
+Authentication is off until `server.api_token` is set. Set it, and the six
 routes marked **yes** above require it; `_require_token` is attached to those
 routes alone, and it returns immediately when the configured token is empty, so
 an unset token means every route is open.
@@ -476,6 +479,66 @@ An unmatched MAC gives HTTP **404** and `{"status": 404}`.
 The device then fetches `image_url` itself, with its stored key in the
 `Access-Token` header. That fetch is [the pull protocol](#the-pull-protocol)
 like any other, 304s included.
+
+## Linking a Home Assistant account
+
+Rendering a dashboard needs a credential that authenticates a *frontend*
+session, because Maverick loads the real dashboard in a browser rather than
+redrawing it from entity states. These three routes obtain one through the
+IndieAuth flow Home Assistant's companion apps use, so nobody has to copy a
+long-lived token by hand. The mechanism is in `src/maverick/ha/auth.py`.
+
+### `GET /api/auth/status`
+
+What credential Maverick currently holds, and whether linking is even possible.
+
+```json
+{
+  "linked": false,
+  "kind": "none",
+  "connected": false,
+  "url": "http://homeassistant.local:8123",
+  "can_link": true,
+  "reason": "",
+  "client_id": "http://192.168.1.10:5000/",
+  "persists": true
+}
+```
+
+`kind` is `long-lived token`, `linked account` or `none`. `can_link` is false
+when `server.base_url` is unset or is not an http(s) URL, because Home
+Assistant has to redirect back to it; `reason` then says so. `persists` reports
+whether Maverick is running as a Home Assistant app and can therefore save
+the credential to its own options.
+
+### `GET /api/auth/start`
+
+Returns the URL to send the browser to. Behind the API token, because starting
+a link is a privileged action.
+
+```json
+{"authorize_url": "http://homeassistant.local:8123/auth/authorize?client_id=..."}
+```
+
+`client_id` is `server.base_url` normalised to scheme, host and `/`;
+`redirect_uri` is `/api/auth/callback` on that same origin. Sharing an origin
+is what lets Home Assistant approve the redirect without fetching anything.
+Home Assistant accepts a local IP address as a `client_id` host, so the default
+`base_url` works.
+
+Returns `400` when `server.base_url` is unset or unusable.
+
+### `GET /api/auth/callback`
+
+Where Home Assistant sends the browser back, with `code` and `state`. Exchanges
+the code for a refresh token, applies it without a restart, and saves it to the
+app options when running under the Supervisor. Responds with a small HTML page,
+not JSON — a browser lands here, not a script.
+
+This route is **not** behind `server.api_token`, and cannot be: Home Assistant
+knows nothing of that token. The `state` nonce authenticates it instead. It is
+minted by `/api/auth/start`, which *is* behind the token, and it is spent on
+first use, so a callback Maverick did not start is refused.
 
 ## The setup UI
 

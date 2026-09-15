@@ -32,6 +32,7 @@ from PIL import Image
 
 from ..config import DisplayConfig, HomeAssistantConfig, ResolvedDisplay
 from ..eink.theme import ThemeOptions, TypeScale, build_css
+from ..ha.auth import TokenSource, build_token_source
 from .browser import BrowserPool
 
 log = logging.getLogger(__name__)
@@ -128,16 +129,27 @@ class RenderResult:
     scale: float
 
 
-def build_auth_bundle(ha: HomeAssistantConfig) -> dict[str, object]:
-    """The token bundle the frontend expects in ``localStorage.hassTokens``."""
+async def build_auth_bundle(
+    ha: HomeAssistantConfig, tokens: TokenSource | None = None
+) -> dict[str, object]:
+    """The token bundle the frontend expects in ``localStorage.hassTokens``.
+
+    The credential half comes from the token source, because only it knows
+    whether the token expires in thirty minutes or a decade. A linked account
+    also puts its ``clientId`` and ``refresh_token`` in the bundle, which lets
+    the frontend renew the session by itself rather than bouncing to the login
+    screen if a render outlives the access token.
+    """
+    source = tokens or build_token_source(ha)
+    if source is None:
+        raise RenderError(
+            "No Home Assistant credential configured. Open Maverick's setup UI "
+            "and use 'Link with Home Assistant', or set home_assistant.token."
+        )
     return {
-        "access_token": ha.token,
         "token_type": "Bearer",
-        "expires_in": 315_360_000,
         "hassUrl": ha.render_url,
-        "clientId": None,
-        "expires": int((time.time() + 315_360_000) * 1000),
-        "refresh_token": "",
+        **await source.bundle_fields(),
     }
 
 
@@ -210,9 +222,16 @@ def resolve_url(ha: HomeAssistantConfig, dashboard: str) -> str:
 class DashboardRenderer:
     """Captures dashboards for every configured display."""
 
-    def __init__(self, ha: HomeAssistantConfig, pool: BrowserPool) -> None:
+    def __init__(
+        self,
+        ha: HomeAssistantConfig,
+        pool: BrowserPool,
+        tokens: TokenSource | None = None,
+    ) -> None:
         self._ha = ha
         self._pool = pool
+        # Shared with the engine's REST client so one refresh serves both.
+        self._tokens = tokens or build_token_source(ha)
 
     def viewport_for(self, display: ResolvedDisplay) -> tuple[int, int]:
         """Browser viewport in *pre-rotation* logical pixels.
@@ -234,12 +253,13 @@ class DashboardRenderer:
         viewport = self.viewport_for(display)
         css = build_theme_css(display)
 
-        init_scripts = [_AUTH_SCRIPT % {"tokens": json.dumps(build_auth_bundle(self._ha))}]
-        if css:
-            init_scripts.append(_STYLE_SCRIPT % {"css": json.dumps(css)})
+        init_scripts = [_STYLE_SCRIPT % {"css": json.dumps(css)}] if css else []
 
         # Context key covers everything fixed at context-creation time, plus a
         # digest of the scripts so a config change never reuses a stale context.
+        # The auth bundle is deliberately *not* part of it: a linked account's
+        # access token rotates every half hour, and keying on it would strand a
+        # dead context in the pool on every refresh.
         key = f"{display.id}:{viewport}:{render.supersample}:{hash(tuple(init_scripts))}"
 
         started = time.perf_counter()
@@ -250,6 +270,11 @@ class DashboardRenderer:
             init_scripts=init_scripts,
             ignore_https_errors=not self._ha.verify_ssl,
         ) as page:
+            # Seeded per page instead, which still runs before the frontend's
+            # first line of JavaScript but carries a token fetched just now.
+            bundle = await build_auth_bundle(self._ha, self._tokens)
+            await page.add_init_script(_AUTH_SCRIPT % {"tokens": json.dumps(bundle)})
+
             timeout_ms = int(render.timeout * 1000)
             try:
                 await page.goto(url, wait_until="networkidle", timeout=timeout_ms)
@@ -336,7 +361,9 @@ class DashboardRenderer:
             await self._pool.drop_context(key)
             raise RenderError(
                 f"[{display.id}] Home Assistant showed the login form. "
-                "Check home_assistant.token is a long-lived access token."
+                "The credential was rejected: re-link the account from the "
+                "setup UI, or check home_assistant.token is a long-lived "
+                "access token."
             )
 
 

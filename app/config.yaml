@@ -36,6 +36,12 @@ options:
 schema:
   home_assistant_url: url
   home_assistant_token: password
+  # Written by the app itself when you press 'Link with Home Assistant' in
+  # its web UI, through the Supervisor's /addons/self/options endpoint. Every
+  # app may change its own options without hassio_api, which is why no extra
+  # permission is requested here.
+  home_assistant_refresh_token: password?
+  home_assistant_client_id: str?
   log_level: list(debug|info|warning|error)
   base_url: url?
   api_token: password?

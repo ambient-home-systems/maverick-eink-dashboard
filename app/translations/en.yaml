@@ -8,8 +8,20 @@ configuration:
   home_assistant_token:
     name: Long-lived access token
     description: >-
-      Create one under your profile, Security tab. Rendering needs a frontend
-      session, which the Supervisor's own token cannot provide.
+      Optional. Leave empty and press 'Link with Home Assistant' in the app's
+      web UI instead. To set one by hand, create it under your profile,
+      Security tab. Rendering needs a frontend session, which the
+      Supervisor's own token cannot provide.
+  home_assistant_refresh_token:
+    name: Linked account (refresh token)
+    description: >-
+      Filled in for you when you press 'Link with Home Assistant' in the app's
+      web UI. There is no need to edit it by hand; clear it to unlink.
+  home_assistant_client_id:
+    name: Linked account (client ID)
+    description: >-
+      Filled in alongside the refresh token. Home Assistant requires it to
+      renew the session, so the two only work as a pair.
   log_level:
     name: Log level
     description: How much the app writes to its log.
