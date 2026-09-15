@@ -12,10 +12,11 @@ panel is worth more than a patch written from a datasheet.
 3. [The documentation workflow](#the-documentation-workflow)
 4. [Adding a panel profile](#adding-a-panel-profile)
 5. [Adding a transport](#adding-a-transport)
-6. [The hardware-untested banner](#the-hardware-untested-banner)
-7. [Spelling](#spelling)
-8. [Releasing](#releasing)
-9. [Pull request checklist](#pull-request-checklist)
+6. [The Home Assistant app](#the-home-assistant-app)
+7. [The hardware-untested banner](#the-hardware-untested-banner)
+8. [Spelling](#spelling)
+9. [Releasing](#releasing)
+10. [Pull request checklist](#pull-request-checklist)
 
 ## Development setup
 
@@ -190,6 +191,29 @@ Four steps:
 Then run `python scripts/gen_docs.py` and commit the regenerated
 `docs/reference/transports.md`.
 
+## The Home Assistant app
+
+`app/` is a Home Assistant app — the store item Home Assistant used to call an
+add-on — and `repository.yaml` at the root is what makes this repository
+installable from the app store. The app does not vendor the package: its
+`Dockerfile` installs `maverick-eink-dashboard` from this repository at the
+commit named by `MAVERICK_REF`, on a Debian base image with the distro
+`chromium` package, and `run.sh` turns the app's options into the environment
+variables that the starter `maverick.yaml` substitutes.
+
+Three things keep it honest, all in `tests/test_app.py`: every option `run.sh`
+reads is declared in `config.yaml`'s schema, every `${VAR}` in the starter
+config is exported by `run.sh`, and the app's `version` equals the package
+version. CI (`.github/workflows/ci.yml`, job `app`) lints the manifest, builds
+the image on amd64 and launches Chromium inside it — the one place the image is
+built, since nothing else in the suite touches Docker.
+
+To change the app: `app/config.yaml` for options (add a translation in
+`app/translations/en.yaml` and read the key in `run.sh`), `app/run.sh` for
+start-up behaviour, `app/rootfs/usr/share/maverick/maverick.yaml` for the
+starter config, and `app/DOCS.md` for what users see on the app's Documentation
+tab. `app/CHANGELOG.md` is the app's own changelog tab; keep it to the app.
+
 ## The hardware-untested banner
 
 Nothing in this project has been run on a physical panel. Every page that
@@ -243,6 +267,10 @@ needs editing to match. To cut a release:
    `## [x.y.z] - YYYY-MM-DD` heading, leaving an empty `[Unreleased]` section
    above it for what comes next.
 3. **Tag** the resulting commit `vx.y.z` and push the tag.
+4. **App**: set `version` in `app/config.yaml` to the same number
+   (`tests/test_app.py` insists), point `MAVERICK_REF` in `app/Dockerfile` at
+   the tag, and add the entry to `app/CHANGELOG.md`. Between releases
+   `MAVERICK_REF` is a full commit SHA, which is what the image installs.
 
 `maverick --version` and the HTTP API's `/` route (`src/maverick/server/api.py`)
 both report `maverick.app.VERSION`, so either is how to check the bump landed.

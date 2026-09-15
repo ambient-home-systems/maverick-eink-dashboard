@@ -1,0 +1,45 @@
+# Maverick configuration, written by the Home Assistant app on its first start.
+#
+# The connection settings come from the app's Configuration tab and reach this
+# file as ${VAR} substitutions, so leave the home_assistant, mqtt and server
+# blocks alone and edit `displays:`. Every key is documented at
+# https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/reference/configuration.md
+# and the panel ids at
+# https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/reference/panels.md
+#
+# Restart the app after editing.
+
+home_assistant:
+  url: ${HA_URL}
+  token: ${HA_TOKEN}
+
+mqtt:
+  enabled: ${MQTT_ENABLED:-false}
+  host: ${MQTT_HOST:-core-mosquitto}
+  port: ${MQTT_PORT:-1883}
+  username: ${MQTT_USERNAME:-}
+  password: ${MQTT_PASSWORD:-}
+
+server:
+  host: 0.0.0.0
+  port: 5000
+  base_url: ${MAVERICK_BASE_URL:-}
+  api_token: ${MAVERICK_API_TOKEN:-}
+
+# Frames, state and debug screenshots live next to this file, so you can look
+# at them with the File editor or Samba.
+data_dir: /config/data
+log_level: ${MAVERICK_LOG_LEVEL:-info}
+
+displays:
+  # One example. `id` becomes the URL a panel fetches from and its MQTT topic;
+  # `panel` picks resolution, colours and dpi from the catalogue; `dashboard`
+  # is the path in Home Assistant. Everything else is optional.
+  - id: kitchen
+    panel: waveshare-7in5-mono
+    dashboard: /lovelace/0
+    schedule:
+      every: 5m
+      quiet_hours: "23:00-06:30"
+    transport:
+      type: http_pull

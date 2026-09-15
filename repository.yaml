@@ -1,0 +1,7 @@
+# Home Assistant app repository manifest. Adding this repository's URL to the
+# app store — which is what the button in README.md does — reads this file and
+# then finds the app in app/.
+# https://developers.home-assistant.io/docs/apps/repository#repository-configuration
+name: Maverick e-ink dashboard
+url: https://github.com/ambient-home-systems/maverick-eink-dashboard
+maintainer: Maverick contributors

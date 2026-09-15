@@ -10,10 +10,14 @@ result to the panel's measured ink colours with dithering that protects text,
 refuses to ship a frame that is blank or illegible, and delivers it over BLE
 (OpenDisplay), MQTT, HTTP pull (ESPHome, Kindle, TRMNL), a webhook, or a file.
 
-What it is not yet: there is no Home Assistant add-on and no custom
-integration. Maverick runs as a standalone service and talks to Home Assistant
-over its APIs. [docs/architecture.md](docs/architecture.md) describes how the
-service works today; [docs/roadmap.md](docs/roadmap.md) holds the plan for both.
+On Home Assistant OS or Supervised it installs as a Home Assistant **app** —
+what Home Assistant used to call an add-on — with Chromium built in; see
+[Install as a Home Assistant app](#install-as-a-home-assistant-app). Anywhere
+else it runs as a standalone service that talks to Home Assistant over its
+APIs. What it is not yet: a custom integration, so displays become devices
+through MQTT rather than a config flow.
+[docs/architecture.md](docs/architecture.md) describes how the service works
+today; [docs/roadmap.md](docs/roadmap.md) holds the plan for the rest.
 
 ## Status
 
@@ -22,6 +26,10 @@ Version 0.1.0.
 The render service is implemented: the panel catalogue, the e-ink theme, the
 image pipeline, the lint gate, five transports, the scheduler, the HTTP API and
 the CLI all work.
+
+The Home Assistant app under [`app/`](app/DOCS.md) is built by CI on amd64,
+which also launches Chromium inside the image; nobody has yet installed it on a
+Home Assistant OS system. Treat it as a first cut and report what you find.
 
 **Nothing has been tested on a physical panel.** Every panel-side claim in the
 catalogue — resolution, native rotation, refresh behaviour, measured ink values
@@ -32,7 +40,37 @@ Transports exercised end to end against real hardware: **none — unverified.**
 the server side of it works; whether a panel likes what it receives is untested.
 The same caveat applies to `mqtt`, `opendisplay`, `file` and `webhook`.
 
+## Install as a Home Assistant app
+
+On Home Assistant OS or Supervised this is the short path. The button adds this
+repository to the app store; the app itself lives in [`app/`](app/DOCS.md).
+
+[![Open your Home Assistant instance and show the app store with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/?repository_url=https%3A%2F%2Fgithub.com%2Fambient-home-systems%2Fmaverick-eink-dashboard)
+
+1. Click the button, or open **Settings → Apps → App store**, use the menu in
+   the top right, choose **Repositories** and add
+   `https://github.com/ambient-home-systems/maverick-eink-dashboard`.
+2. Open **Maverick** in the store and install it. The image is built on your
+   machine, Chromium included, so the aarch64 note below does not apply; expect
+   a few minutes.
+3. On the **Configuration** tab, paste a long-lived access token (your profile
+   → Security). Nothing else is required: the URL defaults to Home Assistant's
+   internal address, and the Mosquitto broker app is picked up automatically
+   when it is installed.
+4. Start the app and open **Web UI**. The first start writes `maverick.yaml`,
+   with one example display, into the app's configuration folder
+   (`/addon_configs/…_maverick/`, reachable with the File editor, Studio Code
+   Server or Samba apps).
+5. Edit `displays:` in that file and restart the app. The Web UI shows what
+   each panel rendered and what the linter found.
+
+[app/DOCS.md](app/DOCS.md) is the full page: every option, what the app maps
+and exposes, and what to check when it does not start.
+
 ## Requirements
+
+These are for a standalone install. The Home Assistant app bundles its own
+Python and Chromium, so none of this applies there.
 
 - **Python 3.11 or newer.**
 - **Chromium**, installed through Playwright:
@@ -68,7 +106,9 @@ The same caveat applies to `mqtt`, `opendisplay`, `file` and `webhook`.
 
 ## Install
 
-There is no PyPI release yet, so install from git:
+On Home Assistant OS or Supervised, use
+[the app](#install-as-a-home-assistant-app) instead. Everywhere else there is
+no PyPI release yet, so install from git:
 
 ```bash
 pip install "maverick-eink-dashboard @ git+https://github.com/ambient-home-systems/maverick-eink-dashboard"
@@ -399,8 +439,11 @@ pull protocol a battery panel needs.
 
 ## Running as a service
 
-There is **no Dockerfile and no Home Assistant add-on yet**; both are on the
-roadmap in [docs/roadmap.md](docs/roadmap.md). For now, run it under
+On Home Assistant OS or Supervised, [the app](#install-as-a-home-assistant-app)
+is the packaged way to run it. There is **no standalone Docker image yet**:
+[`app/Dockerfile`](app/Dockerfile) is built by the Supervisor and expects the
+app's options file, so it is not a general-purpose image; a plain one is on the
+roadmap in [docs/roadmap.md](docs/roadmap.md). Everywhere else, run it under
 systemd.
 
 ```ini
@@ -526,9 +569,9 @@ guide, [CLAUDE.md](CLAUDE.md) the short version for AI-assisted changes, and
 
 From [docs/roadmap.md](docs/roadmap.md):
 
-- **An add-on and an integration**, so Maverick installs as an app: a sidebar
-  entry with ingress, UI setup instead of YAML, one device per panel, and
-  actions that need no MQTT broker.
+- **Ingress for the app, and an integration**: a sidebar entry instead of a
+  port, UI setup instead of YAML, one device per panel, and actions that need
+  no MQTT broker.
 - **Pages and a control surface**: an ordered list of dashboards per display
   with rotation and dwell times, plus a tile feature and a card to drive it.
 - **A dashboard strategy and live preview**, so a correct e-ink dashboard is

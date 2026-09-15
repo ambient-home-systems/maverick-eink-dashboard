@@ -31,6 +31,11 @@ yet made a tagged release, so everything so far sits under Unreleased.
   for each display (`src/maverick/ha/`).
 - ESPHome generator: device configuration generation for ESPHome-based panels
   (`src/maverick/esphome/`).
+- Home Assistant app: a Debian image with Chromium and the package pinned to a
+  commit, options for the connection, the pull base URL and MQTT (the
+  Mosquitto broker app is used automatically), a starter `maverick.yaml`
+  written on first start, and `repository.yaml` so this repository installs
+  from the app store (`app/`, `repository.yaml`, `tests/test_app.py`).
 - Documentation set: README, worked example config, the generated
   `docs/reference/` pages, the Home Assistant guide, device recipes for every
   transport, the e-ink design guide, the troubleshooting catalogue, the

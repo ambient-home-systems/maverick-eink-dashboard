@@ -1,11 +1,14 @@
 # Connecting Maverick to Home Assistant
 
-*Last reviewed against commit `d103e74`.*
+*Last reviewed against commit `992fbfc`.*
 
-Maverick is a standalone service that talks to Home Assistant over its public
-APIs. There is no add-on and no custom integration — see
-[What is not there yet](#what-is-not-there-yet) — so everything below is done
-with a token, a config file and, optionally, an MQTT broker you already run.
+Maverick talks to Home Assistant over its public APIs, whether it runs as the
+Home Assistant app ([`app/DOCS.md`](../../app/DOCS.md)) or standalone. There is
+no custom integration — see [What is not there yet](#what-is-not-there-yet) —
+so everything below is done with a token, a config file and, optionally, an
+MQTT broker. In the app, the token and the broker come from its options and
+land in the same config file through `${VAR}` substitution, so this page
+applies unchanged.
 
 This page picks up where [the README's quick start](../../README.md#quick-start)
 leaves off: you have Maverick installed and a `config.yaml`, and you want it
@@ -709,8 +712,9 @@ the same thing to both processes**:
   cannot write to /media/maverick (…). The add-on needs the 'media:rw' mapping, or set transport.media_dir to a shared path.
   ```
 
-  (The `media:rw` mapping is add-on wording; there is no add-on yet, so read it
-  as "give the process write access to the shared media directory".)
+  (The `media:rw` mapping is app wording: the Home Assistant app maps `/media`
+  read-write, so this just works there. Standalone, read it as "give the
+  process write access to the shared media directory".)
 
 `rotation` is passed through to the action when set, and it is the *tag's own*
 rotation — not `displays[].rotation`, which Maverick has already applied to the
@@ -752,12 +756,12 @@ already-exact image would undo the text-preserving work the pipeline just did.
 
 ## What is not there yet
 
-Maverick runs as a standalone service. These pieces are described in
-[docs/roadmap.md](../roadmap.md) as proposals, and none of them exists today:
+These pieces are described in [docs/roadmap.md](../roadmap.md) as proposals,
+and none of them exists today:
 
-* **No add-on.** Nothing to install from the Home Assistant add-on store, no
-  sidebar entry, no ingress. Run it under systemd or alongside Home Assistant
-  yourself.
+* **No ingress.** The app installs from the store and exposes its UI on port
+  5000, but there is no sidebar entry; you open it through **Web UI** on the
+  app's page.
 * **No custom integration.** No config flow, no HACS listing, no UI setup. The
   configuration is the YAML file described here.
 * **No `maverick.*` actions.** Automations reach Maverick through the MQTT
