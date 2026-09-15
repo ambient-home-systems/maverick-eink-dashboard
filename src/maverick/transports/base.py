@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -53,7 +53,7 @@ class DeliveryResult:
     pending: bool = False
     bytes_sent: int = 0
     duration_s: float = 0.0
-    at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @classmethod
     def success(cls, detail: str = "", **kwargs: Any) -> DeliveryResult:
@@ -91,10 +91,13 @@ class Transport(ABC):
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:
         """Get ``frame`` onto the panel, or publish it for collection."""
 
-    async def start(self) -> None:
+    # start/stop are optional hooks, not part of the contract a subclass has to
+    # implement: most transports hold nothing that needs opening, so the empty
+    # body is the default, not an oversight.
+    async def start(self) -> None:  # noqa: B027
         """Open long-lived resources. Called once at startup."""
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # noqa: B027
         """Release resources. Called once at shutdown."""
 
     async def probe(self, context: DeliveryContext) -> DeliveryResult:

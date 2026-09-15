@@ -91,7 +91,7 @@ class MqttPublisher:
         self._client = client
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=15)
-        except (TimeoutError, asyncio.TimeoutError) as exc:
+        except TimeoutError as exc:
             raise RuntimeError(
                 f"Timed out connecting to the MQTT broker at "
                 f"{self._config.host}:{self._config.port}. Check mqtt.host, "
