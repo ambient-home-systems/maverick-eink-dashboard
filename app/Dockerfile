@@ -18,11 +18,15 @@ FROM ${BUILD_FROM}
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
 #
-# v0.2.3 names d8b2e1f, the 0.2.3 release commit: enables Home Assistant
-# ingress for the Open Web UI button, so it opens embedded in Home Assistant
-# instead of a raw host:port link that a remote connection (Nabu Casa, a
-# reverse proxy) could never reach.
-ARG MAVERICK_REF=v0.2.3
+# 41a6079 is the 0.2.4 release commit: it stops an option the user has not set
+# reaching the service as the string "null", which made a fresh install look
+# like it held a linked account and fail every render with "Invalid client id".
+#
+# The SHA rather than a v0.2.4 tag, which CONTRIBUTING.md allows when the tag
+# cannot be pushed: it installs the same tree and the test above accepts either
+# form. Repointing it at the tag once that exists is a one-line change with no
+# behavioural difference.
+ARG MAVERICK_REF=41a6079c77b151b9037768e17d08364cbf76f53d
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
