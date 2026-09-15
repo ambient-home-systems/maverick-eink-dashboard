@@ -21,7 +21,8 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Twenty-two routes, plus the two FastAPI adds for its own documentation.
+Twenty-two routes and one static mount, plus the two FastAPI adds for its
+own documentation.
 
 | Method | Path | Token | Purpose |
 | --- | --- | --- | --- |
@@ -47,6 +48,7 @@ Twenty-two routes, plus the two FastAPI adds for its own documentation.
 | `GET` | `/api/auth/start` | **yes** | Begin linking a Home Assistant account |
 | `GET` | `/api/auth/callback` | no | Where Home Assistant redirects back to |
 | `GET` | `/` | **yes** | The setup UI |
+| `GET` | `/static/{file}` | no | The setup UI's stylesheet and script |
 | `GET` | `/api/docs` | no | Swagger UI (FastAPI) |
 | `GET` | `/api/openapi.json` | no | The OpenAPI document (FastAPI) |
 
@@ -349,6 +351,14 @@ The summary, with every key from `_display_summary`:
   "id": "kitchen",
   "name": "Kitchen panel",
   "enabled": true,
+  "config": {
+    "id": "kitchen",
+    "name": "Kitchen panel",
+    "panel": "waveshare-7in5-mono",
+    "dashboard": "/lovelace-eink/kitchen",
+    "schedule": {"every": "5m", "quiet_hours": "23:00-06:30"},
+    "transport": {"type": "http_pull"}
+  },
   "panel": "waveshare-7in5-mono",
   "panel_name": "Waveshare 7.5\" monochrome (V2)",
   "dashboard": "/lovelace-eink/kitchen",
@@ -380,6 +390,7 @@ The summary, with every key from `_display_summary`:
 | Key | Meaning |
 | --- | --- |
 | `id`, `name`, `enabled`, `panel`, `dashboard` | Straight from the display's configuration. |
+| `config` | The display **as configured**, in the shortest form that loads back as it (`dump_display`, `src/maverick/store.py`) — the same form the display store writes. Everything else here is resolved or live state; this is what `PUT` takes, so a client that wants to change one key sends this back with that key changed. |
 | `panel_name` | The panel profile's display name, resolved from `panel`. |
 | `width`, `height`, `color_scheme`, `dpi`, `rotation`, `frame_format` | The **resolved** values: the panel profile's, with any per-display override applied. |
 | `transport` | `transport.type` only; the transport's own options are not echoed. |
@@ -754,9 +765,23 @@ first use, so a callback Maverick did not start is refused.
 
 With `server.enable_ui: true` (the default) this is the setup and monitoring
 page: one card per display showing the current frame, the resolved geometry, the
-schedule, the lint findings, buttons to render and full-render, and a link to
-the display's generated ESPHome configuration. It is a single self-contained
-HTML page — no build step, no dependencies, no polling.
+schedule, when the next render is due and how long the last one took, the lint
+findings, buttons to render, full-render and pause the schedule, and a link to
+the display's generated ESPHome configuration.
+
+What this route returns is a shell — the header, the *Link with Home Assistant*
+card when no credential works, and an empty `<main>`. The cards are built by
+[`static/app.js`](#get-staticfile) from
+[`GET /api/displays`](#get-apidisplays), which it re-polls every five seconds,
+paused while the tab is hidden, and applies to the cards in place, so a
+scheduled render in the background appears without a reload. The first copy of
+that payload is embedded in the page as a `<script type="application/json">`
+block, so the first paint has content and waits for no request
+(`src/maverick/server/ui.py`). The render buttons call `?wait=false` and follow
+the summary's `rendering` flag rather than blocking on the render.
+
+There is still no build step and no dependency: the stylesheet and the script
+are two files served from `/static`, and nothing is fetched from a CDN.
 
 **Token required**, like the requests the page makes. A browser navigating here
 cannot send a header, so when the token is missing or wrong this route answers
@@ -778,6 +803,22 @@ exempt, and the page loads as it always has.
 With `server.enable_ui: false` the route answers **200** with a one-line page
 pointing at `/api/docs` — after the token check, which comes first. Turning
 the UI off does not turn off the API.
+
+### `GET /static/{file}`
+
+The setup UI's stylesheet and script — `app.css` and `app.js` — served by
+Starlette's `StaticFiles` mounted at `/static` (`src/maverick/server/api.py`)
+from `src/maverick/server/static/`, which ships with the package
+(`[tool.setuptools.package-data]` in `pyproject.toml`). `app.js` is a plain ES
+module: no framework, no build step, nothing from a CDN, because Maverick runs
+on a LAN that may have no internet.
+
+**No token**, deliberately. Both files are the same for everyone and carry no
+state, and the page that *asks* for the token is served exactly when the
+browser has none to offer — gated, it would arrive unstyled and unable to store
+what it is given. The mount checks its directory when the app is built, so a
+package assembled without the assets fails at start-up instead of serving a
+broken page.
 
 ### `GET /api/docs`
 

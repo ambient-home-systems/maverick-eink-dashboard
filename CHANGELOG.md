@@ -79,9 +79,67 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DisplayState` fields (`src/maverick/engine.py`) that persist the last
   render's durations and are now published in the MQTT state payload
   alongside `render_duration` too.
+- **The setup UI keeps itself up to date, and its buttons no longer reload the
+  page.** It had no polling and no push, so a scheduled render in the
+  background was invisible until someone pressed reload, and *Refresh* waited
+  on a synchronous `POST` before calling `location.reload()`
+  (`src/maverick/server/ui.py`). The cards are now built by
+  `src/maverick/server/static/app.js` from `GET /api/displays`: the first copy
+  of that payload is embedded in the page as a
+  `<script type="application/json">` block so the first paint has content and
+  waits for no request, and the script re-polls it every five seconds — paused
+  while the tab is hidden — applying it to the cards in place rather than
+  replacing them. Each card now shows what P1.3 began reporting and nothing
+  displayed: the next scheduled render as a relative time with the absolute one
+  in its `title`, how long the last render took, and a status pill that says
+  `rendering`, `paused` or `disabled` as well as the lint summary. *Refresh*
+  and *Full refresh* call `?wait=false` and follow the summary's `rendering`
+  flag, so a slow dashboard no longer holds the click open for the whole render
+  timeout; a *Pause*/*Resume* control drives
+  `POST /api/displays/{id}/schedule`, and a disabled display offers *Enable*.
+  The preview image is re-fetched only when the frame's checksum changes.
+- **`GET /api/displays` now carries each display's own configuration** under
+  `config`, in the shortest form that loads back as it (`dump_display`,
+  `src/maverick/store.py`) — the same form the display store writes. Every
+  other key in the summary is a resolved value or live state, so nothing over
+  HTTP described a display the way `PUT` wants it back, and a client could only
+  flip `enabled` by reconstructing the rest and losing whatever it did not know
+  about. The setup UI's *Enable* action is the first caller.
+- **"MQTT off" in the header now says what turning it on would give, and how.**
+  It was a fact with nothing to act on, while "Home Assistant not connected"
+  got a whole card. The chip opens a short explanation — the button, the
+  switch, the image entity and the sensors that a display only becomes a Home
+  Assistant device with (`src/maverick/ha/discovery.py`) — and the two ways to
+  get a broker: the Mosquitto
+  broker app, which the app picks up through the Supervisor, or the `mqtt_host`
+  option (`app/run.sh`); and `mqtt.enabled: true` standalone
+  (`src/maverick/config.py`). It is a `<details>` element, so it opens with no
+  script.
 
 ### Changed
 
+- **The setup UI's stylesheet and script are files now, not strings in Python.**
+  `_CSS` and `_JS` lived in `src/maverick/server/ui.py`, which also rendered
+  every card server-side; they are now `src/maverick/server/static/app.css` and
+  `app.js`, served by Starlette's `StaticFiles` mounted at `/static`
+  (`src/maverick/server/api.py`) and listed in
+  `[tool.setuptools.package-data]` (`pyproject.toml`) so they ship in the
+  wheel. `render_ui` renders the shell — the header, the *Link with Home
+  Assistant* card when no credential works, and an empty `<main>` — and the
+  link card stays server-rendered because it has to work with no token and no
+  script. The constraint that made them strings in the first place is
+  unchanged: no build step, no framework, nothing fetched from a CDN, because
+  this runs on a LAN that may have no internet. `/static` is not behind
+  `server.api_token`, since the page that asks for the token is served exactly
+  when the browser has none to offer.
+- **The card grid no longer scrolls sideways on a narrow phone.**
+  `minmax(340px, 1fr)` inside 24px of page padding is wider than a 360px
+  screen, so the whole page moved horizontally; the columns are
+  `minmax(min(340px, 100%), 1fr)` now, with a 16px gutter below 480px. The
+  light and dark tokens are unchanged. Buttons carry `aria-busy` while a
+  request is in flight, keyboard focus is visible again, and the one animation
+  — the pulsing `rendering` pill — is dropped under
+  `prefers-reduced-motion: reduce`.
 - **A set `server.api_token` now switches each display's MQTT image entity to
   the frame bytes.** Discovery published an `image_topic` only when
   `server.base_url` was empty and a `url_topic` pointing at

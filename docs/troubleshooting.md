@@ -1,6 +1,6 @@
 # Troubleshooting
 
-*Last reviewed against commit `3c50879`.*
+*Last reviewed against commit `4b892a4`.*
 
 Every user-facing failure message Maverick can produce, grouped in the order
 you meet them: loading the config, connecting to Home Assistant, rendering,
@@ -38,7 +38,8 @@ Four surfaces carry these messages, and each entry below says which apply:
   it never carries the message text itself, and there is no dedicated entity
   for it — read the raw state topic, or template one yourself.
 * **UI** — the red error line on that display's card in the setup UI
-  (`src/maverick/server/ui.py`), truncated to 300 characters.
+  (`src/maverick/server/static/app.js`, which draws the cards from
+  `GET /api/displays`), truncated to 300 characters.
 
 A **config-load** failure (anything in the first section) happens before the
 engine exists, so it is CLI-only: `maverick` prints it and exits — a

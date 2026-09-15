@@ -388,3 +388,32 @@ def test_summary_gains_durations_after_a_render(harness: ApiHarness) -> None:
     assert after["last_render_s"] is not None
     assert after["last_total_s"] is not None
     assert after["rendering"] is False
+
+
+def test_summary_carries_a_config_that_puts_straight_back(harness: ApiHarness) -> None:
+    """The setup UI's Enable action flips one key and PUTs the rest untouched.
+
+    A `PUT` replaces the whole configuration, so the UI needs the display as
+    configured — which no route returned before this key existed, the summary
+    being a resolved view. `dump_display` (`src/maverick/store.py`) is the same
+    shortest form the display store writes, and this is the round trip that
+    says it loads back.
+    """
+    display = harness.app.config.display(DISPLAY_ID)
+    display.dashboard = "/lovelace-eink/kitchen"
+    display.schedule.quiet_hours = "23:00-06:30"
+
+    config = harness.client.get(f"/api/displays/{DISPLAY_ID}").json()["config"]
+    assert config["dashboard"] == "/lovelace-eink/kitchen"
+
+    response = harness.client.put(
+        f"/api/displays/{DISPLAY_ID}", json={**config, "enabled": False}
+    )
+
+    assert response.status_code == 200, response.text
+    after = harness.app.config.display(DISPLAY_ID)
+    assert after.enabled is False
+    # Everything the UI did not touch survived the round trip.
+    assert after.dashboard == "/lovelace-eink/kitchen"
+    assert after.schedule.quiet_hours == "23:00-06:30"
+    assert after.transport.type == display.transport.type

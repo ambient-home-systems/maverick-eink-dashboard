@@ -1,6 +1,6 @@
 # Maverick — Architecture
 
-> Last reviewed against commit `3c50879`.
+> Last reviewed against commit `4b892a4`.
 >
 > This page describes the service as it is built. Everything proposed but not
 > written — ingress for the app, the integration, pages, the authoring tools —
@@ -370,12 +370,15 @@ assume works.
   `chromium` package and sets `MAVERICK_CHROMIUM_PATH` itself. Standalone,
   Playwright ships no aarch64 Linux build, so a Raspberry Pi needs the distro
   package and the same variable.
-- **The setup UI cannot change a display.** It shows what each panel rendered
-  and what the linter found, offers refresh and full-refresh buttons, and links
-  to the generated ESPHome config — but editing a display means editing a file
-  by hand and restarting: the config file, or the display store Maverick keeps
-  the displays in once it has imported them (`src/maverick/store.py`,
-  `<data_dir>/displays.yaml`).
+- **The setup UI cannot add or edit a display.** It shows what each panel
+  rendered and what the linter found, polls for that while it is open, offers
+  refresh and full-refresh buttons, pauses and resumes a schedule, re-enables a
+  disabled display and links to the generated ESPHome config
+  (`src/maverick/server/static/app.js`) — but creating one, or changing its
+  dashboard, panel or transport, means either the HTTP API
+  (`POST`/`PUT /api/displays`) or editing a file by hand and restarting: the
+  config file, or the display store Maverick keeps the displays in once it has
+  imported them (`src/maverick/store.py`, `<data_dir>/displays.yaml`).
 - **`maverick scan` needs a local Bluetooth adapter.** Tag discovery does not go
   through Home Assistant's Bluetooth proxies, even though delivery can.
 

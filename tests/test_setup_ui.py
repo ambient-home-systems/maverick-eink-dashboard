@@ -1,7 +1,7 @@
 """The setup UI behind Home Assistant's ingress, and when the credential is bad.
 
-Two things this page has to get right, both of which it got wrong once and
-neither of which any other test covers.
+Three things this page has to get right; the first two it got wrong once, and
+nothing else covers any of them.
 
 *It has to survive a path prefix.* Ingress serves the page at
 ``/api/hassio_ingress/<token>/`` and proxies to the app with that prefix
@@ -12,28 +12,65 @@ root-relative ``/api/...`` in the page resolves against Home Assistant's own
 origin and never reaches the app; a relative ``api/...`` resolves against the
 page's base, which is the prefix under ingress and ``/`` on the published port.
 The route is ``/ingress/{token}/{path:.*}``, so that base always ends in a
-slash and the relative form is safe.
+slash and the relative form is safe. The same now goes for ``static/...``, and
+for every URL ``static/app.js`` builds, which is where the fetches went.
 
 *It has to offer the link when the credential is broken.* A client is built
 whenever a credential is configured, working or not, so asking whether one
 exists would claim "connected" for a credential Home Assistant rejects — and
 hide the link card exactly when it is the one thing on the page that helps.
+
+*The page is now a shell.* The cards are drawn by ``static/app.js`` from
+``GET /api/displays``, so two things have to hold that did not have to before:
+the assets must actually be served — and ship in the wheel, which is a
+packaging file away from the code that needs them — and the payload embedded
+for the first paint must be the one the script goes on to poll.
+
+There is no JavaScript test runner here, so what ``app.js`` *does* with those
+URLs is not covered; the browser-level test is P4.3 in
+``docs/implementation-plan.md``.
 """
 
 from __future__ import annotations
 
+import json
 import re
+import tomllib
+from fnmatch import fnmatch
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.routing import Match
 
 from maverick.app import Application
 from maverick.config import Config
-from maverick.server.api import create_app
+from maverick.server.api import STATIC_DIR, create_app
+from maverick.server.ui import render_token_prompt
+
+ROOT = Path(__file__).resolve().parents[1]
 
 #: src/href/fetch targets the rendered page carries.
 _EMITTED = re.compile(
     r"""(?:src|href)=['"]([^'"]+)['"]|fetch\(['"`]([^'"`]+)['"`]"""
+)
+
+#: A quoted string in the script that looks like one of this app's own URLs.
+#: Template literals count: `api/displays/${id}/render` is a fetch target with
+#: a hole in it, and the hole is filled in below.
+_SCRIPT_TARGET = re.compile(r"""['"`](/?(?:api|static)/[^'"`\s]*)['"`]""")
+
+#: A `${...}` in one of those, standing in for a display id.
+_PLACEHOLDER = re.compile(r"\$\{[^}]*\}")
+
+#: JavaScript comments, stripped before the scan: the script's own prose
+#: explains the `/api/...` form it must not use, and quotes it to do so.
+_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+
+#: The first `GET /api/displays` payload, embedded so the first paint has cards.
+_INITIAL = re.compile(
+    r'<script type="application/json" id="initial-displays">(.*?)</script>',
+    re.DOTALL,
 )
 
 
@@ -72,18 +109,30 @@ def _targets(page: str) -> list[str]:
     return [a or b for a, b in _EMITTED.findall(page)]
 
 
+def _script() -> str:
+    """``static/app.js`` as it is served, with its comments taken out."""
+    return _COMMENT.sub("", (STATIC_DIR / "app.js").read_text(encoding="utf-8"))
+
+
+def _script_targets() -> list[str]:
+    return _SCRIPT_TARGET.findall(_script())
+
+
 # --------------------------------------------------------------------------- #
 # Surviving the ingress prefix
 # --------------------------------------------------------------------------- #
 
-def test_the_page_emits_no_root_relative_app_paths(app: Application) -> None:
-    """``/api/...`` in this page is a link that dies under ingress.
+def test_nothing_emits_a_root_relative_app_path(app: Application) -> None:
+    """``/api/...`` or ``/static/...`` here is a link that dies under ingress.
 
     It resolves against Home Assistant's origin, where nothing serves it, so
     the preview images break and *Link with Home Assistant* fails on a 404 it
-    reports as a JSON parse error.
+    reports as a JSON parse error. The script is included because that is where
+    the fetches live now, and the token prompt because it is the page a browser
+    with no accepted token gets — and it loads the stylesheet too.
     """
-    offenders = [t for t in _targets(_page(app)) if t.startswith("/api")]
+    emitted = _targets(_page(app)) + _targets(render_token_prompt()) + _script_targets()
+    offenders = sorted({t for t in emitted if t.startswith(("/api", "/static"))})
     assert not offenders, (
         f"{offenders} are root-relative and will miss the ingress prefix. "
         "Emit them relative to the document instead (api/..., not /api/...)."
@@ -97,12 +146,103 @@ def test_the_page_still_reaches_its_own_endpoints(app: Application) -> None:
     the way a browser would against the page's base and must be served.
     """
     with TestClient(create_app(app)) as client:
-        targets = [t for t in _targets(client.get("/").text) if t.startswith("api/")]
+        targets = [
+            t for t in _targets(client.get("/").text) if t.startswith(("api/", "static/"))
+        ]
         assert targets, "the page emits no app endpoints at all"
         for target in targets:
             # A browser resolves `api/x` against the base `/`, giving `/api/x`.
             response = client.get(f"/{target}")
             assert response.status_code < 400, f"{target} -> {response.status_code}"
+
+
+def test_the_script_only_calls_routes_this_app_serves(app: Application) -> None:
+    """Every URL ``app.js`` builds has to name a route, typos included.
+
+    Resolved against the router rather than fetched, because most of them are
+    `POST` or `PUT` targets and one of them 404s honestly until something has
+    rendered: what is being asserted is that the path exists, not what it
+    answers.
+    """
+    api = create_app(app)
+    targets = _script_targets()
+    assert targets, "app.js calls no app endpoints at all"
+    for target in targets:
+        path = "/" + _PLACEHOLDER.sub("kitchen", target).split("?")[0]
+        assert _resolves(api, path), (
+            f"app.js builds {target}, which resolves to {path}, and no route serves it"
+        )
+
+
+def _resolves(api, path: str) -> bool:
+    scope = {"type": "http", "method": "GET", "path": path, "root_path": "", "headers": []}
+    # PARTIAL is a path that matched a route of another method — a POST target
+    # reached by this GET-shaped scope — which is still a path that exists.
+    return any(route.matches(scope)[0] is not Match.NONE for route in api.routes)
+
+
+# --------------------------------------------------------------------------- #
+# The shell and its assets
+# --------------------------------------------------------------------------- #
+
+def test_the_static_assets_are_served(app: Application) -> None:
+    with TestClient(create_app(app)) as client:
+        css = client.get("/static/app.css")
+        js = client.get("/static/app.js")
+    assert css.status_code == 200
+    assert css.headers["content-type"].startswith("text/css")
+    assert js.status_code == 200
+    assert "javascript" in js.headers["content-type"]
+
+
+def test_the_static_assets_ship_with_the_package() -> None:
+    """They are in the tree but not necessarily in the wheel.
+
+    ``StaticFiles`` checks its directory at start-up, so a package built
+    without them does not serve an unstyled page — it fails to start at all.
+    Nothing else here would notice, since the tests run from the source tree.
+    """
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    patterns = pyproject["tool"]["setuptools"]["package-data"]["maverick"]
+    assets = sorted(p.name for p in STATIC_DIR.iterdir() if p.is_file())
+    assert assets, "src/maverick/server/static is empty"
+    for name in assets:
+        path = f"server/static/{name}"
+        assert any(fnmatch(path, pattern) for pattern in patterns), (
+            f"{path} matches no [tool.setuptools.package-data] pattern in "
+            f"pyproject.toml ({patterns}), so it would not ship in the wheel."
+        )
+
+
+def test_the_first_paint_carries_the_display_list(app: Application) -> None:
+    """The embedded JSON is what the script starts from, so it has to parse.
+
+    It is also the same payload the poll fetches; anything else and a card
+    would change the moment the first poll landed.
+    """
+    with TestClient(create_app(app)) as client:
+        page = client.get("/").text
+        polled = client.get("/api/displays").json()
+
+    block = _INITIAL.search(page)
+    assert block, "the page embeds no initial display list"
+    embedded = json.loads(block.group(1))
+    assert [display["id"] for display in embedded] == ["kitchen"]
+    assert embedded == polled
+
+
+def test_the_embedded_json_cannot_close_the_script_block(app: Application) -> None:
+    """A dashboard path is user text, and `</script>` in it would end the page.
+
+    `<` cannot occur in JSON outside a string, so escaping it is enough and
+    costs the parser nothing.
+    """
+    app.config.display("kitchen").dashboard = "/lovelace/</script><b>x"
+    page = _page(app)
+    block = _INITIAL.search(page)
+    assert block, "the page embeds no initial display list"
+    assert "</script>" not in block.group(1)
+    assert json.loads(block.group(1))[0]["dashboard"] == "/lovelace/</script><b>x"
 
 
 # --------------------------------------------------------------------------- #
@@ -155,3 +295,21 @@ def test_the_base_url_blocker_says_where_to_set_it(app: Application) -> None:
     page = _page(app)
     assert "startLink(this)" not in page, "no base_url means nowhere to redirect back to"
     assert "Configuration tab" in page, "the blocker does not say where to set base_url"
+
+
+# --------------------------------------------------------------------------- #
+# The MQTT chip
+# --------------------------------------------------------------------------- #
+
+def test_mqtt_off_says_what_turning_it_on_would_give(app: Application) -> None:
+    """"MQTT off" in the header was a fact nobody could act on.
+
+    The two ways to turn it on are the Mosquitto broker app (or the
+    `mqtt_host` option) under the Supervisor, and `mqtt.enabled` standalone —
+    `app/run.sh` and `MqttConfig` respectively.
+    """
+    page = _page(app)
+    assert "MQTT off" in page
+    assert "Mosquitto broker" in page
+    assert "mqtt_host" in page
+    assert "mqtt.enabled: true" in page
