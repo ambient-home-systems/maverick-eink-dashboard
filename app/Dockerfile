@@ -17,7 +17,13 @@ FROM ${BUILD_FROM}
 # forbids unknown keys (src/maverick/config.py:71-77), so a ref left behind at
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
-ARG MAVERICK_REF=v0.2.1
+#
+# 29a4a67a is the 0.2.2 release commit. It names the commit rather than the
+# v0.2.2 tag because that tag was pushed one commit early, onto 2930095, whose
+# package still reports 0.2.1 — installing it would put a 0.2.1 package under
+# the 0.2.2 this file's config.yaml advertises. Releasing in CONTRIBUTING.md
+# allows the commit form; repoint at the tag once it names 29a4a67.
+ARG MAVERICK_REF=29a4a67a779da2a2f28a82dc7fe9e4a9f8be59c8
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
