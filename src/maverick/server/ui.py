@@ -9,6 +9,13 @@ re-rendering, looking at the result, adjusting a threshold and going again —
 and doing that by walking to the panel is miserable. The page shows what each
 panel is currently displaying, what the linter thought of it, and a button to
 re-render.
+
+When ``server.api_token`` is set the page is behind it too, so this module
+renders two things: the page itself, and :func:`render_token_prompt`, which is
+what ``/`` answers with until the browser has a token to offer
+(`src/maverick/server/api.py`). Both keep the token in ``sessionStorage`` —
+never ``localStorage``, which would leave the secret behind for whoever opens
+the browser next.
 """
 
 from __future__ import annotations
@@ -53,6 +60,13 @@ button:hover{border-color:var(--muted)} button:disabled{opacity:.5;cursor:wait}
 code{font:12px ui-monospace,monospace;background:var(--bg);padding:1px 5px;
      border-radius:4px;border:1px solid var(--line)}
 a{color:inherit}
+.tokenbox{display:flex;gap:6px;align-items:center;font-size:13px}
+/* [hidden] loses to display:flex, so it has to be restated. */
+.tokenbox[hidden]{display:none}
+.tokenbox input{font:inherit;padding:5px 8px;border:1px solid var(--line);
+      border-radius:6px;background:var(--card);color:var(--fg);width:15em}
+.prompt{max-width:34em;margin:12vh auto;padding:0 24px}
+.prompt p{color:var(--muted)}
 """
 
 # Every URL below is *document-relative* on purpose — `api/...`, never
@@ -65,15 +79,72 @@ a{color:inherit}
 # and never reaches the app at all. A relative one resolves against the
 # page's base, which is the prefix under ingress and `/` on the published
 # port, so the same markup works through both.
-_JS = """
+#
+# The token handling below is shared with the prompt page, which is why the
+# storage key and the sessionStorage wrappers live in `_TOKEN_JS` rather than
+# in either page.
+_TOKEN_JS = """
+// sessionStorage, never localStorage: the token should not outlive the tab,
+// and localStorage would hand it to whoever opens this browser next. Both
+// throw outright in a private window, so every access is wrapped — a browser
+// that refuses to store it still works, it just asks again next time.
+const TOKEN_KEY = 'maverick.api_token';
+function storedToken(){
+  try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+}
+function storeToken(value){
+  try { sessionStorage.setItem(TOKEN_KEY, value); } catch (e) { /* private window */ }
+}
+// `?token=` keeps working and wins: it is how someone arrives with a fresh
+// token after the stored one stopped being accepted.
+function apiToken(){
+  return new URLSearchParams(location.search).get('token') || storedToken();
+}
+function applyToken(event){
+  event.preventDefault();
+  const field = document.getElementById('token-field');
+  const value = (field.value || '').trim();
+  if (!value) return false;
+  storeToken(value);
+  // A document request cannot carry a header, so the page is re-opened with
+  // the token in the query, which the server accepts too.
+  location.search = 'token=' + encodeURIComponent(value);
+  return false;
+}
+"""
+
+_JS = _TOKEN_JS + """
 async function post(url){
-  const r = await fetch(url, {method:'POST', headers: authHeaders()});
+  const r = await authFetch(url, {method:'POST'});
   if(!r.ok) throw new Error(await r.text());
   return r.json();
 }
 function authHeaders(){
-  const t = new URLSearchParams(location.search).get('token');
+  const t = apiToken();
   return t ? {'Authorization': 'Bearer ' + t} : {};
+}
+// Neither an <img> nor a plain anchor can send a header, so those two present
+// the token the other way the server accepts: `?token=` in the query string
+// (`_authenticated` in src/maverick/server/api.py).
+function withToken(url){
+  const t = apiToken();
+  if (!t) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(t);
+}
+// Every fetch on this page goes through here, so a token that is missing,
+// wrong or no longer accepted surfaces as the field below rather than as a
+// button that silently does nothing.
+async function authFetch(url, options){
+  const r = await fetch(url, Object.assign({}, options || {}, {headers: authHeaders()}));
+  if (r.status === 401) { askForToken(); throw new Error('Maverick needs its API token.'); }
+  return r;
+}
+function askForToken(){
+  const box = document.getElementById('token-box');
+  if (!box) return;
+  box.hidden = false;
+  const field = document.getElementById('token-field');
+  if (field) field.focus();
 }
 // The authorize URL is fetched rather than linked so the API token (when one
 // is set) travels in a header, and so a misconfigured base_url reports itself
@@ -81,7 +152,7 @@ function authHeaders(){
 async function startLink(btn){
   btn.disabled = true; btn.textContent = 'Opening Home Assistant…';
   try {
-    const r = await fetch('api/auth/start', {headers: authHeaders()});
+    const r = await authFetch('api/auth/start');
     const body = await r.json();
     if(!r.ok) throw new Error(body.detail || 'could not start linking');
     // Top-level rather than inside Home Assistant's ingress iframe: the
@@ -102,22 +173,42 @@ async function refresh(id, force, btn){
     btn.textContent = res.skipped ? 'Unchanged' : (res.ok ? 'Done' : 'Failed');
     // Bust the cache: the preview URL is stable but its content is not.
     const img = document.getElementById('shot-' + id);
-    if (img) img.src = `api/displays/${id}/preview.png?t=${Date.now()}`;
+    if (img) img.src = withToken(`api/displays/${id}/preview.png?t=${Date.now()}`);
     setTimeout(() => { btn.textContent = label; btn.disabled = false; location.reload(); }, 1200);
   } catch (e) {
     btn.textContent = 'Error'; console.error(e);
     setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 2500);
   }
 }
-// The ESPHome link is a plain anchor, not a fetch, so authHeaders() cannot
-// carry the token: append it to the query string instead, from whatever
-// value the page itself was opened with.
+// A token arriving in the query is remembered for the rest of the tab, so the
+// preview images and the ESPHome link — neither of which can send a header —
+// get it appended to their URLs. getAttribute/setAttribute rather than .src
+// and .href, which would resolve to absolute URLs and lose the ingress prefix.
 (function(){
-  const t = new URLSearchParams(location.search).get('token');
-  if (!t) return;
-  document.querySelectorAll('a.esphome-link').forEach(a => {
-    a.href += (a.href.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(t);
+  const supplied = new URLSearchParams(location.search).get('token');
+  if (supplied) storeToken(supplied);
+  if (!apiToken()) return;
+  document.querySelectorAll('img.shot, a.esphome-link').forEach(el => {
+    const attr = el.tagName === 'IMG' ? 'src' : 'href';
+    el.setAttribute(attr, withToken(el.getAttribute(attr)));
   });
+})();
+"""
+
+
+_PROMPT_JS = """
+(function(){
+  if (REJECTED) {
+    // The token this request carried was refused, so forget it: offering it
+    // again is exactly what would make the redirect below a loop.
+    storeToken('');
+    return;
+  }
+  // A reload — the page does one after a render — arrives here with nothing in
+  // the query, but the tab may still know the token. Use it rather than
+  // asking a question that has already been answered.
+  const known = storedToken();
+  if (known) location.search = 'token=' + encodeURIComponent(known);
 })();
 """
 
@@ -247,6 +338,13 @@ def render_ui(application: Application) -> str:
     &middot; MQTT {mqtt_state}
   </span>
   <span class="sub" style="margin-left:auto"><a href="api/docs">API docs</a></span>
+  <!-- Hidden until a fetch comes back 401. With no `server.api_token` set
+       that never happens and the page looks exactly as it did before. -->
+  <form class="tokenbox" id="token-box" hidden onsubmit="return applyToken(event)">
+    <label for="token-field">API token</label>
+    <input id="token-field" type="password" autocomplete="off" spellcheck="false">
+    <button type="submit">Use</button>
+  </form>
 </header>
 <main>{"".join(cards)}</main>
 <script>const SUMMARY={summary};{_JS}</script>
@@ -314,8 +412,50 @@ def _link_card(application: Application) -> str:
 </section>"""
 
 
+def render_token_prompt(supplied: bool = False) -> str:
+    """What ``/`` answers with while the browser has no token it can offer.
+
+    The UI is behind ``server.api_token`` like everything else it shows
+    (`src/maverick/server/api.py`), but a browser navigating to a page cannot
+    send an ``Authorization`` header, so the dependency's JSON ``detail`` would
+    be a dead end for the one audience that reads it. This asks for the token
+    and re-opens the page as ``?token=...``, which a navigation *can* carry.
+
+    ``supplied`` says whether the rejected request already carried a token.
+    When it did, the stored one is wrong: say so, and drop it — offering it
+    again is what would turn the redirect below into a loop.
+    """
+    note = (
+        "That token was not accepted. Check <code>server.api_token</code> in "
+        "Maverick's configuration — in the app it is the "
+        "<code>api_token</code> option on the Configuration tab."
+        if supplied
+        else "This Maverick is protected by <code>server.api_token</code>. "
+        "Enter it to open the setup UI; it is kept for this tab only."
+    )
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maverick</title><style>{_CSS}</style></head>
+<body>
+<div class="prompt">
+  <h1>Maverick</h1>
+  <p class="{"err" if supplied else ""}">{note}</p>
+  <form class="tokenbox" onsubmit="return applyToken(event)">
+    <label for="token-field">API token</label>
+    <input id="token-field" type="password" autocomplete="off" spellcheck="false" autofocus>
+    <button type="submit">Open</button>
+  </form>
+  <p>Opening Maverick from inside Home Assistant never asks for this: those
+  requests arrive through the app's ingress, which Home Assistant has already
+  put a login in front of.</p>
+</div>
+<script>const REJECTED={json.dumps(supplied)};{_TOKEN_JS}{_PROMPT_JS}</script>
+</body></html>"""
+
+
 def _sev_class(severity: str) -> str:
     return {"error": "err", "warning": "warn", "info": "muted"}.get(severity, "")
 
 
-__all__ = ["render_ui"]
+__all__ = ["render_token_prompt", "render_ui"]

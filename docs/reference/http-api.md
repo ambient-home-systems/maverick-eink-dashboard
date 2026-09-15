@@ -33,23 +33,29 @@ Sixteen routes, plus the two FastAPI adds for its own documentation.
 | `POST` | `/api/displays/{display_id}/render` | **yes** | Render one display now |
 | `POST` | `/api/render` | **yes** | Render every enabled display now |
 | `GET` | `/api/displays/{display_id}/frame` | **yes** | The current frame, for a device that pulls |
-| `GET` | `/api/displays/{display_id}/preview.png` | no | The current frame as a viewable PNG |
+| `GET` | `/api/displays/{display_id}/preview.png` | **yes** | The current frame as a viewable PNG |
 | `GET` | `/api/displays/{display_id}/esphome.yaml` | **yes** | A ready-to-flash ESPHome configuration |
 | `GET` | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | `GET` | `/api/display` | no | TRMNL per-fetch metadata |
 | `GET` | `/api/auth/status` | no | Which Home Assistant credential is in use |
 | `GET` | `/api/auth/start` | **yes** | Begin linking a Home Assistant account |
 | `GET` | `/api/auth/callback` | no | Where Home Assistant redirects back to |
-| `GET` | `/` | no | The setup UI |
+| `GET` | `/` | **yes** | The setup UI |
 | `GET` | `/api/docs` | no | Swagger UI (FastAPI) |
 | `GET` | `/api/openapi.json` | no | The OpenAPI document (FastAPI) |
 
 ## Authentication
 
-Authentication is off until `server.api_token` is set. Set it, and the seven
-routes marked **yes** above require it; `_require_token` is attached to those
-routes alone, and it returns immediately when the configured token is empty, so
-an unset token means every route is open.
+Authentication is off until `server.api_token` is set. Set it, and the nine
+routes marked **yes** above require it; `_authenticated` decides for all of
+them, and it returns true immediately when the configured token is empty, so an
+unset token means every route is open.
+
+What stays open with a token set is the short list: `/health`, the two
+catalogue routes, the two TRMNL routes, `/api/auth/status`,
+`/api/auth/callback` — which Home Assistant redirects a browser to and knows
+no token of ours, so the `state` nonce authenticates it instead — and
+FastAPI's own documentation routes.
 
 A client may present the token three ways. They carry the same secret and are
 compared the same way — the extra spellings widen how a client may present the
@@ -75,19 +81,52 @@ A missing or wrong token fails the whole request with **401** and:
 {"detail": "invalid or missing API token"}
 ```
 
-One consequence of the list above is worth stating plainly: `/api/displays/{id}/preview.png`
-is **not** behind the token, so anyone who can reach the server can see what a
-panel is showing. The setup UI and the Home Assistant image entity both use
-it, which is why. Treat the server as something to keep on a trusted network
-rather than exposed to the internet.
+`GET /` answers 401 as a page rather than as that JSON — see
+[The setup UI](#the-setup-ui) — because a browser navigating to a page cannot
+send a header, and `{"detail": ...}` leaves the one audience for that route
+with nothing to do.
 
-`/api/displays/{id}/esphome.yaml` **is** behind the token: the configuration it
-generates embeds `Authorization: "Bearer <api_token>"` verbatim when
-`server.api_token` is set (`src/maverick/esphome/generator.py`), so the route
-that serves it carries the same `_require_token` dependency as the other
-`/api/displays/...` routes. The setup UI's "ESPHome config" link appends
-`?token=` itself when the page was opened with one, the same way its fetch
-calls send `Authorization: Bearer` (`src/maverick/server/ui.py`).
+### The ingress exemption
+
+One kind of request is let through with no token: one that arrived over the
+Home Assistant app's ingress. Ingress proxies to the app with Home Assistant's
+own login already in front of it and no token of ours to send
+(`app/config.yaml` sets `ingress: true`), so gating it would mean the app's
+"Open Web UI" button opening a page that asks for a secret the user need not
+have set.
+
+Such a request is recognised by its **peer address** — the address the
+connection came from — and only while Maverick is running as an app
+(`request_is_from_ingress` in `src/maverick/ha/supervisor.py`). Home Assistant
+documents the address as the whole of the answer: "Only connections from
+`172.30.32.2` must be allowed. You should deny access to all other IP
+addresses within your app server" (*Presenting your app*, Ingress), and the
+Supervisor connects straight to the app container
+(`supervisor/api/ingress.py`, `_create_url`), so that address is what the app
+sees.
+
+No header is trusted for this. The Supervisor does add
+`X-Remote-User-Id`, `X-Remote-User-Name` and `X-Remote-User-Display-Name`
+(`supervisor/api/ingress.py`, `_init_header`), but Maverick also publishes port
+5000, and anything on the LAN can send those same headers to it. A peer address
+cannot be set that way, and the `running_under_supervisor` condition means the
+address carries no weight on a host that has no Supervisor at all.
+
+### Two routes people notice
+
+`/api/displays/{id}/preview.png` is behind the token, which is what stops
+anyone on the LAN reading every panel off the published port. Two things follow
+from that. The setup UI appends `?token=` to the image URLs, because an `<img>`
+cannot send a header (`src/maverick/server/ui.py`). And MQTT discovery stops
+advertising that URL to the Home Assistant image entity once a token is set,
+publishing the frame over the broker instead — an image entity fetches with no
+credentials — which is described under
+[the image entity](mqtt.md#the-image-entity-two-modes).
+
+`/api/displays/{id}/esphome.yaml` is behind the token because the configuration
+it generates embeds `Authorization: "Bearer <api_token>"` verbatim
+(`src/maverick/esphome/generator.py`). The setup UI's "ESPHome config" link
+appends `?token=` for the same reason the images do.
 
 ## Status and catalogue
 
@@ -388,9 +427,11 @@ x-maverick-next-refresh: 300
 
 ### `GET /api/displays/{display_id}/preview.png`
 
-No token. The last frame as a viewable PNG — the quantised result with the real
-inks, not the source screenshot. Used by the setup UI and by the Home Assistant
-[image entity](mqtt.md#the-image-entity-two-modes).
+**Token required.** The last frame as a viewable PNG — the quantised result
+with the real inks, not the source screenshot. Used by the setup UI, which
+appends `?token=` to the image URL, and by the Home Assistant
+[image entity](mqtt.md#the-image-entity-two-modes), which is given the frame
+over MQTT instead whenever a token is set.
 
 **200** `image/png`, with `Cache-Control: no-cache` and the same `ETag` as the
 frame endpoint. `If-None-Match` is **not** honoured here: the ETag is published
@@ -557,14 +598,26 @@ schedule, the lint findings, buttons to render and full-render, and a link to
 the display's generated ESPHome configuration. It is a single self-contained
 HTML page — no build step, no dependencies, no polling.
 
-The page itself is unauthenticated, but the requests it makes are not. When
-`server.api_token` is set, open the UI as `http://host:5000/?token=<token>`: the
-page reads `token` from its own query string and sends it as
-`Authorization: Bearer` on the render calls.
+**Token required**, like the requests the page makes. A browser navigating here
+cannot send a header, so when the token is missing or wrong this route answers
+**401** with a page carrying an *API token* field rather than with JSON: type
+the token and the page re-opens itself as `/?token=<token>`, the one way a
+navigation can carry it. `/?token=<token>` still works directly.
 
-With `server.enable_ui: false` the route still answers **200**, with a one-line
-page pointing at `/api/docs`. Turning the UI off does not turn off the API, and
-does not affect the preview images, which are what the cards display.
+The token is then kept in `sessionStorage` — never `localStorage`, which would
+leave it behind for whoever opens the browser next — and sent as
+`Authorization: Bearer` on every fetch the page makes, with `?token=` appended
+to the preview images and the ESPHome link, neither of which can send a header
+(`src/maverick/server/ui.py`). The same field appears inline in the page header
+if a fetch ever comes back 401, which is what a token changed while the page was
+open looks like.
+
+Through the Home Assistant app's ingress none of that happens: the request is
+exempt, and the page loads as it always has.
+
+With `server.enable_ui: false` the route answers **200** with a one-line page
+pointing at `/api/docs` — after the token check, which comes first. Turning
+the UI off does not turn off the API.
 
 ### `GET /api/docs`
 
@@ -577,10 +630,11 @@ copy of that document is [`openapi.json`](openapi.json); regenerate it with
 ## Error responses
 
 Every error is JSON with a `detail` key, FastAPI's convention, except the two
-TRMNL routes which return their own shape.
+TRMNL routes which return their own shape and `GET /`, which answers its 401
+as the page described above.
 
 | Code | Meaning |
 | --- | --- |
-| **401** | `server.api_token` is set and the request presented no token or the wrong one. Only the five authenticated routes can return this. |
+| **401** | `server.api_token` is set and the request presented no token or the wrong one. Only the nine routes marked **yes** in [Routes at a glance](#routes-at-a-glance) can return this. |
 | **404** | Unknown display id, or no frame rendered yet. The detail says which. |
 | **422** | A parameter failed validation — in practice a `force` query value that is not a boolean. The detail is FastAPI's validation-error array. |

@@ -402,7 +402,9 @@ Work through this in order:
    mention it.
 6. **Only then look at Maverick.** Open
    `http://maverick.local:5000/api/displays/kitchen/preview.png` in a browser:
-   that is the quantised frame with the real inks. If the preview looks right,
+   that is the quantised frame with the real inks. Append `?token=<token>`
+   when `server.api_token` is set — the preview is behind the token like the
+   frame itself (`src/maverick/server/api.py`). If the preview looks right,
    the problem is downstream of Maverick.
 
 A related failure that is *not* a model problem: the panel draws correctly but

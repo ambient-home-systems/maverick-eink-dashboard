@@ -20,7 +20,8 @@ reading a real dashboard and controllable from inside Home Assistant.
 4. [Without MQTT: a rest_command](#without-mqtt-a-rest_command)
 5. [Rendering when data changes](#rendering-when-data-changes)
 6. [OpenDisplay tags through Home Assistant's Bluetooth](#opendisplay-tags-through-home-assistants-bluetooth)
-7. [What is not there yet](#what-is-not-there-yet)
+7. [What the API token protects](#what-the-api-token-protects)
+8. [What is not there yet](#what-is-not-there-yet)
 
 ## The credential
 
@@ -783,6 +784,35 @@ what one adapter can hear. `ha` reaches anything any of your proxies can hear.
 Either way, Maverick sends the frame it has already quantised to the panel's
 palette, with the library's own dithering switched off — re-dithering an
 already-exact image would undo the text-preserving work the pipeline just did.
+
+## What the API token protects
+
+> Status: written from the source; not yet verified against a live Home Assistant instance.
+
+[`server.api_token`](../reference/configuration.md#server) is Maverick's own
+token and has nothing to do with the Home Assistant credential above. Leave it
+empty and every route is open. Set it and it gates the published port: the
+render and frame endpoints, the generated ESPHome configuration, the preview
+PNGs and the setup UI at `/` (`src/maverick/server/api.py`). The UI asks for
+the token when it needs one and keeps it for that browser tab, so its buttons
+work without `?token=` in the address bar (`src/maverick/server/ui.py`).
+
+What it does not gate is everything that has to be reachable without
+credentials: `/health`, the panel and transport catalogues, the two TRMNL
+handshake routes, and `/api/auth/callback`, which Home Assistant redirects a
+browser to and which is authenticated by its own single-use nonce instead
+(see [the HTTP API reference](../reference/http-api.md#authentication)).
+Opening the app's UI from inside Home Assistant is exempt as well: those
+requests arrive over ingress, which the Supervisor proxies from a known address
+on its own network once Home Assistant has authenticated the user
+(`src/maverick/ha/supervisor.py`). One knock-on is worth knowing before you set
+it: each display's `image` entity then receives its frame over MQTT rather than
+as a URL, because Home Assistant fetches an image URL with no credentials
+(`src/maverick/ha/discovery.py`).
+
+None of this makes Maverick safe to expose to the internet. The token travels
+in the clear over plain HTTP, so it is a gate on a trusted network, not a
+perimeter.
 
 ## What is not there yet
 

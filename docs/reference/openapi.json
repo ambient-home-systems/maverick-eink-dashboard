@@ -273,7 +273,7 @@
     "/api/displays/{display_id}/preview.png": {
       "get": {
         "summary": "Preview",
-        "description": "The frame as a viewable PNG, for the UI and the HA image entity.",
+        "description": "The frame as a viewable PNG, for the UI and the HA image entity.\n\nBehind the token like everything else it shows, which is why MQTT\ndiscovery stops advertising this URL to the Home Assistant image\nentity once a token is set and publishes the bytes over the broker\ninstead (`src/maverick/ha/discovery.py`): an image entity fetches with\nno credentials.",
         "operationId": "preview_api_displays__display_id__preview_png_get",
         "parameters": [
           {
