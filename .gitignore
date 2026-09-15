@@ -10,5 +10,6 @@ dist/
 /data/
 /out/
 *.local.yaml
-config.yaml
+# The user's own config at the repository root; app/config.yaml is the app manifest.
+/config.yaml
 .coverage
