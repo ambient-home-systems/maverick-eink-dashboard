@@ -6,6 +6,21 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-09-15
+
+### Changed
+
+- **Re-release of 0.2.6 under a usable tag. No code changes.** The `v0.2.6`
+  tag was published against the commit before the release, so it carried the
+  0.2.5 tree — `version = "0.2.5"`, and without the `hassio_api` grant 0.2.6
+  exists to add. Anything installing from that tag got 0.2.5 under a 0.2.6
+  label, the mismatch `tests/test_app.py::test_pinned_ref_accepts_the_starter_config`
+  guards against. A GitHub release cannot correct it by being republished:
+  deleting a release leaves its tag behind, and `target_commitish` is only
+  honoured when the tag has to be created, so the second attempt reused the
+  same wrong tag. Rather than force-move it, 0.2.6 is abandoned and the same
+  code ships as 0.2.7, whose tag name is free.
+
 ## [0.2.6] - 2026-09-15
 
 ### Fixed
