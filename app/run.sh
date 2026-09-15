@@ -16,6 +16,27 @@ readonly CONFIG_DIR=/config
 readonly CONFIG_FILE="${CONFIG_DIR}/maverick.yaml"
 readonly TEMPLATE=/usr/share/maverick/maverick.yaml
 
+# ----------------------------------------------------------------- options --
+# `bashio::config key ''` does NOT hand back an empty string for an option the
+# user has not set: bashio reads its own second argument as `${2:-null}`, and
+# `:-` substitutes on an *empty* argument too, so the fallback becomes the
+# literal string "null" (bashio lib/config.sh). That string is not empty, so it
+# sails past every `${VAR:-default}` in maverick.yaml and lands in the config as
+# a value: `client_id: "null"` with `refresh_token: "null"` looks exactly like a
+# linked account, and every render then fails with "Home Assistant rejected the
+# token request (400): Invalid client id"; `base_url: "null"` is not an http(s)
+# URL, so the setup UI refuses to start the link that would fix it; and
+# `api_token: "null"` gates the pull endpoints behind a token nobody was told.
+# Optional options are read through this instead, which spells "unset" the way
+# the config file expects. `bashio::config.has_value` treats both "null" and the
+# empty string as unset, which is exactly the question being asked.
+
+config_or_empty() {
+    if bashio::config.has_value "${1}"; then
+        bashio::config "${1}"
+    fi
+}
+
 # ------------------------------------------------------------- credentials --
 # Starting without one is allowed on purpose. The setup UI can obtain a
 # credential itself (Link with Home Assistant), and it can only do that if the
@@ -23,9 +44,9 @@ readonly TEMPLATE=/usr/share/maverick/maverick.yaml
 # Refusing to start would leave the user with nothing but a log line.
 
 HA_URL="$(bashio::config 'home_assistant_url' 'http://homeassistant:8123')"
-HA_TOKEN="$(bashio::config 'home_assistant_token' '')"
-HA_REFRESH_TOKEN="$(bashio::config 'home_assistant_refresh_token' '')"
-HA_CLIENT_ID="$(bashio::config 'home_assistant_client_id' '')"
+HA_TOKEN="$(config_or_empty 'home_assistant_token')"
+HA_REFRESH_TOKEN="$(config_or_empty 'home_assistant_refresh_token')"
+HA_CLIENT_ID="$(config_or_empty 'home_assistant_client_id')"
 
 if [[ -z "${HA_TOKEN}" && -z "${HA_REFRESH_TOKEN}" ]]; then
     bashio::log.warning "No Home Assistant credential yet, so rendering will fail."
@@ -35,8 +56,8 @@ if [[ -z "${HA_TOKEN}" && -z "${HA_REFRESH_TOKEN}" ]]; then
 fi
 
 MAVERICK_LOG_LEVEL="$(bashio::config 'log_level' 'info')"
-MAVERICK_API_TOKEN="$(bashio::config 'api_token' '')"
-MAVERICK_BASE_URL="$(bashio::config 'base_url' '')"
+MAVERICK_API_TOKEN="$(config_or_empty 'api_token')"
+MAVERICK_BASE_URL="$(config_or_empty 'base_url')"
 
 # ---------------------------------------------------------------- base URL --
 # Panels that pull frames need an address they can reach, which is never the
@@ -70,8 +91,8 @@ if bashio::config.has_value 'mqtt_host'; then
     MQTT_ENABLED=true
     MQTT_HOST="$(bashio::config 'mqtt_host')"
     MQTT_PORT="$(bashio::config 'mqtt_port' '1883')"
-    MQTT_USERNAME="$(bashio::config 'mqtt_username' '')"
-    MQTT_PASSWORD="$(bashio::config 'mqtt_password' '')"
+    MQTT_USERNAME="$(config_or_empty 'mqtt_username')"
+    MQTT_PASSWORD="$(config_or_empty 'mqtt_password')"
     bashio::log.info "MQTT: using the broker from the app options (${MQTT_HOST}:${MQTT_PORT})"
 elif bashio::services.available 'mqtt'; then
     MQTT_ENABLED=true

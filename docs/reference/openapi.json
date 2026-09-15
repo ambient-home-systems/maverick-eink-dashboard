@@ -3,7 +3,7 @@
   "info": {
     "title": "Maverick",
     "description": "Render Home Assistant dashboards to e-ink displays.",
-    "version": "0.2.3"
+    "version": "0.2.4"
   },
   "paths": {
     "/health": {
