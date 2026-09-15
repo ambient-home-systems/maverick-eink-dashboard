@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - **Link with Home Assistant** in the Web UI: obtains a credential through
   Home Assistant's own authorization flow and saves it to the app's options,
