@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # No `playwright install`. Chromium is needed to render a dashboard, not
+      # to run the suite: tests/conftest.py stubs the renderer and the
+      # transports, so nothing here opens a browser, a broker or a socket.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # The whole tree, not just src and tests: scripts/ is code CI runs.
+      - name: Lint
+        run: ruff check
+
+      - name: Test
+        run: pytest -q
+
+      - name: Generated reference is up to date
+        run: python scripts/gen_docs.py --check
+
+  links:
+    name: Markdown links
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Relative links only, standard library only: no install, no network, no
+      # token. An external URL that rots is not this repository's build failing.
+      - name: Check relative links
+        run: python scripts/check_links.py

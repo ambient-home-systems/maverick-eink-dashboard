@@ -505,7 +505,12 @@ pip install -e ".[dev]"
 ruff check
 pytest
 python scripts/gen_docs.py --check   # the reference pages match the code
+python scripts/check_links.py        # every relative Markdown link resolves
 ```
+
+Those four are what [CI](.github/workflows/ci.yml) runs, on Python 3.11 and
+3.12. None of them needs Chromium: the suite stubs the renderer and the
+transports, so it runs in a bare checkout.
 
 `docs/reference/` is generated. Change a field in `src/maverick/config.py` — or
 the hand-written prose in `docs/reference/_configuration.intro.md` — then run
@@ -513,7 +518,9 @@ the hand-written prose in `docs/reference/_configuration.intro.md` — then run
 by hand is undone by the next run, and `--check` fails the build meanwhile.
 
 `MAVERICK_DEBUG=1` makes the CLI raise instead of printing a one-line error, so
-you get a traceback. See [CONTRIBUTING.md](CONTRIBUTING.md).
+you get a traceback. [CONTRIBUTING.md](CONTRIBUTING.md) is the full contributor
+guide, [CLAUDE.md](CLAUDE.md) the short version for AI-assisted changes, and
+[docs/README.md](docs/README.md) indexes every page in the documentation set.
 
 ## Roadmap
 
