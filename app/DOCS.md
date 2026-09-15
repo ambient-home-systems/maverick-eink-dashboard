@@ -55,7 +55,7 @@ app; see [The configuration file](#the-configuration-file).
 | `home_assistant_client_id` | no | | Written alongside the refresh token. Home Assistant needs it to renew the session, so the two only work as a pair. |
 | `log_level` | yes | `info` | `debug`, `info`, `warning` or `error`. |
 | `base_url` | no | derived | Where panels that pull frames (`http_pull`) should fetch from, reachable *from the panel*, for example `http://192.168.1.10:5000`. Left empty, the app uses the host's first IPv4 address on port 5000 and says so in the log. |
-| `api_token` | no | | Gates the render and frame endpoints. Panels and `rest_command`s must then send it as `Authorization: Bearer`, `Access-Token` or `?token=`. |
+| `api_token` | no | | Gates the HTTP API, the preview images and this app's own web UI on the published port. Panels and `rest_command`s must then send it as `Authorization: Bearer`, `Access-Token` or `?token=`; the web UI asks for it and remembers it for the tab. Opening the UI from inside Home Assistant is unaffected — those requests come through the app's ingress, which Home Assistant has already put a login in front of. Setting it also makes each panel's `image` entity receive its frame over MQTT rather than as a URL, because Home Assistant fetches an image URL without credentials. |
 | `mqtt_host` | no | | A broker to use instead of the Mosquitto broker app. Leave it empty and the Mosquitto app, when installed, is used automatically with the credentials it hands the Supervisor. |
 | `mqtt_port` | no | `1883` | Only read when `mqtt_host` is set. |
 | `mqtt_username` | no | | Only read when `mqtt_host` is set. |

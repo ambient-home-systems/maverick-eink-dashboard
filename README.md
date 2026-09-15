@@ -424,15 +424,22 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | POST | `/api/displays/{id}/render` | yes | Render one display now; `?force=true` ignores the unchanged and lint gates |
 | POST | `/api/render` | yes | Render every enabled display |
 | GET | `/api/displays/{id}/frame` | yes | The current frame, in the panel's wire format |
-| GET | `/api/displays/{id}/preview.png` | no | The frame as a viewable PNG |
+| GET | `/api/displays/{id}/preview.png` | yes | The frame as a viewable PNG |
 | GET | `/api/displays/{id}/esphome.yaml` | yes | A ready-to-flash ESPHome config for this display |
 | GET | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | GET | `/api/display` | no | TRMNL frame pointer |
-| GET | `/` | no | The setup UI |
+| GET | `/` | yes | The setup UI |
 
 The token column applies only when `server.api_token` is set; leave it empty
 and nothing is gated. Clients may present it as `Authorization: Bearer`, as an
-`Access-Token` header, or as a `?token=` query parameter.
+`Access-Token` header, or as a `?token=` query parameter. The UI asks for the
+token when it needs one and keeps it for the tab, so `/?token=...` is no longer
+the only way in.
+
+Requests arriving through the Home Assistant app's ingress are exempt, since
+Home Assistant authenticates them before the app sees them; they are recognised
+by the peer address of the Supervisor's ingress proxy, and only while Maverick
+is running as an app (`src/maverick/ha/supervisor.py`).
 
 Two details on `/api/displays/{id}/frame` matter to battery devices. The
 response carries a strong `ETag`, and a device that sends it back as

@@ -10,10 +10,18 @@ Serves three audiences:
   for anyone not using MQTT discovery, via ``rest_command``.
 * **People** get a setup UI at ``/`` to see what each panel is showing, check
   lint findings, and copy a generated ESPHome config.
+
+``server.api_token`` gates all three when it is set — including the UI and the
+preview PNGs, which anyone on the LAN could otherwise read off the published
+port. The one way past it is Home Assistant's ingress proxy, recognised by its
+peer address in :mod:`maverick.ha.supervisor`: Home Assistant has already
+authenticated whoever is on the other end of that connection, and it has no
+token of ours to send.
 """
 
 from __future__ import annotations
 
+import hmac
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -26,7 +34,7 @@ from ..devices import all_panels
 from ..ha import auth as ha_auth
 from ..ha import supervisor
 from ..transports import available_transports
-from .ui import render_ui
+from .ui import render_token_prompt, render_ui
 
 log = logging.getLogger(__name__)
 
@@ -38,32 +46,48 @@ log = logging.getLogger(__name__)
 _TOKEN_HEADERS = ("access-token", "access_token")
 
 
-def _require_token(app: Application):
-    """Token dependency, active only when server.api_token is set.
+def _authenticated(app: Application, request: Request) -> bool:
+    """Whether this request satisfies ``server.api_token``.
 
-    Accepts the token three ways: an ``Authorization: Bearer`` header, one of
-    the TRMNL ``Access-Token`` headers, or a ``?token=`` query parameter. All
-    three carry the same secret and are compared the same way — the extra
-    header names widen how a client may present the token, not who is let in.
+    True when no token is configured — the default, which leaves every route
+    open — when the request carries the right one, or when it arrived through
+    Home Assistant's ingress proxy.
+
+    The token may be presented three ways: an ``Authorization: Bearer`` header,
+    one of the TRMNL ``Access-Token`` headers, or a ``?token=`` query
+    parameter. All three carry the same secret and are compared the same way —
+    the extra header names widen how a client may present the token, not who is
+    let in. The query parameter is what a browser's ``<img>`` and plain anchors
+    use, since neither can send a header.
     """
+    expected = app.config.server.api_token
+    if not expected:
+        return True
+    # Ingress puts Home Assistant's own login in front of us and sends no token
+    # of ours, so the proxy's peer address is the gate for that path. It is a
+    # peer address and not a header because the published port takes requests
+    # from the whole LAN; see `maverick.ha.supervisor`.
+    client = request.client
+    if supervisor.request_is_from_ingress(client.host if client else None):
+        return True
+    header = request.headers.get("authorization", "")
+    supplied = header[7:] if header.lower().startswith("bearer ") else ""
+    if not supplied:
+        for name in _TOKEN_HEADERS:
+            supplied = request.headers.get(name, "")
+            if supplied:
+                break
+    if not supplied:
+        supplied = request.query_params.get("token", "")
+    # Constant-time compare: this token gates re-rendering and frame access.
+    return hmac.compare_digest(supplied, expected)
+
+
+def _require_token(app: Application):
+    """Token dependency, active only when server.api_token is set."""
 
     async def dependency(request: Request) -> None:
-        expected = app.config.server.api_token
-        if not expected:
-            return
-        header = request.headers.get("authorization", "")
-        supplied = header[7:] if header.lower().startswith("bearer ") else ""
-        if not supplied:
-            for name in _TOKEN_HEADERS:
-                supplied = request.headers.get(name, "")
-                if supplied:
-                    break
-        if not supplied:
-            supplied = request.query_params.get("token", "")
-        # Constant-time compare: this token gates re-rendering and frame access.
-        import hmac
-
-        if not hmac.compare_digest(supplied, expected):
+        if not _authenticated(app, request):
             raise HTTPException(status_code=401, detail="invalid or missing API token")
 
     return dependency
@@ -239,9 +263,16 @@ def create_app(application: Application) -> FastAPI:
 
         return Response(content=frame.payload, media_type=frame.media_type, headers=headers)
 
-    @api.get("/api/displays/{display_id}/preview.png")
+    @api.get("/api/displays/{display_id}/preview.png", dependencies=[auth])
     async def preview(display_id: str) -> Response:
-        """The frame as a viewable PNG, for the UI and the HA image entity."""
+        """The frame as a viewable PNG, for the UI and the HA image entity.
+
+        Behind the token like everything else it shows, which is why MQTT
+        discovery stops advertising this URL to the Home Assistant image
+        entity once a token is set and publishes the bytes over the broker
+        instead (`src/maverick/ha/discovery.py`): an image entity fetches with
+        no credentials.
+        """
         _lookup(application, display_id)
         frame = application.engine.frames.get(display_id)
         if frame is None or not frame.preview_png:
@@ -452,7 +483,13 @@ def create_app(application: Application) -> FastAPI:
     # ----------------------------------------------------------------- UI --
 
     @api.get("/", response_class=HTMLResponse)
-    async def index() -> str:
+    async def index(request: Request, response: Response) -> str:
+        if not _authenticated(application, request):
+            # 401 like any other gated route, but as a page rather than the
+            # dependency's JSON: a browser navigating here cannot send a
+            # header, so the reply has to be something a person can act on.
+            response.status_code = 401
+            return render_token_prompt(supplied=bool(request.query_params.get("token")))
         if not application.config.server.enable_ui:
             return (
                 "<h1>Maverick</h1>"

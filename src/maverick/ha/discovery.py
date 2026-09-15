@@ -135,7 +135,7 @@ class MqttDiscovery:
         # An image entity lets you see what a panel in another room is showing.
         # url_topic is preferred: pushing a full frame through the broker on
         # every render is wasteful when an HTTP URL will do.
-        if self._config.server.base_url:
+        if self._publishes_a_url():
             image_config = {
                 **common,
                 "name": "Screen",
@@ -209,6 +209,20 @@ class MqttDiscovery:
             },
         )
 
+    def _publishes_a_url(self) -> bool:
+        """Whether the image entity gets a URL, or the PNG bytes themselves.
+
+        A URL only works if Home Assistant can fetch it, and it fetches with no
+        credentials at all — an image entity has nowhere to put a token. So
+        ``server.api_token``, which puts ``preview.png`` behind that token
+        (`src/maverick/server/api.py`), sends the frame over the broker instead
+        for the same reason an empty ``server.base_url`` does: there is no URL
+        Home Assistant could usefully be given. ``announce_display`` and
+        ``publish_image`` both ask, because a disagreement between them points
+        the entity at a topic nothing is ever published to.
+        """
+        return bool(self._config.server.base_url) and not self._config.server.api_token
+
     async def _publish_config(self, topic: str, payload: dict[str, Any]) -> None:
         clean = {k: v for k, v in payload.items() if v is not None}
         await self._mqtt.publish(topic, json.dumps(clean), retain=True)
@@ -220,7 +234,7 @@ class MqttDiscovery:
 
     async def publish_image(self, display_id: str, png: bytes) -> None:
         base = self.display_base(display_id)
-        if self._config.server.base_url:
+        if self._publishes_a_url():
             url = (
                 f"{self._config.server.base_url.rstrip('/')}"
                 f"/api/displays/{display_id}/preview.png"

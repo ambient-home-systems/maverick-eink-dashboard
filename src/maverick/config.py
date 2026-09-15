@@ -256,9 +256,13 @@ class ServerConfig(Base):
     api_token: str = Field(
         default="",
         description=(
-            "Optional token for the pull and trigger endpoints, accepted as a bearer token, "
-            "an `Access-Token` header or a `?token=` query parameter, and written into "
-            "generated ESPHome configurations. Empty leaves those endpoints unauthenticated."
+            "Optional token for the API, the setup UI and the preview images, accepted as a "
+            "bearer token, an `Access-Token` header or a `?token=` query parameter, and "
+            "written into generated ESPHome configurations. Requests arriving through the "
+            "Home Assistant app's ingress are exempt, because Home Assistant has already "
+            "authenticated them. Setting it also switches the MQTT image entity to sending "
+            "frames over the broker, since Home Assistant fetches an image URL with no "
+            "credentials. Empty leaves every endpoint unauthenticated."
         ),
     )
     enable_ui: bool = Field(

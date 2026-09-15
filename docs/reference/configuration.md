@@ -163,7 +163,7 @@ the one worth getting right.
 | `host` | `str` | `"0.0.0.0"` | Address the HTTP server binds to. `0.0.0.0` is right inside a container. |
 | `port` | `int` | `5000` | Port the HTTP server listens on. |
 | `base_url` | `str` | `""` | Advertised to devices that pull frames, and used for the links in Home Assistant discovery. Must be reachable *from them*, not just from your laptop. |
-| `api_token` | `str` | `""` | Optional token for the pull and trigger endpoints, accepted as a bearer token, an `Access-Token` header or a `?token=` query parameter, and written into generated ESPHome configurations. Empty leaves those endpoints unauthenticated. |
+| `api_token` | `str` | `""` | Optional token for the API, the setup UI and the preview images, accepted as a bearer token, an `Access-Token` header or a `?token=` query parameter, and written into generated ESPHome configurations. Requests arriving through the Home Assistant app's ingress are exempt, because Home Assistant has already authenticated them. Setting it also switches the MQTT image entity to sending frames over the broker, since Home Assistant fetches an image URL with no credentials. Empty leaves every endpoint unauthenticated. |
 | `enable_ui` | `bool` | `true` | Serve the setup UI at `/`. False serves the JSON API alone. |
 
 ## Top-level keys

@@ -6,8 +6,42 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A set `server.api_token` now switches each display's MQTT image entity to
+  the frame bytes.** Discovery published an `image_topic` only when
+  `server.base_url` was empty and a `url_topic` pointing at
+  `/api/displays/{id}/preview.png` otherwise (`src/maverick/ha/discovery.py`).
+  With that PNG behind the token (below), the URL would answer 401 to an image
+  entity, which fetches with no credentials and has nowhere to put a token, so
+  a token now picks the same branch an empty `base_url` does. The cost is the
+  one the bytes mode always had: a retained PNG per panel on the broker.
+
 ### Fixed
 
+- **The setup UI at `/` and `GET /api/displays/{id}/preview.png` ignored
+  `server.api_token` entirely.** On the published port — 5000, which the app
+  publishes for panels that pull frames (`app/config.yaml`) — anyone on the
+  LAN could open the page and read every panel off it, however the token was
+  set.
+  Both now go through the same check as the render and frame routes
+  (`src/maverick/server/api.py`). Requests arriving over the Home Assistant
+  app's ingress are exempt, recognised by the peer address of the Supervisor's
+  ingress proxy and only while running as an app
+  (`src/maverick/ha/supervisor.py`): Home Assistant has already authenticated
+  them and sends no token of ours. No header is trusted for this, because the
+  published port takes requests from the whole LAN.
+- **The setup UI's buttons failed silently when a token was set.** The page
+  read the token only from its own query string, so unless the user knew to
+  open `/?token=...` — which nothing on the page or in the documentation
+  said — every fetch came back 401 and the button simply reported an error
+  (`src/maverick/server/ui.py`). The page now asks for the token, keeps it in
+  `sessionStorage` for the tab, sends it as `Authorization: Bearer` on every
+  fetch, and appends `?token=` to the preview images and the ESPHome link,
+  which cannot send a header. `/?token=...` still works and fills the same
+  store. Through the app's ingress there was no query string to put a token in
+  at all, so with a token set those buttons could not be made to work; ingress
+  requests are now exempt.
 - **`GET /api/displays/{id}/esphome.yaml` leaked `server.api_token` to anyone
   who could reach the server.** The generated ESPHome configuration embeds the
   token verbatim as an `Authorization: Bearer` header

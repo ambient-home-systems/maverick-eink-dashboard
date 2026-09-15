@@ -31,8 +31,8 @@ it: `mqtt.base_topic` is `maverick` and `mqtt.discovery_prefix` is
 | `{base_topic}/status` | `online` or `offline` | yes | 1 | Startup, shutdown, and the broker's last will |
 | `{base_topic}/display/{id}/command` | A command word | no | 0 (subscribe) | **You.** Maverick subscribes; it never publishes here |
 | `{base_topic}/display/{id}/state` | JSON object | yes | 1 | After every render, and after a schedule command |
-| `{base_topic}/display/{id}/image_url` | A URL, as plain text | yes | 1 | After a render that produced a new frame, when `server.base_url` is set |
-| `{base_topic}/display/{id}/preview` | PNG bytes | yes | 1 | The same, when `server.base_url` is **not** set |
+| `{base_topic}/display/{id}/image_url` | A URL, as plain text | yes | 1 | After a render that produced a new frame, when `server.base_url` is set and `server.api_token` is not |
+| `{base_topic}/display/{id}/preview` | PNG bytes | yes | 1 | The same, in every other case |
 | `{base_topic}/display/{id}/meta` | JSON object | yes | 1 | The `mqtt` transport, on each delivery |
 | `{base_topic}/display/{id}/frame` | Raw frame bytes | yes | 1 | The `mqtt` transport, on each delivery |
 | `{discovery_prefix}/{component}/maverick_{id}/{suffix}/config` | JSON object, or empty to retract | yes | 1 | Discovery at startup |
@@ -203,19 +203,28 @@ render to describe.
 
 ## The image entity: two modes
 
-The image entity is announced one of two ways, depending on `server.base_url`:
+The image entity is announced one of two ways, decided by `_publishes_a_url`
+(`src/maverick/ha/discovery.py`) and applied to both the discovery payload and
+the publish that follows each render:
 
-| `server.base_url` | Discovery keys | What flows through the broker |
+| Condition | Discovery keys | What flows through the broker |
 | --- | --- | --- |
-| Set | `url_topic: {base_topic}/display/{id}/image_url` | A URL: `{base_url}/api/displays/{id}/preview.png` |
-| Unset | `image_topic: {base_topic}/display/{id}/preview`, `content_type: image/png` | The PNG bytes themselves |
+| `server.base_url` set, `server.api_token` empty | `url_topic: {base_topic}/display/{id}/image_url` | A URL: `{base_url}/api/displays/{id}/preview.png` |
+| Anything else | `image_topic: {base_topic}/display/{id}/preview`, `content_type: image/png` | The PNG bytes themselves |
 
 The URL mode is preferred, and set `server.base_url` if you can: pushing a full
 frame through the broker on every render is wasteful when an HTTP URL will do.
 The bytes mode exists so the entity still works when there is no URL a Home
-Assistant instance could fetch — and it means a retained PNG of every panel sits
-on your broker, which is worth knowing if the broker is shared or its storage is
-small.
+Assistant instance could usefully be given — and it means a retained PNG of
+every panel sits on your broker, which is worth knowing if the broker is shared
+or its storage is small.
+
+**Setting `server.api_token` switches the entity to the bytes mode**, whatever
+`base_url` says. The token covers `/api/displays/{id}/preview.png`
+(`src/maverick/server/api.py`), and an image entity fetches a `url_topic` URL
+with no credentials at all — there is nowhere in it to put a token — so the
+URL it would be given answers 401. Sending the frame over the broker is how the
+entity keeps working; the cost is the retained PNG per panel described above.
 
 Either way, the publish happens only when a render produced a frame **and** was
 not skipped. An unchanged render leaves the retained image exactly as it was,
