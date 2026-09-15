@@ -170,6 +170,8 @@ command. Every key that `_publish_state` writes:
   "skip_count": 118,
   "error": null,
   "render_duration": 1.61,
+  "last_render_s": 1.204,
+  "last_total_s": 1.61,
   "ink_coverage": 12.4,
   "lint": "ok",
   "trigger": "schedule",
@@ -189,6 +191,7 @@ command. Every key that `_publish_state` writes:
 | `skip_count` | integer | How many renders were skipped — unchanged frames plus lint-blocked ones. A high ratio to `render_count` is healthy: it is the battery saving working. |
 | `error` | string or null | The last error message, or null once a render succeeds. |
 | `render_duration` | number or null | Seconds for the whole render-process-deliver cycle, to two decimal places. Null when the state was published by a schedule command rather than a render. |
+| `last_render_s`, `last_total_s` | number or null | The same two durations as `DisplayState.last_render_s`/`last_total_s` (`src/maverick/engine.py`), persisted rather than tied to this one outcome: seconds for the screenshot, and for the whole cycle, of the last render that got as far as one. Unlike `render_duration`, these are **not** null on a state published by a `schedule_on`/`schedule_off` command — they describe the last render, not this publish. Null only before this display has ever rendered. |
 | `ink_coverage` | number or null | Percentage of the panel covered in ink, to one decimal place, from the frame's `coverage.ink` metric. Null on a state published without a frame. |
 | `lint` | string or null | The linter's one-line summary for this frame. |
 | `trigger` | string or null | What caused this render: `schedule`, `startup`, `state` (a watched entity changed), `button` (MQTT), `api`, `cli`, or `manual`. |

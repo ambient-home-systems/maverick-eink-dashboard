@@ -21,15 +21,21 @@ token of ours to send.
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import hmac
 import logging
+from collections.abc import Awaitable
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from pydantic import BaseModel
 
 from ..app import VERSION, Application
+from ..config import DisplayConfig
 from ..devices import all_panels
 from ..ha import auth as ha_auth
 from ..ha import supervisor
@@ -37,6 +43,12 @@ from ..transports import available_transports
 from .ui import render_token_prompt, render_ui
 
 log = logging.getLogger(__name__)
+
+
+class ScheduleToggle(BaseModel):
+    """Body of `POST /api/displays/{id}/schedule`."""
+
+    enabled: bool
 
 
 #: TRMNL firmware carries its API key in its own header rather than in
@@ -148,6 +160,35 @@ def create_app(application: Application) -> FastAPI:
 
     # ----------------------------------------------------------- displays --
 
+    @api.get("/api/schema/display", dependencies=[auth])
+    async def display_schema() -> dict[str, Any]:
+        """What a form needs to draw itself: the display model plus transport options.
+
+        `DisplayConfig.model_json_schema()` carries every field's own
+        `Field(description=...)` as help text. `TransportConfig` is the one
+        model that allows extra keys (`extra="allow"`,
+        `src/maverick/config.py`), so its per-transport options are not in the
+        schema at all; each transport's own `options_doc`
+        (`src/maverick/transports/base.py`) is the only description of them
+        there is, so it is added here under `transports`.
+        """
+        schema = DisplayConfig.model_json_schema()
+        schema["transports"] = {
+            name: {
+                "description": cls.description,
+                "pushes": cls.pushes,
+                "options": dict(cls.options_doc),
+            }
+            for name, cls in sorted(available_transports().items())
+        }
+        return schema
+
+    def _next_run_at(display_id: str) -> str | None:
+        job = next(
+            (j for j in application.scheduler.jobs() if j.display_id == display_id), None
+        )
+        return job.next_run.isoformat() if job and job.next_run else None
+
     def _display_summary(display_id: str) -> dict[str, Any]:
         display = application.config.display(display_id)
         resolved = display.resolved()
@@ -175,6 +216,14 @@ def create_app(application: Application) -> FastAPI:
                 "quiet_hours": display.schedule.quiet_hours,
                 "on_change": display.schedule.on_change,
             },
+            "rendering": application.engine.is_rendering(display_id),
+            "next_run_at": _next_run_at(display_id),
+            "last_render_s": (
+                round(state.last_render_s, 3) if state and state.render_count else None
+            ),
+            "last_total_s": (
+                round(state.last_total_s, 3) if state and state.render_count else None
+            ),
             "state": state.__dict__ if state else {},
             "checksum": frame.checksum if frame else None,
             "lint": (
@@ -198,21 +247,139 @@ def create_app(application: Application) -> FastAPI:
         _lookup(application, display_id)
         return _display_summary(display_id)
 
-    @api.post("/api/displays/{display_id}/render", dependencies=[auth])
-    async def render_display(display_id: str, force: bool = False) -> dict[str, Any]:
+    @api.post("/api/displays", status_code=201, dependencies=[auth])
+    async def create_display(display: DisplayConfig) -> dict[str, Any]:
+        """Add a display and start rendering it, with no restart.
+
+        Every model but `TransportConfig` is `extra="forbid"`
+        (`src/maverick/config.py`), so a misspelt key such as `panell` fails
+        here as a **422** naming the field: FastAPI validates the request body
+        against `DisplayConfig` before this function runs, and the
+        `ConfigError`s a validator raises are `ValueError`s, which pydantic
+        turns into the same kind of error as any other bad field.
+        """
+        if any(d.id == display.id for d in application.config.displays):
+            raise HTTPException(
+                status_code=409, detail=f"display {display.id!r} already exists"
+            )
+        try:
+            await application.add_display(display)
+        except (ValueError, KeyError) as exc:
+            # ValueError: an invalid cron expression, caught only once APScheduler
+            # parses it (`RenderScheduler.check`). KeyError: an unregistered
+            # transport type — `TransportConfig.type` is a plain `str`
+            # (`extra="allow"`, `src/maverick/config.py`), so nothing validates
+            # it before `get_transport` looks it up.
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _display_summary(display.id)
+
+    @api.put("/api/displays/{display_id}", dependencies=[auth])
+    async def replace_display(display_id: str, display: DisplayConfig) -> dict[str, Any]:
+        """Full replacement of an existing display's configuration."""
+        if display.id != display_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"body id {display.id!r} does not match path id {display_id!r}",
+            )
         _lookup(application, display_id)
-        outcome = await application.render(display_id, trigger="api", force=force)
+        try:
+            await application.update_display(display_id, display)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _display_summary(display_id)
+
+    @api.delete("/api/displays/{display_id}", dependencies=[auth])
+    async def delete_display(display_id: str) -> Response:
+        """Stop rendering a display and delete its stored frames from disk."""
+        _lookup(application, display_id)
+        await application.remove_display(display_id)
+        return Response(status_code=204)
+
+    @api.post("/api/displays/{display_id}/schedule", dependencies=[auth])
+    async def set_schedule(display_id: str, body: ScheduleToggle) -> dict[str, Any]:
+        """Pause or resume this display's schedule at runtime.
+
+        Distinct from the config-level `enabled` flag, which goes through
+        `PUT`: this reuses `Application.handle_command`
+        (`src/maverick/app.py`), the same path the MQTT `schedule_on`/
+        `schedule_off` commands take, so both publish the same MQTT state.
+        """
+        _lookup(application, display_id)
+        await application.handle_command(
+            display_id, "schedule_on" if body.enabled else "schedule_off"
+        )
+        return _display_summary(display_id)
+
+    @api.post("/api/displays/preview", dependencies=[auth])
+    async def preview_display(display: DisplayConfig) -> dict[str, Any]:
+        """Render a candidate config and hand back the frame. Changes nothing.
+
+        `Engine.render_candidate` (`src/maverick/engine.py`) never touches
+        `states`, `frames` or the display store, and delivers nothing: this is
+        a dry run for an editor's Preview button, not a save.
+        """
+        outcome = await application.engine.render_candidate(display)
+        if outcome.frame is None:
+            raise HTTPException(status_code=502, detail=outcome.reason or "render failed")
+        buffer = BytesIO()
+        outcome.frame.preview.save(buffer, format="PNG")
         return {
-            "display": display_id,
-            "ok": outcome.ok,
-            "skipped": outcome.skipped,
-            "reason": outcome.reason,
+            "preview_png": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            "width": outcome.frame.width,
+            "height": outcome.frame.height,
+            "lint": {
+                "summary": outcome.frame.lint.summary(),
+                "issues": [
+                    {
+                        "code": i.code,
+                        "severity": i.severity.value,
+                        "message": i.message,
+                        "hint": i.hint,
+                    }
+                    for i in outcome.frame.lint.issues
+                ],
+                "metrics": dict(outcome.frame.metrics),
+            },
             "render_s": round(outcome.render_s, 3),
-            "total_s": round(outcome.total_s, 3),
-            "checksum": outcome.frame.checksum if outcome.frame else None,
-            "lint": outcome.frame.lint.summary() if outcome.frame else None,
-            "delivery": outcome.delivery.detail if outcome.delivery else None,
+            "process_s": round(outcome.process_s, 3),
         }
+
+    @api.post("/api/displays/{display_id}/render", dependencies=[auth])
+    async def render_display(
+        display_id: str, force: bool = False, wait: bool = True
+    ) -> Response:
+        """Render one display now.
+
+        `wait=false` returns **202** immediately and renders as a background
+        task, for a caller — the setup UI, behind ingress — that would
+        otherwise block for the whole render timeout with nothing to show for
+        it. The default, `wait=true`, keeps the synchronous response
+        `rest_command` users depend on.
+        """
+        _lookup(application, display_id)
+        if not wait:
+            if application.engine.is_rendering(display_id):
+                return JSONResponse(
+                    {"display": display_id, "queued": False, "already_rendering": True},
+                    status_code=202,
+                )
+            _fire_and_forget(application.render(display_id, trigger="api", force=force))
+            return JSONResponse({"display": display_id, "queued": True}, status_code=202)
+
+        outcome = await application.render(display_id, trigger="api", force=force)
+        return JSONResponse(
+            {
+                "display": display_id,
+                "ok": outcome.ok,
+                "skipped": outcome.skipped,
+                "reason": outcome.reason,
+                "render_s": round(outcome.render_s, 3),
+                "total_s": round(outcome.total_s, 3),
+                "checksum": outcome.frame.checksum if outcome.frame else None,
+                "lint": outcome.frame.lint.summary() if outcome.frame else None,
+                "delivery": outcome.delivery.detail if outcome.delivery else None,
+            }
+        )
 
     @api.post("/api/render", dependencies=[auth])
     async def render_all(force: bool = False) -> list[dict[str, Any]]:
@@ -528,6 +695,24 @@ def _link_result(message: str, ok: bool, note: str = "") -> HTMLResponse:
         "<p><a href='/'>Back to Maverick</a></p></body>",
         status_code=200 if ok else 400,
     )
+
+
+def _fire_and_forget(coro: Awaitable[Any]) -> asyncio.Task[Any]:
+    """Run a coroutine as a background task, logging a failure rather than losing it.
+
+    Used for ``?wait=false`` renders: the request has already answered 202, so
+    the log is the only place left to report a failure.
+    """
+    task = asyncio.create_task(coro)
+
+    def _log_if_failed(finished: asyncio.Task[Any]) -> None:
+        if finished.cancelled():
+            return
+        if (exc := finished.exception()) is not None:
+            log.error("background render failed: %s", exc)
+
+    task.add_done_callback(_log_if_failed)
+    return task
 
 
 def _lookup(application: Application, display_id: str):

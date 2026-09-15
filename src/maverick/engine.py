@@ -62,6 +62,11 @@ class DisplayState:
     last_pulled_at: str = ""
     render_count: int = 0
     skip_count: int = 0
+    #: Durations from the last render that got as far as a screenshot, in
+    #: seconds. Left at 0.0 until `render_count` is non-zero, which is what
+    #: distinguishes "never rendered" from "rendered in under a millisecond".
+    last_render_s: float = 0.0
+    last_total_s: float = 0.0
 
 
 @dataclass
@@ -594,6 +599,7 @@ class Engine:
             state.last_render_at = _now()
             state.last_error = ""
             state.consecutive_failures = 0
+            state.last_render_s = outcome.render_s
 
             if display.config.render.debug_artifacts:
                 self._write_debug(display, result.image, frame)
@@ -607,6 +613,7 @@ class Engine:
                 state.skip_count += 1
                 state.last_error = outcome.reason
                 outcome.total_s = time.perf_counter() - started
+                state.last_total_s = outcome.total_s
                 self._save_state()
                 log.warning(outcome.describe())
                 await self._notify(outcome)
@@ -628,6 +635,7 @@ class Engine:
                 outcome.reason = "frame unchanged"
                 state.skip_count += 1
                 outcome.total_s = time.perf_counter() - started
+                state.last_total_s = outcome.total_s
                 self._save_state()
                 await self._notify(outcome)
                 return outcome
@@ -667,6 +675,7 @@ class Engine:
                 outcome.reason = "render only (delivery skipped)"
 
             outcome.total_s = time.perf_counter() - started
+            state.last_total_s = outcome.total_s
             self._save_state()
             log.info(outcome.describe())
             await self._notify(outcome)

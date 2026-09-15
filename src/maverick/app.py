@@ -168,6 +168,8 @@ class Application:
             "skip_count": state.skip_count,
             "error": state.last_error or None,
             "render_duration": round(outcome.total_s, 2) if outcome else None,
+            "last_render_s": round(state.last_render_s, 3) if state.render_count else None,
+            "last_total_s": round(state.last_total_s, 3) if state.render_count else None,
             "ink_coverage": ink,
             "lint": outcome.frame.lint.summary() if outcome and outcome.frame else None,
             "trigger": outcome.trigger if outcome else None,

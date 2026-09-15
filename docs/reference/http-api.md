@@ -21,16 +21,22 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Sixteen routes, plus the two FastAPI adds for its own documentation.
+Twenty-two routes, plus the two FastAPI adds for its own documentation.
 
 | Method | Path | Token | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/health` | no | Liveness, version and connection summary |
 | `GET` | `/api/panels` | no | The built-in panel catalogue |
 | `GET` | `/api/transports` | no | The registered transports |
+| `GET` | `/api/schema/display` | **yes** | The display config JSON Schema, for a form to render |
 | `GET` | `/api/displays` | **yes** | Full summary of every configured display |
 | `GET` | `/api/displays/{display_id}` | **yes** | The same summary for one display |
-| `POST` | `/api/displays/{display_id}/render` | **yes** | Render one display now |
+| `POST` | `/api/displays` | **yes** | Create a display and start rendering it |
+| `PUT` | `/api/displays/{display_id}` | **yes** | Replace a display's configuration |
+| `DELETE` | `/api/displays/{display_id}` | **yes** | Stop a display and delete its stored frames |
+| `POST` | `/api/displays/{display_id}/schedule` | **yes** | Pause or resume a display's schedule at runtime |
+| `POST` | `/api/displays/preview` | **yes** | Dry-run render of a candidate config; saves nothing |
+| `POST` | `/api/displays/{display_id}/render` | **yes** | Render one display now, or queue it with `?wait=false` |
 | `POST` | `/api/render` | **yes** | Render every enabled display now |
 | `GET` | `/api/displays/{display_id}/frame` | **yes** | The current frame, for a device that pulls |
 | `GET` | `/api/displays/{display_id}/preview.png` | **yes** | The current frame as a viewable PNG |
@@ -46,7 +52,7 @@ Sixteen routes, plus the two FastAPI adds for its own documentation.
 
 ## Authentication
 
-Authentication is off until `server.api_token` is set. Set it, and the nine
+Authentication is off until `server.api_token` is set. Set it, and the fifteen
 routes marked **yes** above require it; `_authenticated` decides for all of
 them, and it returns true immediately when the configured token is empty, so an
 unset token means every route is open.
@@ -192,10 +198,140 @@ true for one that reaches out to the device itself.
 
 ## Displays
 
+### `GET /api/schema/display`
+
+**Requires the token.** `DisplayConfig.model_json_schema()`
+(`src/maverick/config.py`) — the JSON Schema for a display's configuration,
+with every field's own `Field(description=...)` as its help text — plus one
+extra top-level key, `transports`, that the schema itself cannot express
+because `TransportConfig` is the one model with `extra="allow"`:
+
+```json
+{
+  "properties": {"id": {"type": "string", "description": "..."}, "...": "..."},
+  "transports": {
+    "http_pull": {
+      "description": "Device fetches frames over HTTP (ESP32, ESPHome, Kindle, TRMNL)",
+      "pushes": false,
+      "options": {"mac": "Device MAC address, for the TRMNL handshake routes."}
+    }
+  }
+}
+```
+
+`transports` has one entry per registered transport (`available_transports()`,
+`src/maverick/transports/base.py`): `description` and `pushes` are the class
+attributes shown by `maverick transports`, and `options` is that transport's
+`options_doc` — the only description of its options there is, since
+`TransportConfig` validates none of them. This is what a form needs to draw
+every field of a display, including the transport-specific ones, without
+hard-coding any of it.
+
 ### `GET /api/displays`
 
 **Requires the token.** An array of display summaries, one per entry in
 `displays:` — including disabled ones, so `enabled` is worth reading.
+
+### `POST /api/displays`
+
+**Requires the token.** Creates a display from a `DisplayConfig` body
+(`src/maverick/config.py`) and starts rendering it immediately — through
+`Application.add_display` (`src/maverick/app.py`), with no restart. **201**
+with [the display summary](#get-apidisplaysdisplay_id).
+
+**409** if the `id` already names a configured display:
+
+```json
+{"detail": "display 'kitchen' already exists"}
+```
+
+**422** if the body fails `DisplayConfig` validation — a value out of range, an
+inconsistent pair such as both `schedule.every` and `schedule.cron`, an unknown
+`panel`, or an unknown field. Every model but `TransportConfig` is
+`extra="forbid"` (CLAUDE.md), so a misspelt key such as `panell` is caught here
+the same way any other bad field is, and the detail names it:
+
+```json
+{
+  "detail": [
+    {
+      "type": "extra_forbidden",
+      "loc": ["body", "panell"],
+      "msg": "Extra inputs are not permitted",
+      "input": "generic-mono"
+    }
+  ]
+}
+```
+
+### `PUT /api/displays/{display_id}`
+
+**Requires the token.** Full replacement of an existing display's
+configuration, through `Application.update_display`. The body is a complete
+`DisplayConfig` — this is a replacement, not a patch — and its `id` must equal
+the path's `display_id`; **400** otherwise:
+
+```json
+{"detail": "body id 'other' does not match path id 'kitchen'"}
+```
+
+**404** for an unknown display, **422** for the same validation failures as
+`POST`. **200** with the updated summary.
+
+### `DELETE /api/displays/{display_id}`
+
+**Requires the token.** Stops the display, retracts its Home Assistant
+discovery entities and deletes its stored frames from disk
+(`Application.remove_display`, `FrameStore.remove`). **204** with no body,
+**404** for an unknown display.
+
+### `POST /api/displays/{display_id}/schedule`
+
+**Requires the token.** Pauses or resumes this display's schedule at runtime,
+without touching the config: `{"enabled": false}` or `{"enabled": true}`.
+Reuses `Application.handle_command`'s `schedule_on`/`schedule_off` path
+(`src/maverick/app.py`), the same one the MQTT
+[scheduled-renders switch](mqtt.md#commands) drives, so both publish the same
+MQTT state. This is distinct from the config-level `schedule.enabled` field,
+which goes through `PUT`. **200** with the updated summary, **404** for an
+unknown display.
+
+### `POST /api/displays/preview`
+
+**Requires the token.** Renders a candidate `DisplayConfig` body and hands back
+the frame — **nothing is saved**: no display is created or changed, nothing is
+delivered, and the frame is not kept. Built on `Engine.render_candidate`
+(`src/maverick/engine.py`), which touches none of `states`, `frames` or the
+display store. This is what an editor's Preview button calls before Save.
+
+**200**:
+
+```json
+{
+  "preview_png": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "width": 800,
+  "height": 480,
+  "lint": {"summary": "ok", "issues": [], "metrics": {"coverage.ink": 0.12}},
+  "render_s": 1.204,
+  "process_s": 0.083
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `preview_png` | The quantised frame as base64-encoded PNG bytes — the same image [`preview.png`](#get-apidisplaysdisplay_idpreviewpng) would serve for a saved display. |
+| `width`, `height` | The candidate's resolved panel geometry. |
+| `lint` | `summary`, `issues` and `metrics`, exactly as in [the display summary](#get-apidisplaysdisplay_id). Findings are reported, never enforced — a blank frame is precisely what Preview exists to catch before it is saved. |
+| `render_s` | Seconds spent screenshotting the dashboard. |
+| `process_s` | Seconds spent quantising and linting it. |
+
+**422** for a body that fails `DisplayConfig` validation, the same as `POST
+/api/displays`. **502** if the candidate could not be rendered at all —
+Chromium or the dashboard failed rather than the request being wrong:
+
+```json
+{"detail": "timed out waiting for the dashboard to settle"}
+```
 
 ### `GET /api/displays/{display_id}`
 
@@ -230,6 +366,10 @@ The summary, with every key from `_display_summary`:
     "quiet_hours": "23:00-06:30",
     "on_change": []
   },
+  "rendering": false,
+  "next_run_at": "2026-09-14T09:09:11+00:00",
+  "last_render_s": 1.204,
+  "last_total_s": 1.611,
   "state": {},
   "checksum": "0123456789abcdef",
   "lint": {"summary": "ok", "issues": [], "metrics": {"coverage.ink": 0.12}},
@@ -245,21 +385,26 @@ The summary, with every key from `_display_summary`:
 | `transport` | `transport.type` only; the transport's own options are not echoed. |
 | `schedule.enabled` | The **live** value — the [scheduled-renders switch](mqtt.md#commands) flips this without touching the config file. The other `schedule.*` keys come from the config. |
 | `schedule.every`, `cron`, `quiet_hours`, `on_change` | As configured; `null` or `[]` when unset. |
-| `state` | The persisted per-display state, `{}` before the engine has any for this display. Keys: `sequence`, `frames_since_full`, `last_checksum`, `last_render_at`, `last_delivery_at`, `last_error`, `consecutive_failures`, `last_pulled_at`, `render_count`, `skip_count`. |
+| `rendering` | Whether a render for this display is in progress right now (`Engine.is_rendering`), so a caller polling after `POST .../render?wait=false` knows when to stop. |
+| `next_run_at` | ISO 8601, when the scheduler will next run this display (`RenderScheduler.jobs`, `src/maverick/scheduling/scheduler.py`), or `null` for a manual-only display, a disabled one, or one on a `cron` schedule whose next fire APScheduler has not computed yet. |
+| `last_render_s`, `last_total_s` | Seconds for the screenshot and for the whole render-process-deliver cycle of the last render that got as far as one, to three decimal places. `null` before this display has ever rendered — these are `DisplayState.last_render_s`/`last_total_s` (`src/maverick/engine.py`), which is why they survive a restart while `rendering` does not. |
+| `state` | The persisted per-display state, `{}` before the engine has any for this display. Keys: `sequence`, `frames_since_full`, `last_checksum`, `last_render_at`, `last_delivery_at`, `last_error`, `consecutive_failures`, `last_pulled_at`, `render_count`, `skip_count`, `last_render_s`, `last_total_s`. |
 | `checksum` | The stored frame's checksum, or `null` if nothing has been rendered yet. |
 | `lint` | `summary`, `issues` (each with `code`, `severity`, `message`, `hint`) and `metrics` from the last render, or `null` if there is no frame. |
 | `last_pulled_at` | When a device last fetched the frame, in this process. It is held in memory, so it is `null` after a restart until the next fetch — unlike `state.last_pulled_at`, which is persisted. |
 
 ### `POST /api/displays/{display_id}/render`
 
-**Requires the token.** Renders one display now and waits for the result.
+**Requires the token.** Renders one display now.
 
 | Parameter | In | Type | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `display_id` | path | string | — | The display to render. |
 | `force` | query | boolean | `false` | Bypass the unchanged-checksum shortcut and the lint gate, and ask for a flashing full refresh. |
+| `wait` | query | boolean | `true` | `false` returns **202** immediately and renders as a background task, rather than blocking for the whole render — up to `render.timeout` plus image and settle waits, which can pass a minute and, behind ingress, runs inside an iframe with nothing to show for it. |
 
-**200** with the outcome:
+With `wait=true` (the default, which keeps the response `rest_command` users
+depend on), **200** with the outcome:
 
 ```json
 {
@@ -287,8 +432,23 @@ The summary, with every key from `_display_summary`:
 | `lint` | The linter's one-line summary, or `null`. |
 | `delivery` | The transport's own description of what it did, or `null` if delivery never ran. |
 
+With `wait=false`, **202** instead, and no render outcome — poll
+[`GET /api/displays/{display_id}`](#get-apidisplaysdisplay_id)'s `rendering`
+flag to know when it finishes:
+
+```json
+{"display": "kitchen", "queued": true}
+```
+
+If the display is already rendering when the request arrives, **202** as well,
+since a second render was not — and will not be — queued behind it:
+
+```json
+{"display": "kitchen", "queued": false, "already_rendering": true}
+```
+
 **404** for an unknown display, **401** without a valid token, **422** if
-`force` is not a boolean.
+`force` or `wait` is not a boolean.
 
 ### `POST /api/render`
 
@@ -635,6 +795,9 @@ as the page described above.
 
 | Code | Meaning |
 | --- | --- |
-| **401** | `server.api_token` is set and the request presented no token or the wrong one. Only the nine routes marked **yes** in [Routes at a glance](#routes-at-a-glance) can return this. |
+| **400** | `PUT /api/displays/{display_id}` where the body's `id` does not match the path. |
+| **401** | `server.api_token` is set and the request presented no token or the wrong one. Only the fifteen routes marked **yes** in [Routes at a glance](#routes-at-a-glance) can return this. |
 | **404** | Unknown display id, or no frame rendered yet. The detail says which. |
-| **422** | A parameter failed validation — in practice a `force` query value that is not a boolean. The detail is FastAPI's validation-error array. |
+| **409** | `POST /api/displays` where the `id` already names a configured display. |
+| **422** | A parameter or a request body failed validation — a `force` query value that is not a boolean, or a `DisplayConfig` body with a bad or misspelt field. The detail is FastAPI's validation-error array, which names the field (`loc`) for a body error. |
+| **502** | `POST /api/displays/preview` where the candidate could not be rendered at all (`Engine.render_candidate` returned no frame) — a browser or dashboard failure, not a bad request. |

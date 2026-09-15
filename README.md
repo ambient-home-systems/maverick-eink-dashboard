@@ -432,9 +432,15 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | GET | `/health` | no | Version, display count, Home Assistant and MQTT connection state |
 | GET | `/api/panels` | no | The panel catalogue as JSON |
 | GET | `/api/transports` | no | Registered transports |
+| GET | `/api/schema/display` | yes | The display config JSON Schema, for a form to render |
 | GET | `/api/displays` | yes | Every display, with state, checksum and lint findings |
 | GET | `/api/displays/{id}` | yes | One display |
-| POST | `/api/displays/{id}/render` | yes | Render one display now; `?force=true` ignores the unchanged and lint gates |
+| POST | `/api/displays` | yes | Create a display and start rendering it; `409` if the id exists |
+| PUT | `/api/displays/{id}` | yes | Replace a display's configuration |
+| DELETE | `/api/displays/{id}` | yes | Stop a display and delete its stored frames |
+| POST | `/api/displays/{id}/schedule` | yes | Pause or resume a display's schedule at runtime |
+| POST | `/api/displays/preview` | yes | Dry-run render of a candidate config; saves nothing |
+| POST | `/api/displays/{id}/render` | yes | Render one display now; `?force=true` ignores the unchanged and lint gates; `?wait=false` returns `202` and renders in the background |
 | POST | `/api/render` | yes | Render every enabled display |
 | GET | `/api/displays/{id}/frame` | yes | The current frame, in the panel's wire format |
 | GET | `/api/displays/{id}/preview.png` | yes | The frame as a viewable PNG |

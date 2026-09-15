@@ -53,6 +53,32 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that cannot be written is logged and survived, because a panel on the wall
   cares about the render, not about where the display was written down.
   `maverick check` prints which of the two files the displays came from.
+- **A display can now be created, replaced, deleted and previewed over HTTP,**
+  and its schedule paused at runtime, closing the gap the previous two entries
+  left: `Application.add_display`, `update_display`, `remove_display` and
+  `Engine.render_candidate` existed but nothing reached them over the API
+  (`src/maverick/server/api.py`). `GET /api/schema/display` gives a form
+  everything it needs to draw itself — `DisplayConfig.model_json_schema()` plus
+  each registered transport's `options_doc`. `POST /api/displays` creates a
+  display (**201**, **409** on a duplicate id, **422** naming the field for a
+  bad or misspelt one — `extra="forbid"` doing its job); `PUT
+  /api/displays/{id}` replaces one (**400** if the body's id does not match the
+  path); `DELETE /api/displays/{id}` stops it and deletes its stored frames.
+  `POST /api/displays/{id}/schedule` pauses or resumes the schedule at runtime
+  through the same path the MQTT `schedule_on`/`schedule_off` commands take,
+  distinct from the config-level `schedule.enabled` field that `PUT` covers.
+  `POST /api/displays/preview` runs `Engine.render_candidate` and returns the
+  frame as base64 PNG with its lint report, saving nothing. `POST
+  /api/displays/{id}/render` gained `?wait=false`: **202** immediately with the
+  render running as a background task, rather than blocking for the whole
+  render timeout — which under ingress runs inside an iframe with no progress
+  shown — with `?wait=true` (the default) keeping today's synchronous response
+  for `rest_command` users. The display summary gained `rendering`
+  (`Engine.is_rendering`), `next_run_at` (the scheduler's own job, which
+  nothing called before this) and `last_render_s`/`last_total_s`, two new
+  `DisplayState` fields (`src/maverick/engine.py`) that persist the last
+  render's durations and are now published in the MQTT state payload
+  alongside `render_duration` too.
 
 ### Changed
 
