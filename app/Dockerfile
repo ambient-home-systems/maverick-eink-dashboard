@@ -17,7 +17,7 @@ FROM ${BUILD_FROM}
 # forbids unknown keys (src/maverick/config.py:71-77), so a ref left behind at
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
-ARG MAVERICK_REF=v0.2.0
+ARG MAVERICK_REF=v0.2.1
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
