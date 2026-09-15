@@ -11,7 +11,7 @@ FROM ${BUILD_FROM}
 # built today and one built next month contain the same code. The release
 # procedure in CONTRIBUTING.md moves it to the release tag alongside the
 # version in config.yaml.
-ARG MAVERICK_REF=3a501d831c14478b963ae666289d9fb0040e2b61
+ARG MAVERICK_REF=v0.2.0
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
