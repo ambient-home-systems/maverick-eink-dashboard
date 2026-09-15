@@ -6,6 +6,8 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-15
+
 ### Fixed
 
 - The Home Assistant app exited immediately on every start, from the moment the

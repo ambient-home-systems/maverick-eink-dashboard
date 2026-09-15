@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
 
 - **Fixes the app exiting the moment it starts.** The start script passed the
   config file to `maverick` in a position its command-line parser does not
@@ -9,8 +9,9 @@
   cause of "the app will not start"; the 0.2.1 notes below describe a second,
   genuine problem that sat behind it and would have bitten next.
 
-  A fresh install picks this up straight away. An existing install needs
-  **Rebuild** from the app's overflow menu.
+  Update to 0.2.2 and start the app; a fresh install gets it straight away.
+  This is the first release where a working app is actually offered as an
+  update, so no rebuild by hand is needed.
 
 ## 0.2.1
 
