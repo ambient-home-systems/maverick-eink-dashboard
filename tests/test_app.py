@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -21,6 +22,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from maverick.cli import build_parser
 from maverick.config import load_config
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -66,6 +68,38 @@ def test_manifest_shape() -> None:
     # Optional keys carry no default: an empty string would fail the url/port types.
     optional = {key for key, kind in manifest["schema"].items() if str(kind).endswith("?")}
     assert not optional & set(manifest["options"])
+
+
+def test_run_sh_invokes_the_cli_the_way_the_cli_parses() -> None:
+    """``run.sh`` is the app's entrypoint, and CI never executes it.
+
+    The image build, the Chromium smoke test and the starter-config load all
+    exercise the package; nothing runs the shell script that starts it, because
+    that needs bashio and a Supervisor to answer. So the one thing a typo there
+    costs — the app exiting immediately, on every start, for everyone — is
+    exactly what no other check can see.
+
+    ``-c`` is a *global* option (``build_parser`` in ``src/maverick/cli.py``,
+    and "Given before the subcommand" in ``docs/reference/cli.md``), so
+    ``maverick serve -c file`` is an argparse error with exit status 2 and no
+    output but a usage message. Feed every ``maverick`` line in ``run.sh`` to
+    the real parser instead of trusting it by eye.
+    """
+    parser = build_parser()
+    invocations = re.findall(r"^(?:exec )?maverick (.+)$", RUN_SH, re.M)
+    assert invocations, "run.sh never invokes maverick"
+
+    for argument_string in invocations:
+        # ${CONFIG_FILE} and friends stand in for a path argparse never opens.
+        argv = shlex.split(re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", "/config/maverick.yaml",
+                                argument_string))
+        try:
+            parser.parse_args(argv)
+        except SystemExit as exit_:  # argparse exits rather than raising
+            pytest.fail(
+                f"run.sh runs `maverick {argument_string}`, which the CLI rejects "
+                f"(exit {exit_.code}). The app would die on every start."
+            )
 
 
 def test_every_option_run_sh_reads_is_declared() -> None:

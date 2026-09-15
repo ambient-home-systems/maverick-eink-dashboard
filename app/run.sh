@@ -102,4 +102,6 @@ fi
 cd "${CONFIG_DIR}"
 
 bashio::log.info "Starting $(maverick --version)"
-exec maverick serve -c "${CONFIG_FILE}" --host 0.0.0.0 --port 5000
+# -c is a global option, so it goes before the subcommand: `maverick serve -c
+# file` is an argparse error (exit 2) and the app dies on every start.
+exec maverick -c "${CONFIG_FILE}" serve --host 0.0.0.0 --port 5000
