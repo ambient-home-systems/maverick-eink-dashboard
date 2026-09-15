@@ -260,20 +260,64 @@ form.
 The version lives in one place, `pyproject.toml`'s `[project].version`;
 `maverick.app.VERSION` reads it back through `importlib.metadata` (falling
 back to parsing `pyproject.toml` directly in a bare checkout), so nothing else
-needs editing to match. To cut a release:
+needs editing to match.
+
+A release is **two commits, one either side of the tag**, not a single one. The order below
+is load-bearing; the two notes after it explain why, and both describe ways a
+release has actually gone wrong.
 
 1. **Bump** `version` in `pyproject.toml`.
 2. **Changelog**: move the `[Unreleased]` entries in `CHANGELOG.md` under a new
    `## [x.y.z] - YYYY-MM-DD` heading, leaving an empty `[Unreleased]` section
    above it for what comes next.
-3. **Tag** the resulting commit `vx.y.z` and push the tag.
-4. **App**: set `version` in `app/config.yaml` to the same number
-   (`tests/test_app.py` insists), point `MAVERICK_REF` in `app/Dockerfile` at
-   the tag, and add the entry to `app/CHANGELOG.md`. Between releases
-   `MAVERICK_REF` is a full commit SHA, which is what the image installs.
+3. **App version, same commit**: set `version` in `app/config.yaml` to the same
+   number and add the entry to `app/CHANGELOG.md`.
+   `tests/test_app.py::test_app_version_is_the_package_version` requires the
+   two version numbers to match, so they have to move together or the commit
+   in between fails its own tests. Leave `MAVERICK_REF` alone here.
+4. **Reinstall, then regenerate**: `pip install -e .`, then
+   `python scripts/gen_docs.py`, and commit what it writes.
+5. **Tag** that commit `vx.y.z` and push the tag.
+6. **Point `MAVERICK_REF`** in `app/Dockerfile` at the tag, as a second commit.
+   Between releases it is a full commit SHA;
+   `tests/test_app.py::test_dockerfile_pins_a_ref_and_uses_the_distro_chromium`
+   accepts either form.
 
 `maverick --version` and the HTTP API's `/` route (`src/maverick/server/api.py`)
 both report `maverick.app.VERSION`, so either is how to check the bump landed.
+
+### Why `MAVERICK_REF` moves after the tag, not with it
+
+CI builds the app image on every pull request — `docker build` in the
+`Home Assistant app` job (`.github/workflows/ci.yml`) — and the image installs
+the repository from `archive/${MAVERICK_REF}.tar.gz` (`app/Dockerfile`). So a
+ref named in a commit has to already exist on the remote when that commit is
+pushed. Setting `MAVERICK_REF` to `vx.y.z` in the same commit that cuts the
+release fails the build with a 404 from codeload, because the tag does not
+exist yet.
+
+Splitting it also leaves a window worth closing promptly. Between step 3
+landing and step 6 landing, the default branch advertises the new version
+while still naming the previous commit — and the app store reads
+`app/config.yaml` from the default branch, so the Supervisor will offer an
+update to an image built from the *old* code. Land step 6 straight after the
+tag rather than leaving it for later.
+
+If the tag cannot be pushed at all, `MAVERICK_REF` may name the release
+commit's own SHA instead: it installs the same tree, and the test above accepts
+it. Repointing it at the tag afterwards is then a one-line change with no
+behavioural difference.
+
+### Why the reinstall in step 4 matters
+
+`docs/reference/openapi.json` carries the version, because `create_app` passes
+`maverick.app.VERSION` to FastAPI (`src/maverick/server/api.py`). That value
+comes from `importlib.metadata`, which reports whatever was installed — so an
+editable install made before the bump keeps reporting the *old* version, and
+`python scripts/gen_docs.py --check` passes locally against a stale file. CI
+installs fresh from `pyproject.toml` (`.github/workflows/ci.yml`), reads the
+new version and fails on the difference. `pip install -e .` before regenerating
+is what keeps a local check honest.
 
 ## Pull request checklist
 
