@@ -6,6 +6,25 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Home Assistant app exited immediately on every start, from the moment the
+  app was added. `app/run.sh` ran `maverick serve -c "${CONFIG_FILE}"`, but
+  `-c` is a global option that argparse only accepts before the subcommand
+  (`build_parser`, `src/maverick/cli.py`; "Given before the subcommand" in
+  `docs/reference/cli.md`), so the CLI exited 2 with a usage message and
+  nothing else ever ran — not the config load, not the server. It now runs
+  `maverick -c "${CONFIG_FILE}" serve`.
+- The systemd unit in README.md carried the same broken argument order.
+
+### Added
+
+- `tests/test_app.py::test_run_sh_invokes_the_cli_the_way_the_cli_parses` feeds
+  every `maverick` command line in `app/run.sh` to the real CLI parser. CI
+  builds the image and exercises the package, but nothing executes the shell
+  script that starts it — it needs bashio and a Supervisor to answer — so a
+  typo there was invisible to every other check.
+
 ## [0.2.1] - 2026-09-15
 
 ### Changed

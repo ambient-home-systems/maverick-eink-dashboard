@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Fixes the app exiting the moment it starts.** The start script passed the
+  config file to `maverick` in a position its command-line parser does not
+  accept, so the service exited with a usage message before doing anything at
+  all — on every start, since the app was first published. This was the real
+  cause of "the app will not start"; the 0.2.1 notes below describe a second,
+  genuine problem that sat behind it and would have bitten next.
+
+  A fresh install picks this up straight away. An existing install needs
+  **Rebuild** from the app's overflow menu.
+
 ## 0.2.1
 
 - **Updating to this version fixes an app that stops right after starting.**

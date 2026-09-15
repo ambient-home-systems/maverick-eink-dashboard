@@ -470,7 +470,7 @@ WorkingDirectory=/opt/maverick
 Environment=HA_TOKEN=your-long-lived-access-token
 # On aarch64, where Playwright ships no Chromium build:
 # Environment=MAVERICK_CHROMIUM_PATH=/usr/bin/chromium
-ExecStart=/opt/maverick/.venv/bin/maverick serve -c /opt/maverick/config.yaml
+ExecStart=/opt/maverick/.venv/bin/maverick -c /opt/maverick/config.yaml serve
 Restart=on-failure
 RestartSec=10
 
