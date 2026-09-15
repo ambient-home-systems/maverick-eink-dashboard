@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- No change to what the app does. The repository now tests that the package the
+  image installs accepts the starter `maverick.yaml` the app writes on its
+  first start, so the mismatch that stopped 0.2.0 starting cannot return
+  unnoticed.
+
+  If a 0.2.0 install still stops right after starting, rebuild it from the
+  app's overflow menu → **Rebuild**: the fix moved the commit the image
+  installs from, which an already-built image does not pick up on its own.
+
 ## 0.2.0
 
 - **Link with Home Assistant** in the Web UI: obtains a credential through

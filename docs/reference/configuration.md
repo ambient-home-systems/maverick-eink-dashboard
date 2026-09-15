@@ -52,11 +52,17 @@ mqtt:
 Environment variable HA_TOKEN is referenced in the config but not set (use ${HA_TOKEN:-default} to make it optional).
 ```
 
-`${VAR:-default}` uses the text after `:-` when the variable is unset, and an
-empty default (`${MQTT_PASSWORD:-}`) is the way to say "optional, usually empty".
-Note that this is substitution, not shell evaluation: a variable set to an empty
-string is still set, so `${VAR}` yields an empty string rather than failing, and
-`${VAR:-fallback}` yields the empty string too.
+`${VAR:-default}` uses the text after `:-` when the variable is unset **or set
+to the empty string**, which is what `:-` means in a shell (`expand_env` in
+`src/maverick/config.py`). An empty default (`${MQTT_PASSWORD:-}`) is therefore
+the way to say "optional, usually empty", and `${MQTT_PORT:-1883}` still gives
+you 1883 when something upstream exported `MQTT_PORT=`. That matters under the
+Home Assistant app, whose `run.sh` exports a value for every substitution in
+the starter config, empty for the options you have not filled in.
+
+`${VAR}` without a default is the only form that cares whether a variable is
+set at all: unset fails the load, set-and-empty yields the empty string, since
+with no default written there is nothing else it could mean.
 
 ## Unknown keys are an error
 

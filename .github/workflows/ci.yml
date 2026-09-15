@@ -21,7 +21,12 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
+      # Full history: tests/test_app.py resolves the commit app/Dockerfile pins
+      # to check the image installs the version the app advertises, and a
+      # shallow clone does not contain it.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -109,4 +114,34 @@ jobs:
 
 
           asyncio.run(main())
+          EOF
+
+      # The other half of the pinned-ref check in tests/test_app.py, from inside
+      # the image: the starter config ships from app/rootfs/ at this commit, the
+      # package comes from MAVERICK_REF, and every model bar TransportConfig
+      # forbids unknown keys. A ref left behind at an older release therefore
+      # writes keys that release rejects, and the app dies on its first start
+      # with nothing installed and nothing configured — exactly this run.
+      - name: Starter configuration loads in the image
+        run: |
+          docker run --rm -i \
+            --env HA_URL=http://homeassistant:8123 \
+            --env HA_TOKEN= \
+            --env HA_REFRESH_TOKEN= \
+            --env HA_CLIENT_ID= \
+            --env MAVERICK_LOG_LEVEL=info \
+            --env MAVERICK_API_TOKEN= \
+            --env MAVERICK_BASE_URL= \
+            --env MQTT_ENABLED=false \
+            --env MQTT_HOST=core-mosquitto \
+            --env MQTT_PORT=1883 \
+            --env MQTT_USERNAME= \
+            --env MQTT_PASSWORD= \
+            --entrypoint python maverick-app:ci - <<'EOF'
+          from maverick.app import VERSION
+          from maverick.config import load_config
+
+          config = load_config("/usr/share/maverick/maverick.yaml")
+          print("maverick", VERSION, "loads the starter config:",
+                [display.id for display in config.displays])
           EOF

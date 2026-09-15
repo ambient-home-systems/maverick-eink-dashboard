@@ -245,7 +245,8 @@ and `esphome`.
 Three things to know about the format:
 
 - **Environment substitution.** `${VAR}` inserts an environment variable and
-  fails to load if it is unset. `${VAR:-default}` falls back instead. Both work
+  fails to load if it is unset. `${VAR:-default}` falls back instead, for a
+  variable that is unset *or* empty, as `:-` does in a shell. Both work
   anywhere in the file, so no secret has to live in it.
 - **Durations are strings.** `30s`, `5m`, `1h`, `2d`, or a bare number of
   seconds. They appear in `schedule.every`, `schedule.debounce`,
