@@ -10,9 +10,6 @@ arch:
   - amd64
 # The base image runs s6-overlay v3, which is its own init.
 init: false
-# A dashboard cannot be rendered until Home Assistant is up.
-startup: application
-boot: auto
 # The Mosquitto broker app is picked up automatically when it is installed;
 # nothing breaks when it is not.
 services:
@@ -22,7 +19,6 @@ ports:
 ports_description:
   5000/tcp: "HTTP API and setup UI. Panels that pull frames fetch from this port."
 webui: "http://[HOST]:[PORT:5000]/"
-watchdog: "http://[HOST]:[PORT:5000]/health"
 map:
   # /config: maverick.yaml (the displays) plus the frame store and debug output.
   - addon_config:rw
