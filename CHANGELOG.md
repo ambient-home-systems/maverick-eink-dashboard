@@ -6,6 +6,8 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-15
+
 ### Changed
 
 - `${VAR:-default}` in a configuration file now falls back for a variable that
