@@ -55,6 +55,16 @@ code{font:12px ui-monospace,monospace;background:var(--bg);padding:1px 5px;
 a{color:inherit}
 """
 
+# Every URL below is *document-relative* on purpose — `api/...`, never
+# `/api/...`. Home Assistant's ingress serves this page at
+# `/api/hassio_ingress/<token>/` and proxies to the app with that prefix
+# stripped, telling the app nothing about it: the Supervisor sends no
+# `X-Ingress-Path` (`supervisor/api/ingress.py`, `_init_header`), and its
+# upstream URL is built as `http://<ip>:<port>/<path>` (`_create_url`). A
+# root-relative path therefore resolves against Home Assistant's own origin
+# and never reaches the app at all. A relative one resolves against the
+# page's base, which is the prefix under ingress and `/` on the published
+# port, so the same markup works through both.
 _JS = """
 async function post(url){
   const r = await fetch(url, {method:'POST', headers: authHeaders()});
@@ -71,10 +81,15 @@ function authHeaders(){
 async function startLink(btn){
   btn.disabled = true; btn.textContent = 'Opening Home Assistant…';
   try {
-    const r = await fetch('/api/auth/start', {headers: authHeaders()});
+    const r = await fetch('api/auth/start', {headers: authHeaders()});
     const body = await r.json();
     if(!r.ok) throw new Error(body.detail || 'could not start linking');
-    location.href = body.authorize_url;
+    // Top-level rather than inside Home Assistant's ingress iframe: the
+    // callback lands on the app's own base_url, a different origin, and
+    // the result page is worth seeing full width. Falls back to this frame
+    // if the browser refuses the top-level navigation.
+    try { window.top.location.href = body.authorize_url; }
+    catch (_) { location.href = body.authorize_url; }
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Link with Home Assistant';
     alert(e.message);
@@ -83,11 +98,11 @@ async function startLink(btn){
 async function refresh(id, force, btn){
   btn.disabled = true; const label = btn.textContent; btn.textContent = 'Rendering…';
   try {
-    const res = await post(`/api/displays/${id}/render?force=${force}`);
+    const res = await post(`api/displays/${id}/render?force=${force}`);
     btn.textContent = res.skipped ? 'Unchanged' : (res.ok ? 'Done' : 'Failed');
     // Bust the cache: the preview URL is stable but its content is not.
     const img = document.getElementById('shot-' + id);
-    if (img) img.src = `/api/displays/${id}/preview.png?t=${Date.now()}`;
+    if (img) img.src = `api/displays/${id}/preview.png?t=${Date.now()}`;
     setTimeout(() => { btn.textContent = label; btn.disabled = false; location.reload(); }, 1200);
   } catch (e) {
     btn.textContent = 'Error'; console.error(e);
@@ -138,7 +153,7 @@ def render_ui(application: Application) -> str:
 
         shot = (
             f"<img class='shot' id='shot-{html.escape(display.id)}' "
-            f"src='/api/displays/{html.escape(display.id)}/preview.png' "
+            f"src='api/displays/{html.escape(display.id)}/preview.png' "
             f"alt='current frame for {html.escape(display.name)}' loading='lazy'>"
             if frame
             else (
@@ -168,7 +183,7 @@ def render_ui(application: Application) -> str:
   <div class="row">
     <button onclick="refresh('{html.escape(display.id)}', false, this)">Refresh</button>
     <button onclick="refresh('{html.escape(display.id)}', true, this)">Full refresh</button>
-    <a href="/api/displays/{html.escape(display.id)}/esphome.yaml">ESPHome config</a>
+    <a href="api/displays/{html.escape(display.id)}/esphome.yaml">ESPHome config</a>
   </div>
   {error_line}
   {issues}
@@ -185,7 +200,13 @@ def render_ui(application: Application) -> str:
             "</div></section>"
         )
 
-    ha_connected = bool(application.engine.ha)
+    # `engine.ha` is "a credential is configured", not "it works": the client is
+    # built whenever one is present and kept even when the check fails
+    # (`src/maverick/engine.py`, `Engine.start`). Asking it here would claim
+    # "connected" for a credential Home Assistant rejects, and hide the link
+    # card below exactly when a broken credential makes it the one thing on
+    # this page the user needs.
+    ha_connected = application.engine.ha_ok
     mqtt_connected = bool(application.engine.mqtt and application.engine.mqtt.connected)
     ha_state = "connected" if ha_connected else "not connected"
     mqtt_state = "connected" if mqtt_connected else "off"
@@ -214,7 +235,7 @@ def render_ui(application: Application) -> str:
     &middot; Home Assistant {ha_state}
     &middot; MQTT {mqtt_state}
   </span>
-  <span class="sub" style="margin-left:auto"><a href="/api/docs">API docs</a></span>
+  <span class="sub" style="margin-left:auto"><a href="api/docs">API docs</a></span>
 </header>
 <main>{"".join(cards)}</main>
 <script>const SUMMARY={summary};{_JS}</script>

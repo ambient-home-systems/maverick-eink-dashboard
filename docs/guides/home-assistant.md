@@ -789,9 +789,10 @@ already-exact image would undo the text-preserving work the pipeline just did.
 These pieces are described in [docs/roadmap.md](../roadmap.md) as proposals,
 and none of them exists today:
 
-* **No ingress.** The app installs from the store and exposes its UI on port
-  5000, but there is no sidebar entry; you open it through **Web UI** on the
-  app's page.
+* **No sidebar entry.** Ingress is enabled (`app/config.yaml`), so **Open Web
+  UI** on the app's page opens the setup UI embedded in Home Assistant on any
+  connection. It is not a sidebar panel, and port 5000 stays published for
+  panels that pull frames — and as the way in if ingress is unavailable.
 * **No custom integration.** No config flow, no HACS listing, no UI setup. The
   configuration is the YAML file described here.
 * **No `maverick.*` actions.** Automations reach Maverick through the MQTT

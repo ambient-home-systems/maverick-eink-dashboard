@@ -335,7 +335,9 @@ def create_app(application: Application) -> FastAPI:
         return {
             "linked": source is not None,
             "kind": source.kind if source else "none",
-            "connected": application.engine.ha is not None,
+            # Whether Home Assistant answered, not whether a credential is
+            # configured: `engine.ha` is set for a credential it rejects too.
+            "connected": application.engine.ha_ok,
             "url": ha.url,
             "can_link": not reason,
             "reason": reason,
@@ -450,7 +452,7 @@ def create_app(application: Application) -> FastAPI:
         if not application.config.server.enable_ui:
             return (
                 "<h1>Maverick</h1>"
-                "<p>The UI is disabled. See <a href='/api/docs'>/api/docs</a>.</p>"
+                "<p>The UI is disabled. See <a href='api/docs'>/api/docs</a>.</p>"
             )
         return render_ui(application)
 

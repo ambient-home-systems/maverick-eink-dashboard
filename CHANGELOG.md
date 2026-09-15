@@ -6,6 +6,32 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-09-15
+
+### Fixed
+
+- **The setup UI did not work through Home Assistant's ingress.** 0.2.3 enabled
+  ingress on the claim that "every path the UI emits is already host-relative",
+  which is backwards: root-relative paths are exactly what a path-prefix proxy
+  breaks. Ingress serves the page at `/api/hassio_ingress/<token>/` and proxies
+  with that prefix stripped, telling the app nothing about it — the Supervisor
+  sends no `X-Ingress-Path` (`supervisor/api/ingress.py`, `_init_header`) and
+  builds its upstream URL as `http://<ip>:<port>/<path>` (`_create_url`). So
+  every `/api/...` in the page resolved against Home Assistant's own origin:
+  preview images 404ed, and *Link with Home Assistant* failed on a JSON parse
+  error because its `fetch` never reached the app. The UI now emits every URL
+  relative to the document, which resolves correctly under the prefix and on
+  the published port alike; the authorize redirect also leaves the ingress
+  iframe, since the callback lands on the app's own `base_url`.
+- **The setup UI hid the link card exactly when it was needed.** It asked
+  whether a Home Assistant client existed, but `Engine.start`
+  (`src/maverick/engine.py`) builds one whenever a credential is *configured*
+  and keeps it after a failed check, so a credential Home Assistant rejects was
+  reported as "Home Assistant connected" — in the page header and in
+  `/api/auth/status` — and the *Link with Home Assistant* card was suppressed,
+  leaving no way to replace the broken credential from the UI. Both now report
+  whether the last check actually succeeded (`Engine.ha_ok`).
+
 ## [0.2.4] - 2026-09-15
 
 ### Fixed

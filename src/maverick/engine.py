@@ -254,6 +254,12 @@ class Engine:
 
         self._pool = BrowserPool(max_concurrent=int(_env_int("MAVERICK_MAX_RENDERS", 2)))
         self._ha: HomeAssistantClient | None = None
+        #: Whether the last check against Home Assistant actually succeeded. A
+        #: client exists whenever a credential is *configured*, working or not,
+        #: so `_ha is not None` cannot answer "are we connected?" — and the
+        #: setup UI hides its link card on that answer, which would hide it
+        #: exactly when a broken credential makes it the thing the user needs.
+        self._ha_ok = False
         self._tokens: TokenSource | None = None
         self._mqtt: MqttPublisher | None = None
         self._renderer: DashboardRenderer | None = None
@@ -293,6 +299,7 @@ class Engine:
             self._ha = HomeAssistantClient(self.config.home_assistant, self._tokens)
             try:
                 info = await self._ha.check()
+                self._ha_ok = True
                 log.info("connected to Home Assistant %s", info.get("version", "?"))
             except Exception as exc:  # noqa: BLE001 - keep serving without HA
                 log.error("Home Assistant check failed: %s", exc)
@@ -347,6 +354,14 @@ class Engine:
         return self._ha
 
     @property
+    def ha_ok(self) -> bool:
+        """Whether Home Assistant answered the last check.
+
+        Distinct from `ha`, which is merely "a credential is configured".
+        """
+        return self._ha_ok
+
+    @property
     def tokens(self) -> TokenSource | None:
         return self._tokens
 
@@ -360,11 +375,13 @@ class Engine:
         if self._ha is not None:
             await self._ha.close()
             self._ha = None
+        self._ha_ok = False
         self._tokens = build_token_source(self.config.home_assistant)
         if self._tokens is None:
             raise HomeAssistantError("No Home Assistant credential to apply.")
         self._ha = HomeAssistantClient(self.config.home_assistant, self._tokens)
         info = await self._ha.check()
+        self._ha_ok = True
         self._renderer = DashboardRenderer(
             self.config.home_assistant, self._pool, self._tokens
         )
