@@ -21,8 +21,16 @@ def test_packaged_example_matches_repository_root() -> None:
 
 
 def test_example_config_loads(monkeypatch) -> None:
+    """The file as published, read as a file and nothing more.
+
+    ``use_display_store=False`` keeps the load free of side effects: the example
+    leaves ``data_dir`` at ``./data``, so the display store step would import
+    these two displays into the working directory of whoever ran the suite
+    (``resolve_displays`` in ``src/maverick/store.py``). The store's own
+    behaviour is ``tests/test_display_store.py``.
+    """
     monkeypatch.setenv("HA_TOKEN", "test-token")
-    config = load_config(PUBLISHED)
+    config = load_config(PUBLISHED, use_display_store=False)
     assert [d.id for d in config.displays] == ["kitchen", "hallway-tag"]
     assert config.display("kitchen").transport.type == "http_pull"
     assert config.display("hallway-tag").transport.type == "opendisplay"

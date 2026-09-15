@@ -1,6 +1,6 @@
 # Maverick — Architecture
 
-> Last reviewed against commit `992fbfc`.
+> Last reviewed against commit `f32444c`.
 >
 > This page describes the service as it is built. Everything proposed but not
 > written — ingress for the app, the integration, pages, the authoring tools —
@@ -370,8 +370,10 @@ assume works.
   package and the same variable.
 - **The setup UI cannot change a display.** It shows what each panel rendered
   and what the linter found, offers refresh and full-refresh buttons, and links
-  to the generated ESPHome config — but editing a display means editing the
-  config file.
+  to the generated ESPHome config — but editing a display means editing a file
+  by hand and restarting: the config file, or the display store Maverick keeps
+  the displays in once it has imported them (`src/maverick/store.py`,
+  `<data_dir>/displays.yaml`).
 - **`maverick scan` needs a local Bluetooth adapter.** Tag discovery does not go
   through Home Assistant's Bluetooth proxies, even though delivery can.
 

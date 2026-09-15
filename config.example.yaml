@@ -6,6 +6,13 @@
 # Unknown keys are an error, not a warning: if you misspell one the config
 # fails to load and tells you which key it did not recognise.
 #
+# `displays:` is the exception to "edit this file". The first load copies the
+# list into the display store — <data_dir>/displays.yaml, or `displays_file` —
+# which is a file Maverick itself writes, so that a display can be changed
+# without editing this one. Once that store exists it is the source of the
+# displays and the list below is ignored, with a warning saying so, so the list
+# here is a starting point rather than a running record.
+#
 # ${VAR} reads an environment variable and fails if it is unset.
 # ${VAR:-default} falls back to the default instead. Both work anywhere in
 # this file, so secrets never have to live in it.
@@ -62,8 +69,11 @@ server:
   # The setup UI at /. Turn it off to serve the API alone.
   enable_ui: true
 
-# Rendered frames, previews and state live here.
+# Rendered frames, previews, state and the display store live here.
 data_dir: ./data
+
+# Where the display store is kept. Empty means <data_dir>/displays.yaml.
+# displays_file: ""
 
 log_level: info
 
@@ -71,6 +81,7 @@ log_level: info
 # often. Leave this on: a bad frame can sit on a battery panel for a day.
 block_on_lint_error: true
 
+# Imported into the display store the first time this file loads; see the header.
 displays:
 
   # ----------------------------------------------------------------------

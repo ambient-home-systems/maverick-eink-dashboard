@@ -64,7 +64,9 @@ repository to the app store; the app itself lives in [`app/`](app/DOCS.md).
    (`/addon_configs/…_maverick/`, reachable with the File editor, Studio Code
    Server or Samba apps).
 5. Edit `displays:` in that file and restart the app. The Web UI shows what
-   each panel rendered and what the linter found.
+   each panel rendered and what the linter found. That first start also copies
+   the list into `data/displays.yaml` beside it, which is the file that counts
+   from then on — see [Configuration](#configuration).
 
 [app/DOCS.md](app/DOCS.md) is the full page: every option, what the app maps
 and exposes, and what to check when it does not start.
@@ -231,6 +233,17 @@ displays:         # a list, one entry per physical panel
     panel: waveshare-7in5-mono
     dashboard: /lovelace-eink/kitchen
 ```
+
+**The displays are the exception to "edit this file".** They are kept in a file
+Maverick writes — `<data_dir>/displays.yaml`, or wherever `displays_file`
+points — so that the setup UI can add and change one without a restart
+(`src/maverick/store.py`). `load_config` resolves the two on every load, in the
+one place every command goes through: if that store exists it is the source of
+the displays and a `displays:` list here is ignored, with a warning naming both
+files; if it does not, the list here is imported into it once and managed from
+the UI afterwards. So write `displays:` to get started, then delete it — and
+run `maverick check`, which prints which of the two files the displays it
+validated came from.
 
 Those three keys are all a display needs. `id` is the only one with no default
 at all; `panel` and `dashboard` have defaults (`generic-mono` and

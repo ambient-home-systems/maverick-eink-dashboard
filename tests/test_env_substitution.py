@@ -75,6 +75,10 @@ def test_an_empty_export_does_not_defeat_a_config_default(tmp_path, monkeypatch)
     """End to end, through the loader, in the shape the app's starter config uses."""
     config_file = tmp_path / "maverick.yaml"
     config_file.write_text(
+        # `data_dir` is where the display store lands, and this test loads a
+        # file with a display in it: point it at tmp_path so the import writes
+        # there rather than into the working directory.
+        f"data_dir: {tmp_path / 'data'}\n"
         "mqtt:\n"
         "  enabled: ${MAVERICK_TEST_ENABLED:-false}\n"
         "  port: ${MAVERICK_TEST_PORT:-1883}\n"

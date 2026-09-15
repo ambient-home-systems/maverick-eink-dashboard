@@ -6,6 +6,25 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Displays are now kept in a file Maverick owns**, `<data_dir>/displays.yaml`
+  by default and `displays_file` wherever else you want it
+  (`src/maverick/store.py`). Until now a display existed only in the config
+  file, which is read once at start-up and never written back
+  (`load_config` in `src/maverick/config.py`) — under the Home Assistant app
+  that is `/config/maverick.yaml`, edited with a separate file-editor app and
+  applied by restarting, so there was nowhere for a setup UI to put a display
+  somebody created in it. `load_config` now resolves the two in the one place
+  every command goes through: an existing store is the source of the displays
+  and a `displays:` list in the config file is ignored with a warning naming
+  both files; with no store, the config file's list is imported into it once
+  and read from the store from then on. Nothing changes for a `Config` built in
+  memory — the store belongs to loading a file, not to the model — and a store
+  that cannot be written is logged and survived, because a panel on the wall
+  cares about the render, not about where the display was written down.
+  `maverick check` prints which of the two files the displays came from.
+
 ### Changed
 
 - **A set `server.api_token` now switches each display's MQTT image entity to

@@ -29,6 +29,7 @@ DOC = ROOT / "docs" / "troubleshooting.md"
 SOURCE_FILES = [
     "src/maverick/cli.py",
     "src/maverick/config.py",
+    "src/maverick/store.py",
     "src/maverick/ha/client.py",
     "src/maverick/render/browser.py",
     "src/maverick/render/dashboard.py",

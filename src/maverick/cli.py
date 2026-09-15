@@ -144,7 +144,10 @@ def cmd_check(args: argparse.Namespace) -> int:
     setup_logging(config.log_level)
     problems = 0
 
-    print(f"config: {len(config.displays)} display(s)")
+    # Which file the displays came from matters as soon as there are two that
+    # could have supplied them (`resolve_displays` in `src/maverick/store.py`).
+    source = f" from {config.displays_source}" if config.displays_source else ""
+    print(f"config: {len(config.displays)} display(s){source}")
     for display in config.displays:
         resolved = display.resolved()
         flag = " " if display.enabled else "-"

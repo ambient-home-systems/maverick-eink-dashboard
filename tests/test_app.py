@@ -211,6 +211,15 @@ def test_template_variables_are_exported_by_run_sh() -> None:
 
 @pytest.mark.parametrize("mqtt", ["true", "false"])
 def test_starter_config_loads(monkeypatch, mqtt: str) -> None:
+    """The starter config as the package will read it, minus the store step.
+
+    ``use_display_store=False`` here and below: this config's ``data_dir`` is
+    the app's ``/config/data``, and the store step would import the example
+    display into it — creating a directory on whatever machine ran the suite
+    (``resolve_displays`` in ``src/maverick/store.py``). Where that store lands
+    under the app is asserted separately below; the store's own behaviour is
+    ``tests/test_display_store.py``.
+    """
     values = {
         "HA_URL": "http://homeassistant:8123",
         "HA_TOKEN": "test-token",
@@ -229,7 +238,7 @@ def test_starter_config_loads(monkeypatch, mqtt: str) -> None:
     for name, value in values.items():
         monkeypatch.setenv(name, value)
 
-    config = load_config(TEMPLATE)
+    config = load_config(TEMPLATE, use_display_store=False)
 
     assert config.home_assistant.token == "test-token"
     assert config.mqtt.enabled is (mqtt == "true")
@@ -269,7 +278,7 @@ def test_starter_config_loads_with_no_credential_yet(monkeypatch) -> None:
     for name, value in first_start.items():
         monkeypatch.setenv(name, value)
 
-    config = load_config(TEMPLATE)
+    config = load_config(TEMPLATE, use_display_store=False)
 
     assert config.home_assistant.token == ""
     assert config.home_assistant.refresh_token == ""
@@ -277,6 +286,45 @@ def test_starter_config_loads_with_no_credential_yet(monkeypatch) -> None:
     assert config.mqtt.enabled is False
     assert config.server.base_url == ""
     assert config.server.api_token == ""
+
+
+def test_the_display_store_lands_beside_the_frames(monkeypatch) -> None:
+    """The app writes three things under ``/config/data``, and this is the third.
+
+    Frames and ``state.json`` have always gone to ``data_dir``
+    (``src/maverick/engine.py``); the displays the setup UI manages now go
+    beside them, because ``displays_file`` is empty in the starter config and
+    empty means ``<data_dir>/displays.yaml`` (``Config.display_store_path`` in
+    ``src/maverick/config.py``). That folder is the one the Supervisor exposes
+    as the app's ``addon_configs`` share, so the file can be read, backed up and
+    edited like the config next to it.
+    """
+    for name in _exported():
+        monkeypatch.setenv(name, "false" if name == "MQTT_ENABLED" else "")
+    monkeypatch.setenv("HA_URL", "http://homeassistant:8123")
+
+    config = load_config(TEMPLATE, use_display_store=False)
+
+    assert config.displays_file == ""
+    assert config.display_store_path == Path("/config/data/displays.yaml")
+    # A fresh install still ships an example display to import into it.
+    assert [d.id for d in config.displays] == ["kitchen"]
+
+
+def test_the_starter_config_says_where_displays_live_after_the_first_start() -> None:
+    """The header is the only documentation a user editing that file has.
+
+    "Restart the app after editing" stops being the whole story for `displays:`
+    the moment the first start imports the list into the store beside it, so the
+    header has to say where they went (`resolve_displays` in
+    ``src/maverick/store.py``).
+    """
+    header = "\n".join(
+        line for line in TEMPLATE.read_text(encoding="utf-8").splitlines()
+        if line.lstrip().startswith("#")
+    )
+    assert "data/displays.yaml" in header
+    assert "Web UI" in header or "web UI" in header
 
 
 def test_dockerfile_pins_a_ref_and_uses_the_distro_chromium() -> None:
