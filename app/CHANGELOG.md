@@ -1,15 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
-- No change to what the app does. The repository now tests that the package the
-  image installs accepts the starter `maverick.yaml` the app writes on its
-  first start, so the mismatch that stopped 0.2.0 starting cannot return
+- **Updating to this version fixes an app that stops right after starting.**
+  0.2.0's image installed the package from a commit predating account linking,
+  while the `maverick.yaml` written on the first start uses the keys that
+  release added; the configuration models reject keys they do not know, so the
+  service exited before its web UI — and so before **Link with Home
+  Assistant** — could be reached. The version number is what the Supervisor
+  offers an update against, which is why this is a release rather than a quiet
+  fix: 0.2.0 is now installable and startable from a clean slate.
+- `${VAR:-default}` in `maverick.yaml` now falls back for a variable that is
+  set to the empty string as well as one that is unset, as `:-` does in a
+  shell. The app's `run.sh` exports a value for every substitution it writes,
+  empty for the options you have not filled in, so a default written beside
+  the reference now survives that.
+- The repository tests that the package the image installs accepts the starter
+  `maverick.yaml` the app writes, so the mismatch above cannot return
   unnoticed.
-
-  If a 0.2.0 install still stops right after starting, rebuild it from the
-  app's overflow menu → **Rebuild**: the fix moved the commit the image
-  installs from, which an already-built image does not pick up on its own.
 
 ## 0.2.0
 
