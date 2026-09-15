@@ -1,5 +1,7 @@
 # TRMNL, in bring-your-own-server mode
 
+*Last reviewed against commit `d103e74`.*
+
 > **Not run on hardware by this project.** No TRMNL device has been pointed at
 > Maverick. Both server endpoints *were* exercised against a running
 > `maverick serve`, and the transcript below is that real output — see

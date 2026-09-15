@@ -309,9 +309,14 @@ displays:
 # ------------------------------------------------------------------ parser --
 
 def build_parser() -> argparse.ArgumentParser:
+    from .app import VERSION
+
     parser = argparse.ArgumentParser(
         prog="maverick",
         description="Render Home Assistant dashboards to e-ink displays.",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {VERSION}"
     )
     parser.add_argument("-c", "--config", help="path to config.yaml")
     parser.add_argument(

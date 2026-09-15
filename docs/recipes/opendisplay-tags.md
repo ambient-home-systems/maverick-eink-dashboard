@@ -1,5 +1,7 @@
 # OpenDisplay BLE shelf labels
 
+*Last reviewed against commit `d103e74`.*
+
 > **Not run on hardware by this project.** No tag has been written to, and no
 > BLE scan has been run — the machine this was written on has no Bluetooth
 > adapter. Everything here is read from `transports/opendisplay.py`, `cli.py`

@@ -2,6 +2,8 @@ None of these recipes has been run on hardware by the project yet. Each page say
 
 # Device recipes
 
+*Last reviewed against commit `d103e74`.*
+
 One page per way of getting a frame onto a panel. Each is written from the
 source — the transport, the endpoint or the generator that actually does the
 work — and each ends with a "What to check first when it does not work"

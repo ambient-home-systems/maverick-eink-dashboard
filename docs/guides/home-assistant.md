@@ -1,5 +1,7 @@
 # Connecting Maverick to Home Assistant
 
+*Last reviewed against commit `d103e74`.*
+
 Maverick is a standalone service that talks to Home Assistant over its public
 APIs. There is no add-on and no custom integration — see
 [What is not there yet](#what-is-not-there-yet) — so everything below is done

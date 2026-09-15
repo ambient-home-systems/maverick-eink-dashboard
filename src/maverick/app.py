@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tomllib
 from datetime import UTC, datetime
+from importlib import metadata
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from .config import Config
@@ -20,7 +23,24 @@ from .transports.mqtt import MqttPublisher
 
 log = logging.getLogger(__name__)
 
-VERSION = "0.1.0"
+
+def _read_version() -> str:
+    """The single source of truth is ``pyproject.toml``'s ``[project].version``.
+
+    An installed build reads it from package metadata; a bare checkout (this
+    repository's own tests, or `pip install -e` before the egg-info exists)
+    falls back to parsing `pyproject.toml` directly rather than reporting a
+    made-up version.
+    """
+    try:
+        return metadata.version("maverick-eink-dashboard")
+    except metadata.PackageNotFoundError:
+        pyproject = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
+        data = tomllib.loads(pyproject.read_text())
+        return data["project"]["version"]
+
+
+VERSION = _read_version()
 
 
 class Application:

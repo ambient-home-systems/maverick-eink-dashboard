@@ -1,5 +1,7 @@
 # Troubleshooting
 
+*Last reviewed against commit `d103e74`.*
+
 Every user-facing failure message Maverick can produce, grouped in the order
 you meet them: loading the config, connecting to Home Assistant, rendering,
 the lint gate, delivery, MQTT and discovery, and the scheduler. The last three

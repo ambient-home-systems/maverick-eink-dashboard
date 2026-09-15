@@ -1,5 +1,7 @@
 # The e-ink design guide
 
+*Last reviewed against commit `d103e74`.*
+
 This is the page the render linter sends you to. It explains what Maverick does
 to a Home Assistant dashboard before it reaches a panel, why each rule exists,
 and what to change when a lint finding says something is wrong.

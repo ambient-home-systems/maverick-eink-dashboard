@@ -14,7 +14,8 @@ panel is worth more than a patch written from a datasheet.
 5. [Adding a transport](#adding-a-transport)
 6. [The hardware-untested banner](#the-hardware-untested-banner)
 7. [Spelling](#spelling)
-8. [Pull request checklist](#pull-request-checklist)
+8. [Releasing](#releasing)
+9. [Pull request checklist](#pull-request-checklist)
 
 ## Development setup
 
@@ -115,6 +116,12 @@ transport's `options_doc`.
 Hand-written pages — `README.md`, the guides, the recipes, `docs/architecture.md`,
 `docs/design-guide.md`, `docs/troubleshooting.md` — are yours to edit directly.
 `docs/README.md` indexes all of them; add new pages there.
+
+The guides, the recipes, `docs/design-guide.md` and `docs/troubleshooting.md`
+each carry a `*Last reviewed against commit \`<short sha>\`.*` line under their
+title. A documentation change to one of these pages updates that line to the
+short SHA of the commit making the change — it says how stale the page's
+factual claims might be, not when the file last moved.
 
 ## Adding a panel profile
 
@@ -223,6 +230,22 @@ which keeps the spelling it shipped with and must not be "corrected":
 `quantize()`. Internal names that are not part of any interface follow the prose
 — `_greyscale_palette`, `is_greyscale` — so when you add one, use the British
 form.
+
+## Releasing
+
+The version lives in one place, `pyproject.toml`'s `[project].version`;
+`maverick.app.VERSION` reads it back through `importlib.metadata` (falling
+back to parsing `pyproject.toml` directly in a bare checkout), so nothing else
+needs editing to match. To cut a release:
+
+1. **Bump** `version` in `pyproject.toml`.
+2. **Changelog**: move the `[Unreleased]` entries in `CHANGELOG.md` under a new
+   `## [x.y.z] - YYYY-MM-DD` heading, leaving an empty `[Unreleased]` section
+   above it for what comes next.
+3. **Tag** the resulting commit `vx.y.z` and push the tag.
+
+`maverick --version` and the HTTP API's `/` route (`src/maverick/server/api.py`)
+both report `maverick.app.VERSION`, so either is how to check the bump landed.
 
 ## Pull request checklist
 
