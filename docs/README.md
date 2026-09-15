@@ -65,4 +65,5 @@ hardware; each carries a banner and says what was verified.
 | [Contributing](../CONTRIBUTING.md) | Setup, the checks, the documentation workflow, adding a panel or a transport, the untested-banner rule, the pull request checklist. |
 | [`CLAUDE.md`](../CLAUDE.md) | The short version for AI-assisted changes: module map, invariants, documentation rules, the commands that verify a change. |
 | [Documentation plan](documentation-plan.md) | The review that produced this documentation set, and the phases it was written in. |
+| [Implementation plan](implementation-plan.md) | The review of the product layer, and the phased prompts, with a model and effort level each, that build it: runtime display configuration, the setup UI, pages, the dev loop. |
 | [Changelog](../CHANGELOG.md) | What exists, by module, in Keep a Changelog format. |
