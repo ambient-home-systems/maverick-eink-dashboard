@@ -6,6 +6,21 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`GET /api/displays/{id}/esphome.yaml` leaked `server.api_token` to anyone
+  who could reach the server.** The generated ESPHome configuration embeds the
+  token verbatim as an `Authorization: Bearer` header
+  (`src/maverick/esphome/generator.py`), but the route serving it was the one
+  `/api/displays/...` route without the `_require_token` dependency the
+  render, list and frame routes carry (`src/maverick/server/api.py`). On the
+  published port, an unauthenticated `GET` therefore returned the secret that
+  gates every other endpoint — present since the route was first added. The
+  route now requires the token like its siblings; the setup UI's "ESPHome
+  config" link appends `?token=` itself when the page was opened with one
+  (`src/maverick/server/ui.py`), since a plain anchor cannot send an
+  `Authorization` header.
+
 ## [0.2.7] - 2026-09-15
 
 ### Changed

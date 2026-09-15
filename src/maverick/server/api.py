@@ -252,7 +252,11 @@ def create_app(application: Application) -> FastAPI:
             headers={"Cache-Control": "no-cache", "ETag": frame.etag},
         )
 
-    @api.get("/api/displays/{display_id}/esphome.yaml", response_class=PlainTextResponse)
+    @api.get(
+        "/api/displays/{display_id}/esphome.yaml",
+        response_class=PlainTextResponse,
+        dependencies=[auth],
+    )
     async def esphome_config(display_id: str) -> str:
         """A ready-to-flash ESPHome config for this display."""
         from ..esphome import generate_esphome_config
