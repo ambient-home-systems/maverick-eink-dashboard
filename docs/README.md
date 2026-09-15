@@ -12,6 +12,7 @@ by a person.
 | [README](../README.md) | What Maverick is, what it does not do yet, install, configuration, transports, the HTTP API, running it under systemd. |
 | [Quick start](../README.md#quick-start) | Six steps from `maverick init` to a rendered PNG you can look at before any panel is involved. |
 | [`config.example.yaml`](../config.example.yaml) | The commented worked example: two displays, one pulling on a timer with quiet hours, one BLE tag rendering on entity change. |
+| [Home Assistant app](../app/DOCS.md) | Installing from the app store on Home Assistant OS or Supervised: the options, what the app maps and exposes, the starter config it writes, and what to check when it does not start. |
 
 ## Reference — generated
 

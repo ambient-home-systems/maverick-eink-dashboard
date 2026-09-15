@@ -1,0 +1,40 @@
+configuration:
+  home_assistant_url:
+    name: Home Assistant URL
+    description: >-
+      The origin the app loads dashboards from. The default reaches Home
+      Assistant on the internal network and is right for most installations;
+      change it only if Home Assistant is served over HTTPS or on another port.
+  home_assistant_token:
+    name: Long-lived access token
+    description: >-
+      Create one under your profile, Security tab. Rendering needs a frontend
+      session, which the Supervisor's own token cannot provide.
+  log_level:
+    name: Log level
+    description: How much the app writes to its log.
+  base_url:
+    name: Base URL for panels
+    description: >-
+      Where panels that pull frames should fetch from, reachable from the
+      panel, for example http://192.168.1.10:5000. Left empty, the app uses
+      the host's first IPv4 address on port 5000.
+  api_token:
+    name: API token
+    description: >-
+      Optional. Gates the render and frame endpoints; panels and rest_commands
+      must then send it.
+  mqtt_host:
+    name: MQTT host
+    description: >-
+      Optional. Leave empty to use the Mosquitto broker app automatically;
+      set it to point at a different broker.
+  mqtt_port:
+    name: MQTT port
+    description: Only used when MQTT host is set. Defaults to 1883.
+  mqtt_username:
+    name: MQTT username
+    description: Only used when MQTT host is set.
+  mqtt_password:
+    name: MQTT password
+    description: Only used when MQTT host is set.

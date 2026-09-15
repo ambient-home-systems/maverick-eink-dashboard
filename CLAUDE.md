@@ -20,6 +20,7 @@ everything below is [CONTRIBUTING.md](CONTRIBUTING.md).
 | `src/maverick/ha/` | The Home Assistant REST/WebSocket client and MQTT discovery. |
 | `src/maverick/esphome/` | Generating ESPHome device configuration for a display. |
 | `engine.py`, `config.py` | The orchestrator and `FrameStore`; every pydantic model, and the source the reference is generated from. |
+| `app/`, `repository.yaml` | The Home Assistant app: manifest, Dockerfile, `run.sh`, the starter config it writes, and the store manifest. It installs the package at the commit `MAVERICK_REF` names; `tests/test_app.py` keeps it in step. |
 
 ## Invariants — do not break these
 

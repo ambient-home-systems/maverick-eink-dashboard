@@ -1,6 +1,6 @@
 # Maverick — Roadmap
 
-> Last reviewed against commit `609b882`.
+> Last reviewed against commit `992fbfc`.
 >
 > Every feature proposed here is unbuilt. What does exist is described in
 > [architecture.md](architecture.md), and where a proposal builds on it this
@@ -27,8 +27,10 @@ different layer.
 - **An add-on with ingress** would embed the UI in the sidebar with auth handled
   by Home Assistant — no exposed port, no second login. **Add-ons exist only on
   HA OS and Supervised**, so Container and Core users would need the same image
-  as plain Docker plus the integration pointed at its URL. Neither the add-on
-  nor a Dockerfile exists today.
+  as plain Docker plus the integration pointed at its URL. The add-on exists —
+  Home Assistant now calls it an *app*, and it lives in
+  [`app/`](../app/DOCS.md) — but without ingress: it exposes port 5000 rather
+  than a sidebar entry. A standalone Dockerfile does not exist.
 - **An integration** would be distributed via HACS, provide UI setup with no
   YAML, one device per panel, and `maverick.render` / `set_page` actions —
   **with no MQTT broker required**. That last point is the argument for it:
@@ -159,12 +161,12 @@ Estimates are re-based on what the repository now contains.
 |---|-------|--------|----------|---------|
 | 0 | The render service | Done | *was 3–5 weeks* | Pipeline, panel catalogue, five transports, scheduler, HTTP API, CLI, MQTT discovery |
 | 1 | Hardware validation | Not started | 1–2 weeks | One panel per transport path confirms the catalogue, the measured inks and the refresh behaviour |
-| 2 | Add-on, ingress and integration | Not started | 3–4 weeks | It becomes an app: sidebar entry, UI setup, devices and actions without a broker |
+| 2 | Add-on, ingress and integration | In progress | 2–3 weeks | The app is built ([`app/`](../app/DOCS.md)), without ingress; the sidebar entry, UI setup, and devices and actions without a broker remain |
 | 3 | Pages and control surface | Not started | 2 weeks | It becomes controllable: rotation, tile feature, card, fleet view |
 | 4 | Strategy, live preview and linting | Not started | 1–2 weeks | It becomes authorable by someone who has never thought about dithering. Cheaper than first estimated: the linter and the millimetre type scale exist |
 | 5 | Template source | Not started | 1 week | Power users get precise control for dense layouts. Cheaper than first estimated: the renderer already loads any URL |
 
-**8–11 weeks remaining**, against the three to five the render service was
+**7–10 weeks remaining**, against the three to five the render service was
 estimated at and the 8–12 originally put on phases 2–5. The three questions
 above more than double the project — an argument for sequencing them, not for
 dropping them.

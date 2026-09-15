@@ -90,11 +90,12 @@ deleted between `_find_config` finding it and `load_config` reading it.
 Found /data/options.json but no maverick.yaml. The add-on should have generated one; check the add-on log.
 ```
 
-**Cause:** running as the Home Assistant add-on, `/data/options.json` exists
-(the add-on's own schema) but its run script has not written
-`/config/maverick.yaml` from it yet.
-**Fix:** check the add-on's own log for the translation step failing; restart
-the add-on.
+**Cause:** inside the Home Assistant app's container, `/data/options.json`
+exists (the app's own options) and `maverick` was run without `-c` before the
+app's `run.sh` had written `/config/maverick.yaml`. Normally that means someone
+ran the CLI by hand in the container, since `run.sh` always passes `-c`.
+**Fix:** start the app once so `run.sh` writes the file, or pass
+`-c /config/maverick.yaml`.
 
 ### The YAML itself is wrong
 

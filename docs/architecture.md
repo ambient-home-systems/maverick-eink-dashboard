@@ -1,10 +1,10 @@
 # Maverick — Architecture
 
-> Last reviewed against commit `609b882`.
+> Last reviewed against commit `992fbfc`.
 >
 > This page describes the service as it is built. Everything proposed but not
-> written — the add-on, the integration, pages, the authoring tools — lives in
-> [roadmap.md](roadmap.md).
+> written — ingress for the app, the integration, pages, the authoring tools —
+> lives in [roadmap.md](roadmap.md).
 
 Maverick loads a Home Assistant dashboard in headless Chromium, restyles it for
 ink, quantises it against a panel's measured pigments, refuses to ship a frame
@@ -353,15 +353,20 @@ assume works.
   catalogue — resolution, native rotation, refresh timing, measured ink values,
   ghosting cadence — comes from documentation, not a bench. No transport has
   been exercised end to end against real hardware.
-- **There is no add-on and no custom integration.** No sidebar entry, no
-  ingress, no config flow, no HACS listing, no `maverick.*` actions. Maverick is
-  a standalone service that talks to Home Assistant over its APIs.
-- **There is no Dockerfile.** Running it means a Python 3.11+ environment and
-  systemd, as the README describes.
+- **There is no custom integration, and the app has no ingress.** The Home
+  Assistant app ([`app/`](../app/DOCS.md)) packages the service with Chromium
+  and exposes port 5000; there is no sidebar entry, no config flow, no HACS
+  listing and no `maverick.*` actions. Outside the app, Maverick is a
+  standalone service that talks to Home Assistant over its APIs.
+- **There is no standalone Dockerfile.** The app image is built by the
+  Supervisor and expects the app's options; elsewhere, running it means a
+  Python 3.11+ environment and systemd, as the README describes.
 - **A display renders one dashboard.** There is no page list, no dwell time and
   no rotation, and nothing can change a display's dashboard at runtime.
-- **Chromium is not bundled.** Playwright ships no aarch64 Linux build, so a
-  Raspberry Pi needs the distro `chromium` package and `MAVERICK_CHROMIUM_PATH`.
+- **Chromium is bundled only in the app.** The app image installs Debian's
+  `chromium` package and sets `MAVERICK_CHROMIUM_PATH` itself. Standalone,
+  Playwright ships no aarch64 Linux build, so a Raspberry Pi needs the distro
+  package and the same variable.
 - **The setup UI cannot change a display.** It shows what each panel rendered
   and what the linter found, offers refresh and full-refresh buttons, and links
   to the generated ESPHome config — but editing a display means editing the
