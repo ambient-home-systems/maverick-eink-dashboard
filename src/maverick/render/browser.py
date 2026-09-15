@@ -136,7 +136,37 @@ class BrowserPool:
         async with self._lock:
             context = self._contexts.pop(key, None)
         if context is not None:
+            await self._close(key, context)
+
+    async def drop_contexts_for(self, display_id: str) -> int:
+        """Discard every cached context belonging to one display.
+
+        A context key is built in `src/maverick/render/dashboard.py` as
+        ``f"{display.id}:{viewport}:{supersample}:{scripts}"``, so one display
+        can hold several — one per geometry it has been rendered at. Removing or
+        reconfiguring a display drops all of them, and deliberately leaves the
+        browser running: Chromium takes seconds to relaunch, and every other
+        panel is waiting on it. Returns how many were closed.
+        """
+        prefix = f"{display_id}:"
+        async with self._lock:
+            keys = [key for key in self._contexts if key.startswith(prefix)]
+            contexts = [(key, self._contexts.pop(key)) for key in keys]
+        for key, context in contexts:
+            await self._close(key, context)
+        return len(contexts)
+
+    async def _close(self, key: str, context: BrowserContext) -> None:
+        """Close one context, surviving a Chromium that has already gone.
+
+        Closing is cleanup, and cleanup that raises would abandon the rest of
+        it — the other contexts of a display being removed, the transport still
+        to be stopped.
+        """
+        try:
             await context.close()
+        except Exception as exc:  # noqa: BLE001 - a dead context is already gone
+            log.warning("could not close the browser context %s: %s", key, exc)
 
     @asynccontextmanager
     async def page(

@@ -8,6 +8,35 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A display can now be added, changed or removed while the service runs.**
+  Every per-display resource was built in a start-up loop — the engine's
+  transport, lock and state entry (`Engine.start`), the scheduler's job and the
+  `on_change` subscription (`RenderScheduler.start`), the MQTT device
+  (`MqttDiscovery.announce`) — so the only way to apply a change was a restart,
+  which relaunches Chromium and, with `schedule.render_on_start` on by default,
+  redraws every panel at once. Each of those steps is now callable for one
+  display: `Engine.register_display`, `update_display` and `unregister_display`
+  (`src/maverick/engine.py`), `RenderScheduler.add_display`, `remove_display`
+  and `refresh_state_watch` (`src/maverick/scheduling/scheduler.py`), composed
+  in that order by `Application.add_display`, `update_display` and
+  `remove_display` (`src/maverick/app.py`), which then announces or retracts the
+  Home Assistant device and writes the display store. Chromium is never
+  restarted: only the display's own browser contexts are dropped
+  (`BrowserPool.drop_contexts_for`, `src/maverick/render/browser.py`). An update
+  keeps the state entry and the stored frame, because `frames_since_full`
+  describes the panel rather than the config and a pull device that wakes before
+  the next render still needs something to fetch; a removal deletes both
+  (`FrameStore.remove`). Nothing reaches this over HTTP yet — that is the next
+  change.
+- **`Engine.render_candidate` renders a display config without keeping
+  anything** (`src/maverick/engine.py`): it renders a config that need not be
+  registered, runs the pipeline and the linter, reports the findings instead of
+  gating on them, and delivers nothing. No state entry, no stored frame, no
+  write to `state.json`, and the browser context it rendered through is dropped
+  again on the way out. This is what a Preview button will call.
+- **`Engine.is_rendering(display_id)`** says whether a display is inside the
+  locked section of `Engine.render` right now, so the API and the setup UI can
+  report a render in progress rather than inferring it from a timestamp.
 - **Displays are now kept in a file Maverick owns**, `<data_dir>/displays.yaml`
   by default and `displays_file` wherever else you want it
   (`src/maverick/store.py`). Until now a display existed only in the config

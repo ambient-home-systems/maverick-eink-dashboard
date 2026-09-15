@@ -18,16 +18,18 @@ flashes the whole panel black and white several times.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import time as dt_time
 
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from ..config import Config, ScheduleConfig
+from ..config import Config, DisplayConfig, ScheduleConfig
 from ..engine import Engine
 
 log = logging.getLogger(__name__)
@@ -79,31 +81,14 @@ class RenderScheduler:
 
     async def start(self) -> None:
         for display in self._config.enabled_displays:
-            schedule = display.schedule
-            self.schedule_enabled[display.id] = schedule.enabled
-            if not schedule.enabled:
-                log.info("[%s] schedule disabled", display.id)
-                continue
-            trigger = self._build_trigger(schedule)
-            if trigger is not None:
-                self._scheduler.add_job(
-                    self._run,
-                    trigger,
-                    args=[display.id, "schedule"],
-                    id=f"render:{display.id}",
-                    max_instances=1,
-                    coalesce=True,      # a backlog after a pause is pointless
-                    misfire_grace_time=60,
-                    replace_existing=True,
-                )
-                log.info("[%s] scheduled: %s", display.id, self._describe(schedule))
+            self.add_display(display, render_on_start=False)
 
         self._scheduler.start()
         await self._start_state_watch()
 
         for display in self._config.enabled_displays:
             if display.schedule.render_on_start:
-                asyncio.create_task(self._run(display.id, "startup"))
+                self._render_now(display.id)
 
     async def stop(self) -> None:
         self._stop.set()
@@ -116,6 +101,106 @@ class RenderScheduler:
             self._watch_task.cancel()
         if self._scheduler.running:
             self._scheduler.shutdown(wait=False)
+
+    # ----------------------------------------------------- display lifecycle --
+
+    def check(self, display: DisplayConfig) -> None:
+        """Raise if this display cannot be scheduled, without scheduling it.
+
+        `every` and `cron` are validated as a pair when the config loads
+        (`ScheduleConfig` in `src/maverick/config.py`), but the cron *expression*
+        is only parsed here, by APScheduler. A caller applying a display to the
+        running service asks first, so a typo in one is a rejected change rather
+        than a display that is half added.
+        """
+        self._build_trigger(display.schedule)
+
+    def add_display(self, display: DisplayConfig, render_on_start: bool = True) -> None:
+        """Schedule one display, as `start()` does for each at startup.
+
+        Also the update path: the job id is per display and `replace_existing`
+        is set, so re-adding a display swaps its timeline without a gap. Any
+        debounce or render still pending under the old schedule is dropped
+        first, because it was queued against settings that no longer apply.
+
+        `render_on_start=False` is for `start()` itself, which renders every
+        display once afterwards rather than one at a time.
+        """
+        self.remove_display(display.id)
+        self.schedule_enabled[display.id] = display.schedule.enabled
+
+        if not display.enabled:
+            log.info("[%s] disabled; not scheduled", display.id)
+            return
+        if not display.schedule.enabled:
+            log.info("[%s] schedule disabled", display.id)
+        else:
+            trigger = self._build_trigger(display.schedule)
+            if trigger is not None:
+                self._scheduler.add_job(
+                    self._run,
+                    trigger,
+                    args=[display.id, "schedule"],
+                    id=self._job_id(display.id),
+                    max_instances=1,
+                    coalesce=True,      # a backlog after a pause is pointless
+                    misfire_grace_time=60,
+                    replace_existing=True,
+                )
+            log.info("[%s] scheduled: %s", display.id, self._describe(display.schedule))
+
+        if render_on_start and display.schedule.render_on_start:
+            self._render_now(display.id)
+
+    def remove_display(self, display_id: str) -> None:
+        """Forget one display's job, its pause flag and anything queued for it.
+
+        Idempotent, and safe for a display that was never added: it is called
+        for its own sake when a display is removed, and again by `add_display`
+        to clear the previous schedule.
+        """
+        with contextlib.suppress(JobLookupError):
+            self._scheduler.remove_job(self._job_id(display_id))
+        if (handle := self._debounce.pop(display_id, None)) is not None:
+            handle.cancel()
+        if (task := self._pending.pop(display_id, None)) is not None:
+            task.cancel()
+        self.schedule_enabled.pop(display_id, None)
+
+    async def refresh_state_watch(self) -> None:
+        """Rebuild the `on_change` subscription from the displays as they are now.
+
+        One websocket watches every entity any display names, so a display added,
+        changed or removed means a new set and a new subscription: there is
+        nothing to add an entity to. Cancelling and re-subscribing costs one
+        reconnect, which is what Home Assistant's own restarts cost anyway
+        (`HomeAssistantClient.watch_states`).
+        """
+        if self._watch_task is not None:
+            self._watch_task.cancel()
+            self._watch_task = None
+        if self._engine.ha is None:
+            log.info(
+                "no Home Assistant client; on_change triggers stay inactive until "
+                "an account is linked"
+            )
+            return
+        await self._start_state_watch()
+
+    @staticmethod
+    def _job_id(display_id: str) -> str:
+        return f"render:{display_id}"
+
+    def _render_now(self, display_id: str) -> None:
+        """Queue one render outside the timeline, and keep hold of the task."""
+        task = asyncio.create_task(self._run(display_id, "startup"))
+        self._pending[display_id] = task
+        task.add_done_callback(lambda finished: self._forget_pending(display_id, finished))
+
+    def _forget_pending(self, display_id: str, task: asyncio.Task) -> None:
+        """Drop a finished task, unless a newer one has already taken its place."""
+        if self._pending.get(display_id) is task:
+            del self._pending[display_id]
 
     # --------------------------------------------------------------- jobs --
 
@@ -147,7 +232,12 @@ class RenderScheduler:
         if not self.schedule_enabled.get(display_id, True) and trigger in ("schedule", "state"):
             log.debug("[%s] schedule paused, ignoring %s trigger", display_id, trigger)
             return
-        schedule = self._config.display(display_id).schedule
+        try:
+            schedule = self._config.display(display_id).schedule
+        except KeyError:
+            # Removed between the trigger firing and this running.
+            log.debug("[%s] no longer configured; ignoring %s trigger", display_id, trigger)
+            return
         if trigger in ("schedule", "state") and in_quiet_hours(schedule.quiet_hours):
             log.debug("[%s] in quiet hours, skipping", display_id)
             return
@@ -201,7 +291,7 @@ class RenderScheduler:
             self._debounce.pop(display_id, None)
             task = asyncio.create_task(self._run(display_id, "state"))
             self._pending[display_id] = task
-            task.add_done_callback(lambda _t: self._pending.pop(display_id, None))
+            task.add_done_callback(lambda finished: self._forget_pending(display_id, finished))
 
         log.debug("[%s] %s changed; render in %.0fs", display_id, entity_id, delay)
         self._debounce[display_id] = loop.call_later(delay, fire)
@@ -211,7 +301,7 @@ class RenderScheduler:
     def jobs(self) -> list[ScheduledJob]:
         found = []
         for display in self._config.enabled_displays:
-            job = self._scheduler.get_job(f"render:{display.id}")
+            job = self._scheduler.get_job(self._job_id(display.id))
             found.append(
                 ScheduledJob(
                     display_id=display.id,

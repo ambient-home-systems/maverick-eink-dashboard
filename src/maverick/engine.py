@@ -20,14 +20,16 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from .config import Config, ResolvedDisplay
+from .config import Config, DisplayConfig, ResolvedDisplay
 from .eink import Frame, FrameFormat, PipelineOptions, process
 from .eink.dither import DitherMode
 from .eink.pipeline import FitMode
@@ -215,6 +217,25 @@ class FrameStore:
         except OSError as exc:
             log.warning("could not persist frame for %s: %s", stored.display_id, exc)
 
+    def remove(self, display_id: str) -> None:
+        """Forget a display's frame, in memory and on disk.
+
+        The three files `_persist` writes are the display's alone, so a removed
+        display leaves nothing behind for an id someone later reuses to inherit.
+        An undeletable file is logged rather than raised: the display is gone
+        from the running service either way, and failing the removal over a
+        stale file would be worse.
+        """
+        self._frames.pop(display_id, None)
+        self._pulled.pop(display_id, None)
+        if self._directory is None:
+            return
+        for path in self._paths(display_id):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                log.warning("could not delete the stored frame %s: %s", path, exc)
+
     def load(self, display_ids: list[str]) -> int:
         """Restore persisted frames at startup. Returns how many were found."""
         if self._directory is None or not self._directory.exists():
@@ -265,6 +286,9 @@ class Engine:
         self._renderer: DashboardRenderer | None = None
         self._transports: dict[str, Transport] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        #: Display ids inside the locked section of `render`, so the API and the
+        #: UI can say "rendering now" rather than guessing from a timestamp.
+        self._rendering: set[str] = set()
         self._tasks: list[Any] = []
         #: Called after every render outcome. Used by the app layer to publish
         #: MQTT state without the engine having to know MQTT exists.
@@ -326,11 +350,7 @@ class Engine:
                 self._mqtt = None
 
         for display in self.config.enabled_displays:
-            transport = get_transport(display.transport.type, _transport_options(display))
-            await transport.start()
-            self._transports[display.id] = transport
-            self._locks[display.id] = asyncio.Lock()
-            self.states.setdefault(display.id, DisplayState())
+            await self._install(display)
 
         self._started = True
         log.info("engine ready with %d display(s)", len(self._transports))
@@ -399,6 +419,124 @@ class Engine:
     def services(self) -> dict[str, Any]:
         return {"ha": self._ha, "mqtt": self._mqtt, "frames": self.frames, "engine": self}
 
+    # ----------------------------------------------------- display lifecycle --
+
+    async def register_display(self, display: DisplayConfig) -> None:
+        """Add a display to the running engine, as `start()` does at startup.
+
+        Only the engine's own pieces: the transport, the render lock and the
+        state entry. The scheduler's job and the MQTT device belong to the
+        scheduler and to discovery, and `Application` is what calls all three —
+        the engine still knows nothing about either.
+        """
+        previous = list(self.config.displays)
+        try:
+            # Assigning the whole list is what re-runs `Config._unique_ids`
+            # (`validate_assignment`, `src/maverick/config.py`); appending in
+            # place would let a duplicate id through.
+            self.config.displays = [*previous, display]
+            await self._install(display)
+        except Exception:
+            # Nothing half-registered: neither a duplicate id — pydantic has
+            # already written the list its validator then rejected — nor a
+            # transport that will not start may leave a display behind for the
+            # scheduler to find or the store to write.
+            self.config.displays = previous
+            raise
+        log.info(
+            "[%s] registered (%s%s)",
+            display.id,
+            display.transport.type,
+            "" if display.enabled else ", disabled",
+        )
+
+    async def unregister_display(self, display_id: str) -> None:
+        """Remove a display from the running engine and forget its frames.
+
+        Takes the render lock first, so a render already in flight finishes and
+        delivers before its transport is stopped underneath it. Chromium keeps
+        running: only this display's contexts are dropped, because every other
+        panel is waiting on the same browser.
+        """
+        lock = self._locks.get(display_id, asyncio.Lock())
+        async with lock:
+            self.config.displays = [d for d in self.config.displays if d.id != display_id]
+            await self._teardown(display_id)
+            self.states.pop(display_id, None)
+            self._save_state()
+            self.frames.remove(display_id)
+        self._locks.pop(display_id, None)
+        log.info("[%s] unregistered", display_id)
+
+    async def update_display(self, display: DisplayConfig) -> None:
+        """Apply a new config for a display that is already registered.
+
+        The state entry survives, because it describes the panel rather than the
+        config: `frames_since_full` counts what the panel has been shown since
+        its last flashing refresh, and a changed dither does not clear the
+        ghosting. So does the persisted frame, so a pull device that wakes
+        between the edit and the next render is still served the old one rather
+        than a 404.
+        """
+        previous = self.config.display(display.id)  # KeyError if never registered
+        lock = self._locks.setdefault(display.id, asyncio.Lock())
+        async with lock:
+            await self._teardown(display.id)
+            self._replace_in_config(display)
+            try:
+                await self._install(display)
+            except Exception:
+                # An update whose transport will not start changes nothing, so
+                # that what is running still matches what is written down.
+                self._replace_in_config(previous)
+                try:
+                    await self._install(previous)
+                except Exception as exc:  # noqa: BLE001 - the first error is the one to raise
+                    log.error(
+                        "[%s] could not restart the previous transport after a failed "
+                        "update: %s. The display keeps its old config and builds a "
+                        "transport on its next render.",
+                        display.id,
+                        exc,
+                    )
+                raise
+        log.info("[%s] updated (%s)", display.id, display.transport.type)
+
+    def is_rendering(self, display_id: str) -> bool:
+        """Whether a render for this display is in its locked section right now."""
+        return display_id in self._rendering
+
+    async def _install(self, display: DisplayConfig) -> None:
+        """Build one display's runtime pieces: transport, render lock, state.
+
+        A disabled display gets the lock and the state entry but no transport,
+        exactly as `start()` skips it; `render` builds one on demand if it is
+        ever asked for that display directly.
+        """
+        if display.enabled:
+            transport = get_transport(display.transport.type, _transport_options(display))
+            await transport.start()
+            self._transports[display.id] = transport
+        self._locks.setdefault(display.id, asyncio.Lock())
+        self.states.setdefault(display.id, DisplayState())
+
+    async def _teardown(self, display_id: str) -> None:
+        """Stop one display's transport and drop its browser contexts.
+
+        Its state entry and its stored frame are left alone: an update keeps
+        both, and it is `unregister_display` that decides to delete them.
+        """
+        transport = self._transports.pop(display_id, None)
+        if transport is not None:
+            await transport.stop()
+        await self._pool.drop_contexts_for(display_id)
+
+    def _replace_in_config(self, display: DisplayConfig) -> None:
+        """Swap a display in `config.displays` in place, keeping its position."""
+        self.config.displays = [
+            display if d.id == display.id else d for d in self.config.displays
+        ]
+
     # --------------------------------------------------------------- render --
 
     async def render(
@@ -412,12 +550,14 @@ class Engine:
 
         Serialised per display: a manual refresh arriving while the scheduler is
         mid-render would otherwise have both writing to the same panel.
-        """
-        display = self.config.display(display_id).resolved()
-        state = self.states.setdefault(display_id, DisplayState())
-        lock = self._locks.setdefault(display_id, asyncio.Lock())
 
-        async with lock:
+        The display is looked up inside the lock, so a render queued behind one
+        that `unregister_display` was waiting on raises `KeyError` rather than
+        rebuilding the transport and the state entry that were just removed.
+        """
+        async with self._render_slot(display_id):
+            display = self.config.display(display_id).resolved()
+            state = self.states.setdefault(display_id, DisplayState())
             started = time.perf_counter()
             outcome = RenderOutcome(display_id=display_id, ok=False, trigger=trigger)
 
@@ -531,6 +671,70 @@ class Engine:
             log.info(outcome.describe())
             await self._notify(outcome)
             return outcome
+
+    @asynccontextmanager
+    async def _render_slot(self, display_id: str) -> AsyncIterator[None]:
+        """Hold the display's render lock, and record that it is rendering."""
+        lock = self._locks.setdefault(display_id, asyncio.Lock())
+        async with lock:
+            self._rendering.add(display_id)
+            try:
+                yield
+            finally:
+                self._rendering.discard(display_id)
+
+    async def render_candidate(self, display: DisplayConfig) -> RenderOutcome:
+        """Render a config that need not be registered, and deliver nothing.
+
+        What a Preview button calls: it renders the display someone is editing,
+        runs the pipeline and the linter, and hands back the frame. Nothing it
+        touches survives the call — no `states` entry, no `frames` entry, no
+        write to `state.json`, and the browser context it renders through is
+        dropped again on the way out, because a candidate's geometry is usually
+        a one-off and caching it would strand it in the pool.
+
+        Lint findings are reported rather than enforced: the point of a preview
+        is to see that a frame is blank before it is saved, which means rendering
+        the blank frame and describing it, not refusing to produce one.
+        `render` still gates on them (`config.block_on_lint_error`).
+
+        `render.debug_artifacts` is ignored here. It writes to
+        `<data_dir>/debug/<id>/`, and a preview must not overwrite the artefacts
+        of the registered display it is a candidate for.
+        """
+        outcome = RenderOutcome(display_id=display.id, ok=False, trigger="preview")
+        if self._renderer is None:
+            outcome.reason = "engine not started"
+            return outcome
+
+        # A key of its own, under the display's prefix so that removing the
+        # display still catches it if anything goes wrong on the way out.
+        candidate_id = f"{display.id}:preview-{uuid.uuid4().hex[:8]}"
+        candidate = display.model_copy(update={"id": candidate_id})
+        resolved = candidate.resolved()
+        started = time.perf_counter()
+        try:
+            result = await self._renderer.render(resolved)
+        except RenderError as exc:
+            outcome.reason = str(exc)
+            outcome.total_s = time.perf_counter() - started
+            return outcome
+        except Exception as exc:  # noqa: BLE001 - reported, never raised at a preview
+            outcome.reason = f"{type(exc).__name__}: {exc}"
+            log.exception("[%s] preview render failed", display.id)
+            outcome.total_s = time.perf_counter() - started
+            return outcome
+        finally:
+            await self._pool.drop_contexts_for(candidate_id)
+
+        outcome.render_s = result.duration_s
+        process_started = time.perf_counter()
+        outcome.frame = process(result.image, self._pipeline_options(resolved))
+        outcome.process_s = time.perf_counter() - process_started
+        outcome.ok = True
+        outcome.reason = "preview only (nothing delivered)"
+        outcome.total_s = time.perf_counter() - started
+        return outcome
 
     async def render_all(
         self, trigger: str = "manual", force: bool = False
