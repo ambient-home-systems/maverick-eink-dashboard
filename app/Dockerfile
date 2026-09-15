@@ -18,16 +18,16 @@ FROM ${BUILD_FROM}
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
 #
-# 02c452b is the 0.2.5 release commit: it makes the setup UI work through
-# Home Assistant's ingress, where every URL it emitted used to resolve against
-# Home Assistant's own origin, and stops it hiding the "Link with Home
-# Assistant" card for a credential Home Assistant rejects.
+# v0.2.5 covers the 0.2.5 release: it makes the setup UI work through Home
+# Assistant's ingress, where every URL it emitted used to resolve against Home
+# Assistant's own origin, and stops it hiding the "Link with Home Assistant"
+# card for a credential Home Assistant rejects.
 #
-# The SHA rather than a v0.2.5 tag, which CONTRIBUTING.md allows when the tag
-# cannot be pushed: it installs the same tree and the test above accepts either
-# form. Repointing it at the tag once that exists is a one-line change with no
-# behavioural difference.
-ARG MAVERICK_REF=02c452bb40ad7f9a559ca36ee35c1bf04c1177a9
+# The tag names ba888b6 rather than the release commit 02c452b it follows,
+# which the procedure in CONTRIBUTING.md would tag. Harmless here: the two
+# differ only in this file, and pip installs the package from src/ and
+# pyproject.toml, which are identical between them.
+ARG MAVERICK_REF=v0.2.5
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
