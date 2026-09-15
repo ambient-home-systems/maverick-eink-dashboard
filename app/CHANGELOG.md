@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.6
+
+- **Fixes "Set base_url first" blocking the link button.** The app is supposed
+  to work out the address panels fetch from by itself when you leave
+  **Base URL for panels** empty, but it was never granted the Home Assistant
+  API access it needs to read the host's address — so it got nothing, and the
+  web UI offered no **Link with Home Assistant** button. The app now requests
+  read-only access to Home Assistant's information endpoints for this.
+- **The message now says where to set it**, if you would rather set the
+  address by hand: the **Base URL for panels** option on the Configuration tab.
+
+  If you are on 0.2.5 and stuck on this, setting that option unblocks you
+  without waiting for the update.
+
 ## 0.2.5
 
 - **Fixes the web UI when opened through Home Assistant.** Since 0.2.3 the

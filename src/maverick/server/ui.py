@@ -261,7 +261,10 @@ def _link_card(application: Application) -> str:
     if not base_url:
         blocker = (
             "Set <code>base_url</code> first — Home Assistant has to redirect "
-            "back to Maverick, and that is the address it will use."
+            "back to Maverick, and that is the address it will use. In the app "
+            "it is the <code>base_url</code> option on the Configuration tab; "
+            "give it the address panels reach Maverick on, for example "
+            "<code>http://192.168.1.10:5000</code>."
         )
     else:
         try:
