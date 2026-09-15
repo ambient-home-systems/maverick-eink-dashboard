@@ -1,5 +1,7 @@
 # A Raspberry Pi and a Pimoroni Inky, over MQTT
 
+*Last reviewed against commit `d103e74`.*
+
 > **Not run on an Inky by this project.** No Pimoroni panel has drawn a Maverick
 > frame, and `inky` is not installed on the machine this was written on. The
 > client's message handling *was* exercised against a real frame payload with

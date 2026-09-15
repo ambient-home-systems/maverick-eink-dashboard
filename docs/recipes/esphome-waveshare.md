@@ -1,5 +1,7 @@
 # An ESP32 and a Waveshare panel, over `http_pull`
 
+*Last reviewed against commit `d103e74`.*
+
 > **Not run on hardware by this project.** Nothing on this page has been flashed
 > to an ESP32 or drawn on a panel. What *was* checked, on this repository, is
 > listed under [What was verified](#what-was-verified); everything about the

@@ -1,5 +1,7 @@
 # A jailbroken Kindle or Kobo, over `http_pull`
 
+*Last reviewed against commit `d103e74`.*
+
 > **Not run on hardware by this project.** No Kindle and no Kobo has drawn a
 > Maverick frame. The client below *was* run, against a real Maverick server on
 > a developer machine, with the drawing command stubbed out — see

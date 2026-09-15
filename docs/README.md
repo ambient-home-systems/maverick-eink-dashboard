@@ -64,4 +64,4 @@ hardware; each carries a banner and says what was verified.
 | [Contributing](../CONTRIBUTING.md) | Setup, the checks, the documentation workflow, adding a panel or a transport, the untested-banner rule, the pull request checklist. |
 | [`CLAUDE.md`](../CLAUDE.md) | The short version for AI-assisted changes: module map, invariants, documentation rules, the commands that verify a change. |
 | [Documentation plan](documentation-plan.md) | The review that produced this documentation set, and the phases it was written in. |
-| Changelog | Not written yet. It is the last phase of the documentation plan; until then `git log` is the record. |
+| [Changelog](../CHANGELOG.md) | What exists, by module, in Keep a Changelog format. |

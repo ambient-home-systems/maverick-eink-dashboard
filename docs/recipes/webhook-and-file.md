@@ -1,5 +1,7 @@
 # The `file` and `webhook` transports
 
+*Last reviewed against commit `d103e74`.*
+
 > **Not run on hardware by this project** — but these two are the least
 > hardware-dependent paths there are, and most of what is below was exercised
 > directly. See [What was verified](#what-was-verified).
