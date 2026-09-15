@@ -18,12 +18,11 @@ FROM ${BUILD_FROM}
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
 #
-# 29a4a67a is the 0.2.2 release commit. It names the commit rather than the
-# v0.2.2 tag because that tag was pushed one commit early, onto 2930095, whose
-# package still reports 0.2.1 — installing it would put a 0.2.1 package under
-# the 0.2.2 this file's config.yaml advertises. Releasing in CONTRIBUTING.md
-# allows the commit form; repoint at the tag once it names 29a4a67.
-ARG MAVERICK_REF=29a4a67a779da2a2f28a82dc7fe9e4a9f8be59c8
+# v0.2.3 names d8b2e1f, the 0.2.3 release commit: enables Home Assistant
+# ingress for the Open Web UI button, so it opens embedded in Home Assistant
+# instead of a raw host:port link that a remote connection (Nabu Casa, a
+# reverse proxy) could never reach.
+ARG MAVERICK_REF=v0.2.3
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
