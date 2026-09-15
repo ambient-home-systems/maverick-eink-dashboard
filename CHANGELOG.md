@@ -6,6 +6,21 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-15
+
+### Fixed
+
+- The Home Assistant app's **Open Web UI** button linked to
+  `http://[HOST]:5000/`, which Home Assistant resolves to the instance's
+  external address (a Nabu Casa URL, for one) when opened remotely, with the
+  raw container port appended — an address that connection can never reach.
+  `app/config.yaml` now declares `ingress: true` and `ingress_port: 5000`, so
+  the button opens the setup UI proxied through the Supervisor and embedded in
+  Home Assistant instead. No application code changed: every path the UI
+  emits (`src/maverick/server/ui.py`) is already host-relative, which is what
+  lets it work unmodified behind the Supervisor's path-based ingress proxy.
+  Port 5000 stays published for panels that pull frames directly.
+
 ## [0.2.2] - 2026-09-15
 
 ### Fixed

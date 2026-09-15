@@ -1,7 +1,7 @@
 # Home Assistant app manifest.
 # https://developers.home-assistant.io/docs/apps/configuration
 name: Maverick
-version: "0.2.2"
+version: "0.2.3"
 slug: maverick
 description: Render Home Assistant dashboards to e-ink panels, monochrome and colour, scheduled or automation-driven
 url: https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/app/DOCS.md
@@ -19,6 +19,16 @@ ports:
 ports_description:
   5000/tcp: "HTTP API and setup UI. Panels that pull frames fetch from this port."
 webui: "http://[HOST]:[PORT:5000]/"
+# Ingress opens the setup UI inside Home Assistant itself (embedded, proxied
+# by the Supervisor) instead of a raw host:port link, which is the only
+# address the "Open Web UI" button can otherwise offer and does not survive
+# a remote connection (Nabu Casa, a reverse proxy). `webui` stays above as a
+# fallback for anyone opening the app directly on the LAN; the Supervisor
+# prefers ingress for the button once both are present. Every path the UI
+# emits is already host-relative (src/maverick/server/ui.py), so it needs no
+# code changes to work behind the Supervisor's path-based ingress proxy.
+ingress: true
+ingress_port: 5000
 map:
   # /config: maverick.yaml (the displays) plus the frame store and debug output.
   - addon_config:rw

@@ -183,8 +183,6 @@ lists every message the service can print, with its cause and fix.
 
 ## What is not there yet
 
-- **No ingress.** The UI is on port 5000 behind the **Web UI** button, not in
-  the sidebar.
 - **No pre-built image.** Installing builds it on your machine.
 - **No custom integration.** Displays become devices through MQTT, and
   automations reach the app through those entities or a `rest_command`.
