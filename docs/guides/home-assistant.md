@@ -1,6 +1,6 @@
 # Connecting Maverick to Home Assistant
 
-*Last reviewed against commit `992fbfc`.*
+*Last reviewed against commit `da2ed9a`.*
 
 Maverick talks to Home Assistant over its public APIs, whether it runs as the
 Home Assistant app ([`app/DOCS.md`](../../app/DOCS.md)) or standalone. There is
