@@ -17,11 +17,23 @@ from maverick.engine import Engine
 from maverick.transports.mqtt import MqttPublisher, availability_topic
 
 
+class _PublishInfo:
+    """What paho's publish() hands back: something with a publish to wait on."""
+
+    def wait_for_publish(self, timeout: float | None = None) -> None:
+        del timeout  # nothing is in flight; the fake published synchronously
+        return None
+
+
 class FakeClient:
     """Records the calls MqttPublisher.start() makes, in order."""
 
     def __init__(self, *_args: Any, **kwargs: Any) -> None:
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+        #: (topic, payload, retain) per publish, in order, so a test can read
+        #: back what reached the broker — including the empty retained payloads
+        #: that retract a removed display's discovery config.
+        self.published: list[tuple[str, Any, bool]] = []
         self.client_id = kwargs.get("client_id")
         self.on_connect: Any = None
         self.on_disconnect: Any = None
@@ -32,7 +44,8 @@ class FakeClient:
         return call
 
     def __getattr__(self, name: str) -> Any:
-        # Everything MqttPublisher touches is fire-and-forget except connect().
+        # Everything MqttPublisher touches is fire-and-forget except connect()
+        # and publish(), which are defined below.
         return self._record(name)
 
     def connect(self, *args: Any, **kwargs: Any) -> None:
@@ -41,9 +54,26 @@ class FakeClient:
         # acknowledges; MqttPublisher waits on that before returning.
         self.on_connect(self, None, None, _Reason(), None)
 
+    def publish(
+        self, topic: str, payload: Any = None, qos: int = 0, retain: bool = False
+    ) -> _PublishInfo:
+        self.calls.append(("publish", (topic, payload), {"qos": qos, "retain": retain}))
+        self.published.append((topic, payload, retain))
+        # MqttPublisher awaits `info.wait_for_publish` at qos 1, so `None` —
+        # what __getattr__'s recorder would return — is not enough.
+        return _PublishInfo()
+
     @property
     def call_names(self) -> list[str]:
         return [name for name, _args, _kwargs in self.calls]
+
+    def payload_on(self, topic: str) -> Any:
+        """The payload of the last publish to ``topic``, or ``None``."""
+        matches = [payload for t, payload, _retain in self.published if t == topic]
+        return matches[-1] if matches else None
+
+    def topics(self) -> list[str]:
+        return [topic for topic, _payload, _retain in self.published]
 
 
 class _Reason:

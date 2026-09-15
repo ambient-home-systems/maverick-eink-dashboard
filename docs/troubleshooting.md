@@ -1,6 +1,6 @@
 # Troubleshooting
 
-*Last reviewed against commit `f32444c`.*
+*Last reviewed against commit `3c50879`.*
 
 Every user-facing failure message Maverick can produce, grouped in the order
 you meet them: loading the config, connecting to Home Assistant, rendering,
@@ -19,8 +19,9 @@ values when matching it against what you see.
 5. [Delivery](#delivery)
 6. [MQTT and discovery](#mqtt-and-discovery)
 7. [The scheduler](#the-scheduler)
-8. [Risks that hurt most](#risks-that-hurt-most)
-9. [Reading the state](#reading-the-state)
+8. [Changing a display while it runs](#changing-a-display-while-it-runs)
+9. [Risks that hurt most](#risks-that-hurt-most)
+10. [Reading the state](#reading-the-state)
 
 ## Where a message ends up
 
@@ -408,6 +409,25 @@ build — install the distribution's `chromium` package instead and set
 [Chromium on ARM](#chromium-on-arm) below.
 **Env var:** `MAVERICK_CHROMIUM_PATH`.
 
+### A browser context that will not close
+
+```text
+could not close the browser context %s: %s
+```
+
+**Cause (log, warning):** Chromium was asked to discard a cached browser
+context — after an auth failure, or because the display it belongs to was
+changed or removed (`BrowserPool.drop_context` and `drop_contexts_for` in
+`src/maverick/render/browser.py`) — and refused, which in practice means the
+browser has already gone. Closing a context is cleanup, so it is logged rather
+than raised: letting it fail the removal would leave the transport running for
+a display nothing renders any more.
+**Fix:** nothing, unless it repeats. A context that could not be closed is
+already out of the pool, and the next render builds a fresh one. If every
+render then fails with a Chromium error, the browser really has died and
+restarting Maverick relaunches it.
+**Surfaces:** log only.
+
 ### Theme CSS file
 
 ```text
@@ -775,6 +795,53 @@ from `RenderScheduler._build_trigger`), which surfaces the same way as
 
 ---
 
+## Changing a display while it runs
+
+A display can be added, changed or removed without a restart:
+`Application.add_display`, `update_display` and `remove_display`
+(`src/maverick/app.py`) apply the change to the engine, the scheduler, MQTT
+discovery and the display store in that order. Chromium is never restarted —
+only the display's own browser contexts are dropped
+(`BrowserPool.drop_contexts_for`), because every other panel is rendering
+through the same browser.
+
+Two of those steps can fail after the earlier ones have succeeded, and both say
+what state that leaves you in.
+
+```text
+[%s] could not restart the previous transport after a failed update: %s. The display keeps its old config and builds a transport on its next render.
+```
+
+**Cause (log, error):** an update whose new transport would not start — a
+`mqtt` transport with no broker, an `opendisplay` one without `py-opendisplay`
+installed — is undone, and putting the *previous* transport back failed too.
+That is the same failure twice: whatever stopped the new one (a broker that has
+gone away, a missing dependency) generally stops the old one as well.
+**Fix:** fix the underlying transport problem — see
+[Delivery](#delivery) for the message the transport itself logged first — then
+render the display once. `Engine.render` builds a transport for a display that
+has none, so a successful render is also the repair.
+**Surfaces:** log. The update's own error is what the caller is told; this line
+is the extra detail.
+
+```text
+could not write the display store %s: %s. The change is live now, but it will be lost when Maverick restarts.
+```
+
+**Cause (log, error):** the display was added, changed or removed in the
+running service, and then `<data_dir>/displays.yaml` could not be written — a
+read-only `data_dir`, a full disk, or the wrong owner, exactly as for
+[the display store](#the-display-store) at startup.
+**Fix:** make `data_dir` writable by the user Maverick runs as, or point
+`displays_file` somewhere that is, then make the change again to write it down.
+The panel keeps rendering with the change in the meantime; it is only the file
+that is behind.
+**Surfaces:** log, and the failure is raised so the caller is told as well —
+the change is deliberately *not* undone, because a panel that is rendering
+correctly should keep rendering.
+
+---
+
 ## Risks that hurt most
 
 These are the four risks from
@@ -933,6 +1000,20 @@ could not persist frame for %s: %s
 **Cause and fix:** identical to the `state.json` pair above — a corrupt or
 unwritable frame is dropped or skipped, not fatal, and the display serves
 `404` (via `/frame`) until its next successful render replaces it.
+
+Removing a display deletes the same three files (`FrameStore.remove`), and a
+file that will not go is logged the same way:
+
+```text
+could not delete the stored frame %s: %s
+```
+
+**Cause (log, warning):** one of `<id>.frame`, `<id>.preview.png` or
+`<id>.json` could not be unlinked — a read-only `data_dir`, or the wrong owner.
+The display is gone from the running service regardless.
+**Fix:** delete the file by hand, or leave it: nothing reads it unless a new
+display is created with the same id, which would then start by serving that old
+frame until its first render replaces it.
 
 ### `data_dir/displays.yaml`
 

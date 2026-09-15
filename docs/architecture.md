@@ -1,6 +1,6 @@
 # Maverick — Architecture
 
-> Last reviewed against commit `f32444c`.
+> Last reviewed against commit `3c50879`.
 >
 > This page describes the service as it is built. Everything proposed but not
 > written — ingress for the app, the integration, pages, the authoring tools —
@@ -363,7 +363,9 @@ assume works.
   Supervisor and expects the app's options; elsewhere, running it means a
   Python 3.11+ environment and systemd, as the README describes.
 - **A display renders one dashboard.** There is no page list, no dwell time and
-  no rotation, and nothing can change a display's dashboard at runtime.
+  no rotation: a display names one `dashboard:` and renders that. The setting
+  itself can be changed while the service runs (`Application.update_display`,
+  `src/maverick/app.py`), but nothing cycles a panel through several.
 - **Chromium is bundled only in the app.** The app image installs Debian's
   `chromium` package and sets `MAVERICK_CHROMIUM_PATH` itself. Standalone,
   Playwright ships no aarch64 Linux build, so a Raspberry Pi needs the distro

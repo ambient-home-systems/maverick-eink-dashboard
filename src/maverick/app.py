@@ -15,10 +15,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from .config import Config
+from .config import Config, ConfigError, DisplayConfig
 from .engine import Engine, RenderOutcome
 from .ha import MqttDiscovery
 from .scheduling import RenderScheduler
+from .store import DisplayStore
 from .transports.mqtt import MqttPublisher
 
 log = logging.getLogger(__name__)
@@ -46,11 +47,15 @@ VERSION = _read_version()
 class Application:
     """The running service."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, store: DisplayStore | None = None) -> None:
         self.config = config
         self.engine = Engine(config)
         self.scheduler = RenderScheduler(self.engine, config)
         self.discovery: MqttDiscovery | None = None
+        #: The same file `load_config` resolved the displays from
+        #: (`resolve_displays` in `src/maverick/store.py`), so a display changed
+        #: at runtime is written back where the next start will read it.
+        self.store = store or DisplayStore(config.display_store_path)
         self._started = False
 
     async def start(self, schedule: bool = True) -> None:
@@ -169,6 +174,86 @@ class Application:
             "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         await self.discovery.publish_state(display_id, payload)
+
+    # ---------------------------------------------------- display lifecycle --
+
+    async def add_display(self, display: DisplayConfig) -> None:
+        """Start rendering a display that was not configured a moment ago.
+
+        The four steps are in the order that leaves nothing pointing at
+        something that does not exist yet: the engine registers it (so the
+        scheduler's job has a display to render and the config carries it),
+        the scheduler gives it a timeline, discovery makes it a Home Assistant
+        device, and the store writes it down.
+        """
+        # Everything that can reject the display outright happens before any of
+        # it is applied: half an added display is worse than none.
+        self.scheduler.check(display)
+        await self.engine.register_display(display)
+        self.scheduler.add_display(display)
+        await self.scheduler.refresh_state_watch()
+        if self.discovery is not None:
+            await self.discovery.announce_display(display)
+        self._save_displays()
+
+    async def update_display(self, display_id: str, display: DisplayConfig) -> None:
+        """Apply a new config to a running display.
+
+        A new id is a rename, and nothing it appears in can be moved in place —
+        the MQTT topics, the frame filenames and the state key all carry it — so
+        it is done as a removal and an addition rather than pretending otherwise.
+        """
+        if display.id != display_id:
+            # Checked here rather than left to `register_display`, which would
+            # only find it once the old display had already been removed.
+            if any(d.id == display.id for d in self.config.displays):
+                raise ConfigError(f"duplicate display id {display.id!r}")
+            await self.remove_display(display_id)
+            await self.add_display(display)
+            return
+        self.scheduler.check(display)
+        await self.engine.update_display(display)
+        self.scheduler.add_display(display)
+        await self.scheduler.refresh_state_watch()
+        if self.discovery is not None:
+            # Re-announcing overwrites the retained discovery payloads, which is
+            # how a renamed panel or a changed model reaches Home Assistant.
+            await self.discovery.announce_display(display)
+        self._save_displays()
+
+    async def remove_display(self, display_id: str) -> None:
+        """Stop rendering a display and take it out of Home Assistant.
+
+        Torn down in the same order it was built, so nothing is left rendering
+        for a display the file no longer has.
+        """
+        self.config.display(display_id)  # KeyError for an id nothing has, as update does
+        await self.engine.unregister_display(display_id)
+        self.scheduler.remove_display(display_id)
+        await self.scheduler.refresh_state_watch()
+        if self.discovery is not None:
+            await self.discovery.remove_display(display_id)
+        self._save_displays()
+
+    def _save_displays(self) -> None:
+        """Write the displays back to the store, and say so loudly if it fails.
+
+        The runtime change has already happened by this point and is not undone:
+        a panel that is rendering correctly should keep rendering. But a service
+        whose displays do not match its file would silently lose the change at
+        the next restart, so the failure is raised as well as logged, for the
+        caller to report.
+        """
+        try:
+            self.store.save(self.config.displays)
+        except OSError as exc:
+            log.error(
+                "could not write the display store %s: %s. The change is live now, "
+                "but it will be lost when Maverick restarts.",
+                self.store.path,
+                exc,
+            )
+            raise
 
     # ------------------------------------------------------------- render --
 
