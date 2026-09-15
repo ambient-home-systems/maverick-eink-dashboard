@@ -11,6 +11,12 @@ FROM ${BUILD_FROM}
 # built today and one built next month contain the same code. The release
 # procedure in CONTRIBUTING.md moves it to the release tag alongside the
 # version in config.yaml.
+#
+# It must name a commit whose package accepts the starter config in rootfs/,
+# which ships from this directory instead. Every model bar TransportConfig
+# forbids unknown keys (src/maverick/config.py:71-77), so a ref left behind at
+# an older release writes keys that release rejects and the app dies on its
+# first start; tests/test_app.py loads the one through the other.
 ARG MAVERICK_REF=v0.2.0
 
 ENV LANG=C.UTF-8 \

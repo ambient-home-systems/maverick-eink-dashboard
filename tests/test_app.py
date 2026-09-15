@@ -3,13 +3,18 @@
 Nothing here builds the image — CI does that on amd64 — but the pieces that can
 drift silently are checked: the option keys ``run.sh`` reads exist in the
 schema, every variable the starter config substitutes is exported by ``run.sh``,
-the starter config loads through the real config loader, and the app version is
-the package version, because the image installs the package at a pinned commit.
+the starter config loads through the real config loader, the app version is the
+package version, and the package at ``MAVERICK_REF`` — which is what the image
+installs, not the working tree — accepts the starter config this commit ships.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
+import tarfile
 import tomllib
 from pathlib import Path
 
@@ -117,8 +122,133 @@ def test_starter_config_loads(monkeypatch, mqtt: str) -> None:
     assert [d.id for d in config.displays] == ["kitchen"]
 
 
+def test_starter_config_loads_with_no_credential_yet(monkeypatch) -> None:
+    """The state an app is in the moment it is installed, before anything is set.
+
+    ``run.sh`` warns rather than refusing to start without a credential, because
+    linking happens in the web UI and the UI has to be running to be reached.
+    That is only true if the starter config loads with the credential, base URL
+    and MQTT substitutions empty — what ``bashio::config`` hands ``run.sh`` for
+    options that carry no default in ``config.yaml``, and what the host address
+    lookup leaves behind when it cannot read one.
+    """
+    first_start = {
+        "HA_URL": "http://homeassistant:8123",  # config.yaml ships this default
+        "HA_TOKEN": "",
+        "HA_REFRESH_TOKEN": "",
+        "HA_CLIENT_ID": "",
+        "MAVERICK_LOG_LEVEL": "info",  # ditto
+        "MAVERICK_API_TOKEN": "",
+        "MAVERICK_BASE_URL": "",
+        "MQTT_ENABLED": "false",  # run.sh always writes one of true/false
+        "MQTT_HOST": "core-mosquitto",
+        "MQTT_PORT": "1883",
+        "MQTT_USERNAME": "",
+        "MQTT_PASSWORD": "",
+    }
+    assert set(first_start) == _exported(), "keep this table in step with the exports in run.sh"
+    for name, value in first_start.items():
+        monkeypatch.setenv(name, value)
+
+    config = load_config(TEMPLATE)
+
+    assert config.home_assistant.token == ""
+    assert config.home_assistant.refresh_token == ""
+    assert config.home_assistant.client_id == ""
+    assert config.mqtt.enabled is False
+    assert config.server.base_url == ""
+    assert config.server.api_token == ""
+
+
 def test_dockerfile_pins_a_ref_and_uses_the_distro_chromium() -> None:
     dockerfile = (APP / "Dockerfile").read_text(encoding="utf-8")
     pinned = re.search(r"^ARG MAVERICK_REF=([0-9a-f]{40}|v\d+\.\d+\.\d+)$", dockerfile, re.M)
     assert pinned, "MAVERICK_REF must be a full commit SHA or a vX.Y.Z tag"
     assert "MAVERICK_CHROMIUM_PATH=/usr/bin/chromium" in dockerfile
+
+
+def _pinned_ref() -> str:
+    dockerfile = (APP / "Dockerfile").read_text(encoding="utf-8")
+    pinned = re.search(r"^ARG MAVERICK_REF=(\S+)$", dockerfile, re.M)
+    assert pinned, "MAVERICK_REF is not pinned"
+    return pinned.group(1)
+
+
+def test_pinned_ref_accepts_the_starter_config(tmp_path) -> None:
+    """The pinned package and the starter config reach a user by different routes.
+
+    ``app/rootfs/usr/share/maverick/maverick.yaml`` is copied out of the image
+    at whatever commit the store built; the package inside that image comes
+    from ``MAVERICK_REF``. Every model bar ``TransportConfig`` forbids unknown
+    keys (``src/maverick/config.py:71-77``), so a ref left behind at an older
+    release writes keys that release rejects, ``maverick serve`` exits on a
+    validation error, and the app never starts — before its web UI, and so
+    before *Link with Home Assistant*, can be reached. 0.2.0 shipped exactly
+    that, with ``MAVERICK_REF`` on a commit predating
+    ``home_assistant.refresh_token``.
+
+    So load today's starter config with the pinned commit's own config module,
+    which is what the image will do on a user's first start. Comparing version
+    numbers instead would fail the release commit that bumps
+    ``app/config.yaml`` before the ref can move (see *Releasing* in
+    CONTRIBUTING.md); this asks the question that actually matters.
+    """
+    ref = _pinned_ref()
+    archive = tmp_path / "pinned.tar"
+    try:
+        subprocess.run(
+            ["git", "archive", "--format=tar", "--output", str(archive), ref, "src"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        # A shallow clone has the working tree but not the pinned commit. CI's
+        # `app` job covers the same ground from the other side, loading the
+        # starter config inside the image it just built.
+        pytest.skip(f"MAVERICK_REF {ref} is not in this checkout: {error}")
+
+    with tarfile.open(archive) as tar:
+        tar.extractall(tmp_path, filter="data")
+    pinned_src = tmp_path / "src"
+
+    program = (
+        "import sys\n"
+        "import maverick\n"
+        "from maverick.config import load_config\n"
+        "print(maverick.__file__)\n"
+        "load_config(sys.argv[1])\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(TEMPLATE)],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(pinned_src),
+            # What run.sh exports on a first start, per the table above.
+            "HA_URL": "http://homeassistant:8123",
+            "HA_TOKEN": "",
+            "HA_REFRESH_TOKEN": "",
+            "HA_CLIENT_ID": "",
+            "MAVERICK_LOG_LEVEL": "info",
+            "MAVERICK_API_TOKEN": "",
+            "MAVERICK_BASE_URL": "",
+            "MQTT_ENABLED": "false",
+            "MQTT_HOST": "core-mosquitto",
+            "MQTT_PORT": "1883",
+            "MQTT_USERNAME": "",
+            "MQTT_PASSWORD": "",
+        },
+    )
+
+    imported = result.stdout.splitlines()[0] if result.stdout else ""
+    if not imported.startswith(str(pinned_src)):
+        # An editable install that hooks sys.meta_path outranks PYTHONPATH, and
+        # then this would be testing the working tree against itself.
+        pytest.skip(f"the pinned tree was shadowed by {imported or 'an unknown maverick'}")
+
+    assert result.returncode == 0, (
+        f"the package at MAVERICK_REF {ref} rejects the starter configuration this "
+        f"commit ships, so the app would fail its first start:\n{result.stderr}"
+    )

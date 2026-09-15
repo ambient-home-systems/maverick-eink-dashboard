@@ -6,6 +6,24 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `tests/test_app.py::test_pinned_ref_accepts_the_starter_config` loads the
+  starter configuration through the config module of the commit
+  `app/Dockerfile` pins, which is the package the app's image installs. That
+  pairing is what broke 0.2.0's first start — the ref named a commit predating
+  `home_assistant.refresh_token`, and models forbid unknown keys
+  (`src/maverick/config.py:71-77`), so `maverick serve` exited on a validation
+  error before the setup UI could be reached to link an account.
+- `tests/test_app.py::test_starter_config_loads_with_no_credential_yet` covers
+  the state a freshly installed app is in. The existing case passed a token, so
+  an empty one — what `run.sh` warns about and starts anyway — was never
+  exercised.
+- CI loads the starter configuration inside the built image, checking the
+  shipped template against the package `MAVERICK_REF` actually installed, and
+  the test job checks out full history so the pinned commit is present
+  (`.github/workflows/ci.yml`).
+
 ## [0.2.0] - 2026-09-15
 
 ### Added

@@ -201,12 +201,33 @@ commit named by `MAVERICK_REF`, on a Debian base image with the distro
 `chromium` package, and `run.sh` turns the app's options into the environment
 variables that the starter `maverick.yaml` substitutes.
 
-Three things keep it honest, all in `tests/test_app.py`: every option `run.sh`
+Five things keep it honest, all in `tests/test_app.py`: every option `run.sh`
 reads is declared in `config.yaml`'s schema, every `${VAR}` in the starter
-config is exported by `run.sh`, and the app's `version` equals the package
-version. CI (`.github/workflows/ci.yml`, job `app`) lints the manifest, builds
-the image on amd64 and launches Chromium inside it — the one place the image is
-built, since nothing else in the suite touches Docker.
+config is exported by `run.sh`, the starter config loads with no credential set
+— the state a freshly installed app is in — the app's `version` equals the
+package version, and the package at `MAVERICK_REF` accepts the starter config
+this commit ships. CI (`.github/workflows/ci.yml`, job `app`) lints the
+manifest, builds the image on amd64, launches Chromium inside it and loads the
+starter config with the package the image installed — the one place the image
+is built, since nothing else in the suite touches Docker.
+
+The last two exist because the starter config and the package reach a user's
+machine by different routes. `app/rootfs/usr/share/maverick/maverick.yaml` is
+copied out of the image at whatever commit the store built; the package inside
+it is installed from `MAVERICK_REF`. Every model bar `TransportConfig` forbids
+unknown keys (`src/maverick/config.py:71-77`), so a ref left behind at an older
+release writes keys that release rejects, `maverick serve` exits on a
+validation error, and the app dies on its first start — before its web UI, and
+so before **Link with Home Assistant**, can be reached. That is what 0.2.0
+shipped, with `MAVERICK_REF` on a commit predating
+`home_assistant.refresh_token`.
+
+The check reads the pinned commit's own config module out of git and loads
+today's starter config through it, rather than comparing version numbers: a
+version comparison would fail the release commit that bumps `app/config.yaml`
+before the ref is allowed to move (below), while this asks the question a
+user's first start actually asks. It skips in a shallow clone, where the pinned
+commit is not present; CI's `app` job then covers it from inside the image.
 
 To change the app: `app/config.yaml` for options (add a translation in
 `app/translations/en.yaml` and read the key in `run.sh`), `app/run.sh` for
@@ -282,6 +303,12 @@ release has actually gone wrong.
    Between releases it is a full commit SHA;
    `tests/test_app.py::test_dockerfile_pins_a_ref_and_uses_the_distro_chromium`
    accepts either form.
+
+   This is the step that makes the release real, not bookkeeping:
+   `tests/test_app.py::test_pinned_ref_accepts_the_starter_config` loads the
+   starter config through the pinned commit's config module, so leaving the ref
+   behind is what breaks a fresh install's first start rather than merely
+   mislabelling it.
 
 `maverick --version` and the HTTP API's `/` route (`src/maverick/server/api.py`)
 both report `maverick.app.VERSION`, so either is how to check the bump landed.
