@@ -1,0 +1,49 @@
+# Home Assistant app manifest.
+# https://developers.home-assistant.io/docs/apps/configuration
+name: Maverick
+version: "0.1.0"
+slug: maverick
+description: Render Home Assistant dashboards to e-ink panels, monochrome and colour, scheduled or automation-driven
+url: https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/app/DOCS.md
+arch:
+  - aarch64
+  - amd64
+# The base image runs s6-overlay v3, which is its own init.
+init: false
+# A dashboard cannot be rendered until Home Assistant is up.
+startup: application
+boot: auto
+# The Mosquitto broker app is picked up automatically when it is installed;
+# nothing breaks when it is not.
+services:
+  - mqtt:want
+ports:
+  5000/tcp: 5000
+ports_description:
+  5000/tcp: "HTTP API and setup UI. Panels that pull frames fetch from this port."
+webui: "http://[HOST]:[PORT:5000]/"
+watchdog: "http://[HOST]:[PORT:5000]/health"
+map:
+  # /config: maverick.yaml (the displays) plus the frame store and debug output.
+  - addon_config:rw
+  # /media: where frames for OpenDisplay tags are written so Home Assistant's
+  # opendisplay.upload_image action can read them back.
+  - media:rw
+  # /share: for the file transport, so another app or Samba can pick frames up.
+  - share:rw
+options:
+  home_assistant_url: http://homeassistant:8123
+  home_assistant_token: ""
+  log_level: info
+# Optional keys carry no default on purpose: an empty string would not pass
+# the url or port types, and run.sh treats an absent key as "not set".
+schema:
+  home_assistant_url: url
+  home_assistant_token: password
+  log_level: list(debug|info|warning|error)
+  base_url: url?
+  api_token: password?
+  mqtt_host: str?
+  mqtt_port: port?
+  mqtt_username: str?
+  mqtt_password: password?
