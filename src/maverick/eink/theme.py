@@ -100,6 +100,19 @@ class ThemeOptions:
     extra_css: str = ""
 
 
+def root_zoom(options: ThemeOptions) -> float:
+    """The root ``zoom`` :func:`build_css` puts on ``html``.
+
+    Everything in the stylesheet is expressed in *reference px* and scaled by
+    this one number, so it is what turns a card's own hard-coded pixel size
+    into a physical size on the panel: ``px * root_zoom(options) / dpi * 25.4``
+    is the height in millimetres. Exposed separately because the physical
+    figures the design rests on are worth asserting without parsing CSS.
+    """
+    target_body = options.type_scale.px(options.dpi, 0)
+    return (target_body / REFERENCE_BASE_PX) * options.zoom_multiplier
+
+
 #: Inks that read as "this is a problem", in the order we would rather use them.
 #: Blue and green are categorical inks on a full-colour panel, not alert inks,
 #: so they are never chosen here however much contrast they have.
@@ -175,7 +188,7 @@ def build_css(options: ThemeOptions) -> str:
     # *reference space* and scaled by `zoom`. Expressing sizes in final device
     # px instead would double-count the zoom.
     target_body = scale.px(dpi, 0)
-    zoom = (target_body / REFERENCE_BASE_PX) * options.zoom_multiplier
+    zoom = root_zoom(options)
 
     def ref(step: int) -> float:
         """A type-scale step, in reference px."""
@@ -455,4 +468,5 @@ __all__ = [
     "TypeScale",
     "build_css",
     "mm_to_px",
+    "root_zoom",
 ]
