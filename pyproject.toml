@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maverick-eink-dashboard"
-version = "0.2.6"
+version = "0.2.7"
 description = "Render Home Assistant dashboards to e-ink displays: monochrome and colour, scheduled or automation-driven."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.7
+
+- **The same app as 0.2.6, released under a tag that works.** Nothing in the
+  app changed. The 0.2.6 tag pointed at the previous release's code, so if
+  0.2.6 was offered to you and did not fix the missing **Link with Home
+  Assistant** button, that is why — update again. Installing 0.2.7 fresh needs
+  nothing special.
+
 ## 0.2.6
 
 - **Fixes "Set base_url first" blocking the link button.** The app is supposed
