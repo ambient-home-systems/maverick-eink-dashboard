@@ -18,7 +18,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 from .devices import PanelProfile, get_panel
 from .eink.dither import DitherMode
@@ -1006,11 +1013,27 @@ class Config(Base):
     )
     displays: list[DisplayConfig] = Field(
         default_factory=list,
-        description="The panels to render. Each entry needs at least an `id`.",
+        description=(
+            "The panels to render. Each entry needs at least an `id`. Once the display "
+            "store below exists it is the source of the displays and this list is "
+            "ignored, so it is a starting point rather than a running record."
+        ),
+    )
+    displays_file: str = Field(
+        default="",
+        description=(
+            "The display store: the file Maverick writes the displays to and reads them "
+            "back from, which is what lets the setup UI change one. Empty means "
+            "`<data_dir>/displays.yaml`. The `displays:` list above is imported into it "
+            "the first time, and ignored once it exists."
+        ),
     )
     data_dir: str = Field(
         default="./data",
-        description="Directory for rendered frames, previews, debug artefacts and state.",
+        description=(
+            "Directory for rendered frames, previews, debug artefacts, state and — "
+            "unless `displays_file` says otherwise — the display store."
+        ),
     )
     log_level: Literal["debug", "info", "warning", "error"] = Field(
         default="info",
@@ -1023,6 +1046,12 @@ class Config(Base):
             "often. `maverick render --force` overrides it for one render."
         ),
     )
+
+    # Where `displays` came from on this load, for `maverick check` to print.
+    # Private because it describes the load rather than the file: nobody writes
+    # it, nothing validates it, and it must not appear in the reference or in a
+    # dump.
+    _displays_source: str = PrivateAttr(default="")
 
     @model_validator(mode="after")
     def _unique_ids(self) -> Config:
@@ -1045,16 +1074,54 @@ class Config(Base):
     def enabled_displays(self) -> list[DisplayConfig]:
         return [d for d in self.displays if d.enabled]
 
+    @property
+    def display_store_path(self) -> Path:
+        """The display store's path: `displays_file`, or `<data_dir>/displays.yaml`."""
+        if self.displays_file:
+            return Path(self.displays_file)
+        return Path(self.data_dir) / "displays.yaml"
 
-def load_config(path: str | Path) -> Config:
-    """Load, env-expand and validate a config file."""
+    @property
+    def displays_source(self) -> str:
+        """Which file `displays` came from, in words, or "" for a config built in memory.
+
+        Set by `load_config`, which is the only place the display store is
+        consulted (`resolve_displays` in `src/maverick/store.py`).
+        """
+        return self._displays_source
+
+
+def load_config(path: str | Path, *, use_display_store: bool = True) -> Config:
+    """Load, env-expand and validate a config file.
+
+    The displays then come from the display store rather than from the file
+    itself, which is what lets the setup UI change one: `resolve_displays` in
+    `src/maverick/store.py` reads the store when it exists, imports the file's
+    `displays:` list into it when it does not, and says which it did in
+    `Config.displays_source`. Every entry point reaches the store through here
+    and nowhere else, so a `Config` built with `model_validate` never touches
+    the disk.
+
+    `use_display_store=False` skips that step and reads the file alone. It is
+    for a caller that wants the parsed file and no side effect — the tests that
+    load the app's starter config, whose `data_dir` is the app's `/config/data`.
+    """
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"Config file not found: {path}")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raise ConfigError(f"{path} must contain a YAML mapping at the top level")
-    return Config.model_validate(expand_env(raw))
+    config = Config.model_validate(expand_env(raw))
+    if use_display_store:
+        # Imported here rather than at the top of the module: the store is built
+        # on the models above, so importing it there would be a cycle.
+        from .store import resolve_displays
+
+        resolution = resolve_displays(config, path)
+        config.displays = resolution.displays
+        config._displays_source = resolution.source
+    return config
 
 
 DisplayConfig.model_rebuild()

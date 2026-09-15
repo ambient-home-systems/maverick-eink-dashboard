@@ -24,6 +24,38 @@ is the add-on's schema, which the add-on's run script is supposed to translate
 into `/config/maverick.yaml` before starting the service. Reaching it means that
 translation did not happen, and Maverick says so instead of trying to read it.
 
+## Where the displays live
+
+Everything on this page is read from the config file, with one exception. The
+displays are kept in a file Maverick itself writes — the **display store**,
+`<data_dir>/displays.yaml` unless [`displays_file`](#top-level-keys) points
+elsewhere — because the setup UI has to be able to add and change a display,
+and the config file belongs to whoever wrote it (`src/maverick/store.py`).
+
+`load_config` resolves the two on every load, and it is the only place that
+does, so `serve`, `render`, `check` and `esphome` all get the same answer
+(`resolve_displays` in `src/maverick/store.py`):
+
+| State | What happens |
+| --- | --- |
+| The store exists | It is the source of the displays. A `displays:` list in the config file is **ignored**, with one warning naming both files. |
+| No store, `displays:` in the config file | They are imported into the store, once, and read from it from then on. |
+| Neither | There are no displays. |
+
+So a config file's `displays:` list is a starting point rather than a running
+record: write one to get going, and delete it once the first load has imported
+it — the warning tells you when that has happened, and `maverick check` prints
+which file the displays it validated came from. Until the setup UI can write
+the store itself, changing a display means editing the store and restarting;
+what changes today is which file that is.
+
+The store is machine-owned. It is a mapping of `version: 1` and a `displays:`
+list whose entries hold only what differs from a default display, so it reads
+like the list it replaces, and `${VAR}` in it is expanded on load exactly as it
+is here. A save rewrites the file whole, though, with the values those
+substitutions expanded to, so a hand edit survives only until the next one.
+Secrets belong in the config file, which nothing rewrites.
+
 ## Environment substitution
 
 `${VAR}` and `${VAR:-default}` are expanded in every value in the file, including

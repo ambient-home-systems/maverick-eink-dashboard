@@ -1,6 +1,6 @@
 # Troubleshooting
 
-*Last reviewed against commit `d103e74`.*
+*Last reviewed against commit `f32444c`.*
 
 Every user-facing failure message Maverick can produce, grouped in the order
 you meet them: loading the config, connecting to Home Assistant, rendering,
@@ -146,6 +146,76 @@ is printed by the generic handler as `error: KeyError: ...`:
 `displays[].panel` naming a panel the catalogue does not know
 (`src/maverick/devices/profiles.py`) — `maverick panels` lists every valid
 value, with a "did you mean" suggestion in the message itself.
+
+Every row above applies to a display in the store file as much as to one in the
+config file: `DisplayStore.load` validates through `Config`
+(`src/maverick/store.py`), so the same validators produce the same messages —
+including `duplicate display id`, which is the one you can meet by hand-editing
+a store Maverick wrote.
+
+### The display store
+
+Displays live in `<data_dir>/displays.yaml` — or wherever `displays_file`
+points — which Maverick writes for itself (`src/maverick/store.py`). It is read
+on every load, so a file that is not a display store stops the service the way a
+broken config file does.
+
+```text
+{self.path} must contain a YAML mapping at the top level
+```
+
+**Cause:** the store parses as YAML but its top level is not a mapping. It has
+to be `version:` and `displays:`.
+**Fix:** delete the file and let the next save write it again, or restore the
+`version`/`displays` shape by hand.
+
+```text
+{self.path} is a display store of version {version!r}, and this Maverick reads version {VERSION}. Upgrade Maverick, or move the file aside and let it be written again.
+```
+
+**Cause:** the `version:` key is not `1` — a store written by a newer Maverick
+than the one reading it, which is the downgrade case.
+**Fix:** run the newer version, or move the file aside; the displays in it are
+not readable by this one, and guessing at them is worse than saying so.
+
+```text
+{self.path}: 'displays' must be a list, one entry per panel
+```
+
+**Cause:** `displays:` in the store holds a mapping or a scalar.
+**Fix:** one `- id: ...` entry per display, as in the config file.
+
+```text
+displays are listed in both %s and %s; the store wins. The displays: list in %s is ignored and can be deleted.
+```
+
+**Cause (log, warning):** the store exists *and* the config file still has a
+`displays:` list. Two sources of truth for the same panels is the thing this
+file exists to avoid, so the store — the one Maverick writes — is used and the
+list is not.
+**Fix:** delete the `displays:` list from the config file. Nothing is lost: it
+was imported into the store the first time it was loaded, and the warning names
+both paths so you can compare them before deleting.
+
+```text
+could not write the display store %s: %s. The displays in %s are still rendered, but they cannot be changed until the store can be written.
+```
+
+**Cause (log, warning):** the first load could not create the store — a
+read-only `data_dir`, a full disk, or the wrong owner. The displays from the
+config file are used for this run, as they always were.
+**Fix:** make `data_dir` writable by the user Maverick runs as, or point
+`displays_file` somewhere that is. Until then the service renders and delivers
+normally; it is only the store, and so changing a display, that is lost.
+
+A successful import says so once, at info:
+
+```text
+imported %d display(s) from %s into %s; they are managed in the setup UI from now on, and the displays: list in %s can be deleted
+```
+
+`maverick check` prints the same answer without starting anything:
+`config: 2 display(s) from /config/data/displays.yaml (the display store)`.
 
 ---
 
@@ -799,7 +869,8 @@ guide for worked values and how they were measured.
 
 Everything Maverick remembers between renders lives under `data_dir`
 (default `./data`), in two independent stores owned by `Engine`
-(`src/maverick/engine.py`).
+(`src/maverick/engine.py`) — and, beside them, the file that says what the
+displays are (`src/maverick/store.py`).
 
 ### `data_dir/state.json`
 
@@ -862,6 +933,25 @@ could not persist frame for %s: %s
 **Cause and fix:** identical to the `state.json` pair above — a corrupt or
 unwritable frame is dropped or skipped, not fatal, and the display serves
 `404` (via `/frame`) until its next successful render replaces it.
+
+### `data_dir/displays.yaml`
+
+The displays themselves, as `DisplayStore` writes them (`src/maverick/store.py`):
+a `version: 1` key and one entry per display, each holding only what differs
+from a default display, so it reads like the `displays:` list it replaces.
+`displays_file` moves it; empty means this path.
+
+Unlike the two stores above it is not a cache — it is the configuration — so
+deleting it does not reset anything, it removes every display. It also outranks
+the config file: while it exists, a `displays:` list in `maverick.yaml` is
+ignored with a warning ([above](#the-display-store)). To go back to configuring
+displays in the config file, delete this file; the next start imports that list
+again.
+
+It is machine-owned. `${VAR}` in it is expanded on load, like everywhere else,
+but a save rewrites the file whole with what the variable expanded to. A
+substitution written here by hand therefore survives only until the next save —
+keep secrets in the config file, which nothing rewrites.
 
 ### Resetting one display
 

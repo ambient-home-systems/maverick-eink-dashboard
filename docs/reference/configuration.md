@@ -32,6 +32,38 @@ is the add-on's schema, which the add-on's run script is supposed to translate
 into `/config/maverick.yaml` before starting the service. Reaching it means that
 translation did not happen, and Maverick says so instead of trying to read it.
 
+## Where the displays live
+
+Everything on this page is read from the config file, with one exception. The
+displays are kept in a file Maverick itself writes — the **display store**,
+`<data_dir>/displays.yaml` unless [`displays_file`](#top-level-keys) points
+elsewhere — because the setup UI has to be able to add and change a display,
+and the config file belongs to whoever wrote it (`src/maverick/store.py`).
+
+`load_config` resolves the two on every load, and it is the only place that
+does, so `serve`, `render`, `check` and `esphome` all get the same answer
+(`resolve_displays` in `src/maverick/store.py`):
+
+| State | What happens |
+| --- | --- |
+| The store exists | It is the source of the displays. A `displays:` list in the config file is **ignored**, with one warning naming both files. |
+| No store, `displays:` in the config file | They are imported into the store, once, and read from it from then on. |
+| Neither | There are no displays. |
+
+So a config file's `displays:` list is a starting point rather than a running
+record: write one to get going, and delete it once the first load has imported
+it — the warning tells you when that has happened, and `maverick check` prints
+which file the displays it validated came from. Until the setup UI can write
+the store itself, changing a display means editing the store and restarting;
+what changes today is which file that is.
+
+The store is machine-owned. It is a mapping of `version: 1` and a `displays:`
+list whose entries hold only what differs from a default display, so it reads
+like the list it replaces, and `${VAR}` in it is expanded on load exactly as it
+is here. A save rewrites the file whole, though, with the values those
+substitutions expanded to, so a hand edit survives only until the next one.
+Secrets belong in the config file, which nothing rewrites.
+
 ## Environment substitution
 
 `${VAR}` and `${VAR:-default}` are expanded in every value in the file, including
@@ -175,8 +207,9 @@ Every key at the root of the file. The three above have sections of their own, a
 | `home_assistant` | [section](#home_assistant) | *section defaults* | How to reach Home Assistant. |
 | `mqtt` | [section](#mqtt) | *section defaults* | MQTT broker and discovery settings. |
 | `server` | [section](#server) | *section defaults* | Maverick's own HTTP server. |
-| `displays` | `list` of [section](#displays) | `[]` | The panels to render. Each entry needs at least an `id`. |
-| `data_dir` | `str` | `"./data"` | Directory for rendered frames, previews, debug artefacts and state. |
+| `displays` | `list` of [section](#displays) | `[]` | The panels to render. Each entry needs at least an `id`. Once the display store below exists it is the source of the displays and this list is ignored, so it is a starting point rather than a running record. |
+| `displays_file` | `str` | `""` | The display store: the file Maverick writes the displays to and reads them back from, which is what lets the setup UI change one. Empty means `<data_dir>/displays.yaml`. The `displays:` list above is imported into it the first time, and ignored once it exists. |
+| `data_dir` | `str` | `"./data"` | Directory for rendered frames, previews, debug artefacts, state and — unless `displays_file` says otherwise — the display store. |
 | `log_level` | `debug` \| `info` \| `warning` \| `error` | `"info"` | Logging verbosity. The `--log-level` flag overrides it for one run. |
 | `block_on_lint_error` | `bool` | `true` | Refuse to deliver a frame whose lint report has errors — a blank render, most often. `maverick render --force` overrides it for one render. |
 

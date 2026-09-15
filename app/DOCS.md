@@ -63,15 +63,16 @@ app; see [The configuration file](#the-configuration-file).
 
 The options do not reach the service directly. `run.sh` turns them into
 environment variables, and `maverick.yaml` reads those through `${VAR}`
-substitution, so the file the user edits stays the one source of truth for the
-displays while the connection details come from this tab.
+substitution, so the connection details come from this tab and everything else
+from the file.
 
 ## The configuration file
 
 The app writes `maverick.yaml` on its first start into its own configuration
 folder, which Home Assistant exposes as `/addon_configs/<something>_maverick/`
-to the **File editor**, **Studio Code Server** and **Samba share** apps. It
-looks like this:
+to the **File editor**, **Studio Code Server** and **Samba share** apps — as it
+does `data/`, where the frames, the state and the displays live. It looks like
+this:
 
 ```yaml
 home_assistant:
@@ -97,7 +98,18 @@ displays:
 
 Edit `displays:`; leave the substituted blocks alone. Each display needs an
 `id`, a `panel` from the catalogue and a `dashboard` path; everything else
-defaults from the panel profile. The full key reference is
+defaults from the panel profile.
+
+The displays are the one part of this file that moves. The first start copies
+the `displays:` list into `data/displays.yaml` — in the same folder, beside the
+frames and the state — and that file is the source of the displays from then
+on, because it is one Maverick itself can write
+(`src/maverick/store.py`). The `displays:` list here is ignored once it exists,
+with a line in the log naming both files, so a display is added or changed in
+`data/displays.yaml` and the app restarted. Deleting `data/displays.yaml`
+brings the list in this file back at the next start.
+
+The full key reference is
 [docs/reference/configuration.md](https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/reference/configuration.md),
 the panel ids are in
 [docs/reference/panels.md](https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/reference/panels.md),
