@@ -45,11 +45,13 @@ The same caveat applies to `mqtt`, `opendisplay`, `file` and `webhook`.
 On Home Assistant OS or Supervised this is the short path. The button adds this
 repository to the app store; the app itself lives in [`app/`](app/DOCS.md).
 
-[![Open your Home Assistant instance and show the app store with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/?repository_url=https%3A%2F%2Fgithub.com%2Fambient-home-systems%2Fmaverick-eink-dashboard)
+[![Open your Home Assistant instance and show the add app repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fambient-home-systems%2Fmaverick-eink-dashboard)
 
-1. Click the button, or open **Settings → Apps → App store**, use the menu in
-   the top right, choose **Repositories** and add
-   `https://github.com/ambient-home-systems/maverick-eink-dashboard`.
+1. Click the button. The first time, my.home-assistant.io asks for your
+   instance's address; then Home Assistant opens the app store with the
+   repository dialog pre-filled, and you confirm **Add**. Or do it by hand:
+   **Settings → Apps → App store**, the menu in the top right, **Repositories**,
+   and add `https://github.com/ambient-home-systems/maverick-eink-dashboard`.
 2. Open **Maverick** in the store and install it. The image is built on your
    machine, Chromium included, so the aarch64 note below does not apply; expect
    a few minutes.

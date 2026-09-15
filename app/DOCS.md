@@ -20,10 +20,12 @@ project still say add-on; the two words mean the same thing.
 
 1. Add this repository to the app store:
 
-   [![Open your Home Assistant instance and show the app store with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/?repository_url=https%3A%2F%2Fgithub.com%2Fambient-home-systems%2Fmaverick-eink-dashboard)
+   [![Open your Home Assistant instance and show the add app repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fambient-home-systems%2Fmaverick-eink-dashboard)
 
-   Or by hand: **Settings → Apps → App store**, the menu in the top right,
-   **Repositories**, and paste
+   The first time, my.home-assistant.io asks for your instance's address; then
+   Home Assistant opens the app store with the repository dialog pre-filled,
+   and you confirm **Add**. Or by hand: **Settings → Apps → App store**, the
+   menu in the top right, **Repositories**, and paste
    `https://github.com/ambient-home-systems/maverick-eink-dashboard`.
 2. Open **Maverick** in the store and install it. There is no pre-built image
    yet, so the Supervisor builds one on your machine. Expect a few minutes and

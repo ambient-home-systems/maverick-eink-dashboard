@@ -2,7 +2,11 @@
 
 > **Interactive version with copy buttons:** https://claude.ai/code/artifact/f5bfdfe0-9e26-45e5-9cfb-df17dbc4025c
 >
-> Reviewed 14 September 2026 against commit `4b55146` (branch `main`, 36 source files, 6,970 lines).
+> Reviewed 14 September 2026 against commit `4b55146` (branch `main`, 36 source files, 6,970 lines). Line numbers in the findings refer to that commit.
+
+## Where it stands
+
+**Implemented.** Every prompt below was run and merged between 14 September 2026 and 15 September 2026, as [PRs #3 to #17](https://github.com/ambient-home-systems/maverick-eink-dashboard/pulls?q=is%3Apr+is%3Amerged), one per prompt plus one follow-up (#12, the four gaps the design guide recorded). A seventh phase that was not in the plan, the Home Assistant app and the README's install button, merged as [#18](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/18). `main` is at `4d8c046`. Each finding names the PR that resolved it, and each prompt the PR it produced.
 
 ## Verdict
 
@@ -32,71 +36,72 @@ Severity: **Blocker** stops a new user; **High** costs most users time; **Medium
 
 *What a user cannot find out today without reading the source.*
 
-- **A1 · Blocker · No README and no install path.** Python ≥ 3.11, twelve dependencies, Chromium via `playwright install chromium`, and on aarch64 a distro Chromium pointed to by `MAVERICK_CHROMIUM_PATH` (Playwright ships no ARM Linux build). None of it is written down anywhere. Evidence: `pyproject.toml:9`, `render/browser.py:51–56`.
-- **A2 · High · No configuration reference.** Twelve pydantic models and roughly 110 fields across `home_assistant`, `mqtt`, `server` and `displays[]` (theme, image, render, schedule, transport, pack, esphome). `${VAR}` and `${VAR:-default}` substitution, duration strings like `5m`, and `extra="forbid"`, which turns a misspelt key into a hard error. The only sample is the four-key stub. Evidence: `config.py`, `config.py:76`.
-- **A3 · High · Transport options are undocumented and unvalidated.** `TransportConfig` is `extra="allow"`, so each transport's keys exist only where `self.option(...)` is called: opendisplay has twelve (mode, device_id, media_dir, media_root, media_source_prefix, rotation, mac, device_name, encryption_key, timeout, max_attempts, scan_timeout), webhook four, file three, mqtt one, http_pull one (`mac`, for TRMNL). Evidence: `config.py:261`, `transports/*.py`.
-- **A4 · High · No Home Assistant guide.** The MQTT-discovery device (two buttons, a switch, an image, five sensors, a binary sensor), the command payloads (`refresh`, `full_refresh`, `schedule_on`, `schedule_off`), the `rest_command` alternative, how to make the long-lived token, why `home_assistant.url` must match the frontend origin exactly, and the `mode: ha` prerequisites for OpenDisplay (device registry id, a writable `/media` path) all live in docstrings. Evidence: `ha/discovery.py:1–22`, `app.py:84`, `render/dashboard.py:9`, `transports/opendisplay.py:9`.
-- **A5 · High · No device recipes, though the code promises them.** The ESPHome generator, the TRMNL bring-your-own-server handshake (`/api/setup`, `/api/display`), the Kindle and Kobo PNG path and the Inky-over-MQTT path each need a page. There is also no example client for the MQTT frame payload. Evidence: `transports/pull.py:15`, `server/api.py:246`, `esphome/generator.py:183`.
-- **A6 · Medium · No panel catalogue page.** 28 profiles across eight vendors, visible only through `maverick panels`. The meaning of `dpi`, `native_rotation`, `supports_partial` and `full_refresh_every` is in YAML comments and dataclass fields. Evidence: `devices/panels.yaml`, `devices/profiles.py`.
-- **A7 · Medium · No HTTP API reference outside the live /api/docs.** The pull protocol the architecture document calls "the design" (ETag and 304, `X-Maverick-Next-Refresh`, the Date-header contract) is documented in code comments only. Thirteen routes, none listed anywhere static. Evidence: `server/api.py:206`, `server/api.py:8`.
-- **A8 · Medium · No design guide, though the linter cites one.** The thresholds (blank 99.5 %, ink 62 %, hairline 28 %, speckle 3.5 %, spot ink 18 %, 0.18 mm minimum feature) and the theme rules (3.2 mm body text, weight floor 400, 0.25 mm rules, zero radius) are the product's real design system and exist only as dataclass defaults. Evidence: `eink/lint.py:69–83`, `eink/theme.py:59–95`, `eink/lint.py:173`.
-- **A9 · Medium · No troubleshooting page.** The code carries 48 user-facing failure messages (14 ConfigError, 18 DeliveryResult.failure, 7 HomeAssistantError, 6 RenderError, 3 RuntimeError), and they are good ones. No page lists them with their fixes. Evidence: `grep across src/maverick`.
-- **A10 · Low · No contributor documentation.** No CONTRIBUTING, no CLAUDE.md, no test or lint instructions, no CI, no changelog. Evidence: `repository root`.
+- **A1 · Blocker · No README and no install path.** Python ≥ 3.11, twelve dependencies, Chromium via `playwright install chromium`, and on aarch64 a distro Chromium pointed to by `MAVERICK_CHROMIUM_PATH` (Playwright ships no ARM Linux build). None of it is written down anywhere. Evidence: `pyproject.toml:9`, `render/browser.py:51–56`. *Resolved in [#5](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/5).*
+- **A2 · High · No configuration reference.** Twelve pydantic models and roughly 110 fields across `home_assistant`, `mqtt`, `server` and `displays[]` (theme, image, render, schedule, transport, pack, esphome). `${VAR}` and `${VAR:-default}` substitution, duration strings like `5m`, and `extra="forbid"`, which turns a misspelt key into a hard error. The only sample is the four-key stub. Evidence: `config.py`, `config.py:76`. *Resolved in [#6](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/6).*
+- **A3 · High · Transport options are undocumented and unvalidated.** `TransportConfig` is `extra="allow"`, so each transport's keys exist only where `self.option(...)` is called: opendisplay has twelve (mode, device_id, media_dir, media_root, media_source_prefix, rotation, mac, device_name, encryption_key, timeout, max_attempts, scan_timeout), webhook four, file three, mqtt one, http_pull one (`mac`, for TRMNL). Evidence: `config.py:261`, `transports/*.py`. *Resolved in [#6](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/6), [#7](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/7).*
+- **A4 · High · No Home Assistant guide.** The MQTT-discovery device (two buttons, a switch, an image, five sensors, a binary sensor), the command payloads (`refresh`, `full_refresh`, `schedule_on`, `schedule_off`), the `rest_command` alternative, how to make the long-lived token, why `home_assistant.url` must match the frontend origin exactly, and the `mode: ha` prerequisites for OpenDisplay (device registry id, a writable `/media` path) all live in docstrings. Evidence: `ha/discovery.py:1–22`, `app.py:84`, `render/dashboard.py:9`, `transports/opendisplay.py:9`. *Resolved in [#9](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/9).*
+- **A5 · High · No device recipes, though the code promises them.** The ESPHome generator, the TRMNL bring-your-own-server handshake (`/api/setup`, `/api/display`), the Kindle and Kobo PNG path and the Inky-over-MQTT path each need a page. There is also no example client for the MQTT frame payload. Evidence: `transports/pull.py:15`, `server/api.py:246`, `esphome/generator.py:183`. *Resolved in [#10](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/10).*
+- **A6 · Medium · No panel catalogue page.** 28 profiles across eight vendors, visible only through `maverick panels`. The meaning of `dpi`, `native_rotation`, `supports_partial` and `full_refresh_every` is in YAML comments and dataclass fields. Evidence: `devices/panels.yaml`, `devices/profiles.py`. *Resolved in [#7](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/7).*
+- **A7 · Medium · No HTTP API reference outside the live /api/docs.** The pull protocol the architecture document calls "the design" (ETag and 304, `X-Maverick-Next-Refresh`, the Date-header contract) is documented in code comments only. Thirteen routes, none listed anywhere static. Evidence: `server/api.py:206`, `server/api.py:8`. *Resolved in [#8](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/8).*
+- **A8 · Medium · No design guide, though the linter cites one.** The thresholds (blank 99.5 %, ink 62 %, hairline 28 %, speckle 3.5 %, spot ink 18 %, 0.18 mm minimum feature) and the theme rules (3.2 mm body text, weight floor 400, 0.25 mm rules, zero radius) are the product's real design system and exist only as dataclass defaults. Evidence: `eink/lint.py:69–83`, `eink/theme.py:59–95`, `eink/lint.py:173`. *Resolved in [#11](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/11), [#12](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/12).*
+- **A9 · Medium · No troubleshooting page.** The code carries 48 user-facing failure messages (14 ConfigError, 18 DeliveryResult.failure, 7 HomeAssistantError, 6 RenderError, 3 RuntimeError), and they are good ones. No page lists them with their fixes. Evidence: `grep across src/maverick`. *Resolved in [#13](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/13).*
+- **A10 · Low · No contributor documentation.** No CONTRIBUTING, no CLAUDE.md, no test or lint instructions, no CI, no changelog. Evidence: `repository root`. *Resolved in [#16](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/16), [#17](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/17).*
 
 ### B. The architecture document is out of step with the code
 
 *Good writing that now describes a different repository.*
 
-- **B1 · High · Its status is wrong.** The Markdown says "Status: feasibility evaluation … nothing has been tested against real display hardware"; the HTML badge says "Not built". The repository contains the render service the document estimates at "3–5 weeks": pipeline, five transports, scheduler, HTTP server, CLI, MQTT discovery, ESPHome generator. A reader cannot tell what exists. Evidence: `docs/architecture.md:5`, `docs/architecture.md:194`, `docs/architecture.html:200`.
-- **B2 · High · Decision 1 contradicts the implementation.** "This supersedes the earlier MQTT-discovery proposal, which becomes a fallback." MQTT discovery is the only Home Assistant surface in the code, plus one REST endpoint. The `maverick.render` and `set_page` actions, the config flow, HACS distribution and ingress do not exist. Evidence: `docs/architecture.md:91`, `ha/discovery.py`.
-- **B3 · Medium · Decision 3 shows YAML the config rejects.** The `pages:` example would fail to load: `DisplayConfig` is `extra="forbid"`, so an unknown key is a ConfigError. Nothing marks the block as proposed syntax. Evidence: `docs/architecture.md:156`, `config.py:76`, `config.py:293`.
-- **B4 · Medium · Two hand-maintained copies, one private link.** The Markdown and HTML are edited separately and have already diverged. The Markdown's canonical link is a claude.ai artifact URL, private to its owner and not a durable public reference for a repository. Evidence: `docs/architecture.md:3`, `docs/architecture.html:543`.
-- **B5 · Medium · "Verified" findings are not reproducible.** The four prototype findings cite measurements (13 px text at 3.03 mm @124 dpi, speckle ratio 0.000) with no test in the repository that produces them. The code paths exist (`build_css` zoom, the AUTO dither mask, the `blank_render` gate), so they can become tests. Evidence: `docs/architecture.md:34–63`, `eink/theme.py:109`, `eink/lint.py:69`.
-- **B6 · Low · Undated, unversioned, thinly referenced.** No date, version or commit. "As of 2026.5" (strategy registration in Home Assistant) is uncited. The references omit the three integration targets the code depends on: ESPHome `online_image`, the TRMNL BYOS API and py-opendisplay. Evidence: `docs/architecture.md:119`, `docs/architecture.md:208–216`.
-- **B7 · Low · The best troubleshooting content is filed as risk.** The Risks table (login-page frame on a battery panel, Chromium on ARM, the ESP32 memory ceiling, muddy colour) is user guidance framed as project risk. The troubleshooting page should absorb it. Evidence: `docs/architecture.md:170–178`.
+- **B1 · High · Its status is wrong.** The Markdown says "Status: feasibility evaluation … nothing has been tested against real display hardware"; the HTML badge says "Not built". The repository contains the render service the document estimates at "3–5 weeks": pipeline, five transports, scheduler, HTTP server, CLI, MQTT discovery, ESPHome generator. A reader cannot tell what exists. Evidence: `docs/architecture.md:5`, `docs/architecture.md:194`, `docs/architecture.html:200`. *Resolved in [#14](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/14).*
+- **B2 · High · Decision 1 contradicts the implementation.** "This supersedes the earlier MQTT-discovery proposal, which becomes a fallback." MQTT discovery is the only Home Assistant surface in the code, plus one REST endpoint. The `maverick.render` and `set_page` actions, the config flow, HACS distribution and ingress do not exist. Evidence: `docs/architecture.md:91`, `ha/discovery.py`. *Resolved in [#14](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/14).*
+- **B3 · Medium · Decision 3 shows YAML the config rejects.** The `pages:` example would fail to load: `DisplayConfig` is `extra="forbid"`, so an unknown key is a ConfigError. Nothing marks the block as proposed syntax. Evidence: `docs/architecture.md:156`, `config.py:76`, `config.py:293`. *Resolved in [#14](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/14).*
+- **B4 · Medium · Two hand-maintained copies, one private link.** The Markdown and HTML are edited separately and have already diverged. The Markdown's canonical link is a claude.ai artifact URL, private to its owner and not a durable public reference for a repository. Evidence: `docs/architecture.md:3`, `docs/architecture.html:543`. *Resolved in [#14](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/14).*
+- **B5 · Medium · "Verified" findings are not reproducible.** The four prototype findings cite measurements (13 px text at 3.03 mm @124 dpi, speckle ratio 0.000) with no test in the repository that produces them. The code paths exist (`build_css` zoom, the AUTO dither mask, the `blank_render` gate), so they can become tests. Evidence: `docs/architecture.md:34–63`, `eink/theme.py:109`, `eink/lint.py:69`. *Resolved in [#15](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/15).*
+- **B6 · Low · Undated, unversioned, thinly referenced.** No date, version or commit. "As of 2026.5" (strategy registration in Home Assistant) is uncited. The references omit the three integration targets the code depends on: ESPHome `online_image`, the TRMNL BYOS API and py-opendisplay. Evidence: `docs/architecture.md:119`, `docs/architecture.md:208–216`. *Resolved in [#14](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/14).*
+- **B7 · Low · The best troubleshooting content is filed as risk.** The Risks table (login-page frame on a battery panel, Chromium on ARM, the ESP32 memory ceiling, muddy colour) is user guidance framed as project risk. The troubleshooting page should absorb it. Evidence: `docs/architecture.md:170–178`. *Resolved in [#13](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/13).*
 
 ### C. Source strings that point at things that do not exist
 
 *Drift a user hits the first time something goes wrong.*
 
-- **C1 · High · Hint names a flag that does not exist.** The `blank_render` hint says "Run `maverick render --debug`". There is no `--debug` flag. The real switch is `render.debug_artifacts: true` in the display config, which writes `screenshot.png`, `frame.png` and `lint.json` under `data_dir/debug/<id>/`. Evidence: `eink/lint.py:132`, `cli.py:322`, `config.py:201`.
-- **C2 · Medium · Wrong subcommand in an error message.** "Run `maverick opendisplay scan`". The command is `maverick scan`. Evidence: `transports/opendisplay.py:152`, `cli.py:341`.
-- **C3 · Medium · Docstring promises recipes that are not there.** "This is how the ESPHome and Kindle recipes in `docs/` stay small." Evidence: `transports/pull.py:15`.
-- **C4 · Medium · Linter links a missing page.** "see docs/design-guide.md". Evidence: `eink/lint.py:173`.
-- **C5 · Low · Package data lists four paths that do not exist.** `eink/*.css`, `esphome/templates/*.j2`, `server/static/*`, `server/templates/*`. Harmless at build time, misleading to a contributor looking for missing assets. Evidence: `pyproject.toml:50`.
-- **C6 · Low · A default for a transport that is not registered.** `_default_format_for` lists an `esphome` transport. The registry has mqtt, opendisplay, http_pull, file and webhook; `transport.type: esphome` fails at start with "Unknown transport". Evidence: `config.py:377–385`, `transports/__init__.py:13–15`.
-- **C7 · Low · Docstring describes an add-on that does not exist.** "Inside the add-on both values are injected automatically, so users never see them." Evidence: `config.py:87`.
-- **C8 · Low · "See the docs" goes nowhere useful.** The empty-state card in the setup UI links to the repository root. Evidence: `server/ui.py:163`.
+- **C1 · High · Hint names a flag that does not exist.** The `blank_render` hint says "Run `maverick render --debug`". There is no `--debug` flag. The real switch is `render.debug_artifacts: true` in the display config, which writes `screenshot.png`, `frame.png` and `lint.json` under `data_dir/debug/<id>/`. Evidence: `eink/lint.py:132`, `cli.py:322`, `config.py:201`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
+- **C2 · Medium · Wrong subcommand in an error message.** "Run `maverick opendisplay scan`". The command is `maverick scan`. Evidence: `transports/opendisplay.py:152`, `cli.py:341`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
+- **C3 · Medium · Docstring promises recipes that are not there.** "This is how the ESPHome and Kindle recipes in `docs/` stay small." Evidence: `transports/pull.py:15`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
+- **C4 · Medium · Linter links a missing page.** "see docs/design-guide.md". Evidence: `eink/lint.py:173`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
+- **C5 · Low · Package data lists four paths that do not exist.** `eink/*.css`, `esphome/templates/*.j2`, `server/static/*`, `server/templates/*`. Harmless at build time, misleading to a contributor looking for missing assets. Evidence: `pyproject.toml:50`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
+- **C6 · Low · A default for a transport that is not registered.** `_default_format_for` lists an `esphome` transport. The registry has mqtt, opendisplay, http_pull, file and webhook; `transport.type: esphome` fails at start with "Unknown transport". Evidence: `config.py:377–385`, `transports/__init__.py:13–15`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
+- **C7 · Low · Docstring describes an add-on that does not exist.** "Inside the add-on both values are injected automatically, so users never see them." Evidence: `config.py:87`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
+- **C8 · Low · "See the docs" goes nowhere useful.** The empty-state card in the setup UI links to the repository root. Evidence: `server/ui.py:163`. *Resolved in [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3).*
 
 ### D. Behaviour the new documentation would advertise, and that is wrong today
 
 *Found while checking claims against code. Fix these before writing them down.*
 
-- **D1 · Bug · The MQTT last will is never registered.** `Application.start` sets `mqtt._will` after `Engine.start` has already created and connected the publisher; `MqttPublisher.start` is the only caller of paho's `will_set` and returns early once connected. The discovery docstring's promise that "a last-will marks them unavailable if Maverick dies" is false: entities stay online after a crash. Evidence: `app.py:45`, `engine.py:295–297`, `transports/mqtt.py:45`, `transports/mqtt.py:56`, `ha/discovery.py:21`.
-- **D2 · Bug · TRMNL onboarding breaks when server.api_token is set.** `/api/setup` hands the token back as `api_key` and an `image_url` with no token in it. The frame endpoint accepts only `Authorization: Bearer` or `?token=`, which TRMNL firmware does not send, so every fetch is a 401. Evidence: `server/api.py:260`, `server/api.py:317`, `server/api.py:32–40`.
-- **D3 · Minor · POST /api/render?force=true is accepted and ignored.** The parameter is declared, so /api/docs advertises it, and then dropped on the way to `Application.render_all`. Evidence: `server/api.py:174–175`.
-- **D4 · Minor · palette_overrides reaches quantisation but not the stylesheet.** `build_css` calls `get_palette(options.scheme)` without the overrides, so a corrected red ink changes the dither but not the CSS accent. The reference must describe the real behaviour, or the code should pass the overrides through. Evidence: `eink/theme.py:109`, `eink/pipeline.py`.
+- **D1 · Bug · The MQTT last will is never registered.** `Application.start` sets `mqtt._will` after `Engine.start` has already created and connected the publisher; `MqttPublisher.start` is the only caller of paho's `will_set` and returns early once connected. The discovery docstring's promise that "a last-will marks them unavailable if Maverick dies" is false: entities stay online after a crash. Evidence: `app.py:45`, `engine.py:295–297`, `transports/mqtt.py:45`, `transports/mqtt.py:56`, `ha/discovery.py:21`. *Resolved in [#4](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/4).*
+- **D2 · Bug · TRMNL onboarding breaks when server.api_token is set.** `/api/setup` hands the token back as `api_key` and an `image_url` with no token in it. The frame endpoint accepts only `Authorization: Bearer` or `?token=`, which TRMNL firmware does not send, so every fetch is a 401. Evidence: `server/api.py:260`, `server/api.py:317`, `server/api.py:32–40`. *Resolved in [#4](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/4).*
+- **D3 · Minor · POST /api/render?force=true is accepted and ignored.** The parameter is declared, so /api/docs advertises it, and then dropped on the way to `Application.render_all`. Evidence: `server/api.py:174–175`. *Resolved in [#4](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/4).*
+- **D4 · Minor · palette_overrides reaches quantisation but not the stylesheet.** `build_css` calls `get_palette(options.scheme)` without the overrides, so a corrected red ink changes the dither but not the CSS accent. The reference must describe the real behaviour, or the code should pass the overrides through. Evidence: `eink/theme.py:109`, `eink/pipeline.py`. *Resolved in [#4](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/4).*
 
 ## The plan
 
 Six phases, genuinely ordered: each assumes the previous one is merged. Within a phase, prompts marked *parallel* can run at the same time. Each card names the model and the effort level to run it at, and why. Size: S is one or two files; M is several files; L is a new page set or subsystem.
 
-| Phase | Prompt | Model | Effort | Size | Parallel |
-|---|---|---|---|---|---|
-| 0 · Stop the drift | P0.1 Fix the source strings that point at things that do not exist | Claude Sonnet 5 (`claude-sonnet-5`) | medium | S | yes |
-| 0 · Stop the drift | P0.2 Verify and fix three behaviours the documentation will advertise | Claude Opus 5 (`claude-opus-5`) | high | M | yes |
-| 1 · The front door | P1.1 README and config.example.yaml | Claude Opus 5 (`claude-opus-5`) | high | M | no |
-| 2 · Reference, generated from the code | P2.1 Documentation generator and the configuration reference | Claude Opus 5 (`claude-opus-5`) | high | L | no |
-| 2 · Reference, generated from the code | P2.2 Panel catalogue, transports and CLI reference pages | Claude Sonnet 5 (`claude-sonnet-5`) | medium | M | yes |
-| 2 · Reference, generated from the code | P2.3 HTTP API and MQTT reference | Claude Opus 5 (`claude-opus-5`) | high | M | yes |
-| 3 · Guides | P3.1 Home Assistant guide | Claude Opus 5 (`claude-opus-5`) | high | M | yes |
-| 3 · Guides | P3.2 Device recipes | Claude Opus 5 (`claude-opus-5`) | high | L | yes |
-| 3 · Guides | P3.3 E-ink design guide | Claude Opus 5 (`claude-opus-5`) | xhigh | M | yes |
-| 3 · Guides | P3.4 Troubleshooting | Claude Sonnet 5 (`claude-sonnet-5`) | medium | M | yes |
-| 4 · The architecture document | P4.1 Refresh the architecture document: built versus planned | Claude Opus 5 (`claude-opus-5`) | xhigh | L | yes |
-| 4 · The architecture document | P4.2 Make the "verified" claims reproducible | Claude Opus 5 (`claude-opus-5`) | high | M | yes |
-| 5 · Contributors and upkeep | P5.1 Contributor docs, CLAUDE.md and documentation CI | Claude Opus 5 (`claude-opus-5`) | high | M | no |
-| 5 · Contributors and upkeep | P5.2 Changelog, single-sourced version and review stamps | Claude Sonnet 5 (`claude-sonnet-5`) | low | S | no |
+| Phase | Prompt | Model | Effort | Size | Parallel | Merged as |
+|---|---|---|---|---|---|---|
+| 0 · Stop the drift | P0.1 Fix the source strings that point at things that do not exist | Claude Sonnet 5 (`claude-sonnet-5`) | medium | S | yes | [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3) |
+| 0 · Stop the drift | P0.2 Verify and fix three behaviours the documentation will advertise | Claude Opus 5 (`claude-opus-5`) | high | M | yes | [#4](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/4) |
+| 1 · The front door | P1.1 README and config.example.yaml | Claude Opus 5 (`claude-opus-5`) | high | M | no | [#5](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/5) |
+| 2 · Reference, generated from the code | P2.1 Documentation generator and the configuration reference | Claude Opus 5 (`claude-opus-5`) | high | L | no | [#6](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/6) |
+| 2 · Reference, generated from the code | P2.2 Panel catalogue, transports and CLI reference pages | Claude Sonnet 5 (`claude-sonnet-5`) | medium | M | yes | [#7](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/7) |
+| 2 · Reference, generated from the code | P2.3 HTTP API and MQTT reference | Claude Opus 5 (`claude-opus-5`) | high | M | yes | [#8](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/8) |
+| 3 · Guides | P3.1 Home Assistant guide | Claude Opus 5 (`claude-opus-5`) | high | M | yes | [#9](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/9) |
+| 3 · Guides | P3.2 Device recipes | Claude Opus 5 (`claude-opus-5`) | high | L | yes | [#10](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/10) |
+| 3 · Guides | P3.3 E-ink design guide | Claude Opus 5 (`claude-opus-5`) | xhigh | M | yes | [#11](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/11), [#12](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/12) |
+| 3 · Guides | P3.4 Troubleshooting | Claude Sonnet 5 (`claude-sonnet-5`) | medium | M | yes | [#13](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/13) |
+| 4 · The architecture document | P4.1 Refresh the architecture document: built versus planned | Claude Opus 5 (`claude-opus-5`) | xhigh | L | yes | [#14](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/14) |
+| 4 · The architecture document | P4.2 Make the "verified" claims reproducible | Claude Opus 5 (`claude-opus-5`) | high | M | yes | [#15](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/15) |
+| 5 · Contributors and upkeep | P5.1 Contributor docs, CLAUDE.md and documentation CI | Claude Opus 5 (`claude-opus-5`) | high | M | no | [#16](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/16) |
+| 5 · Contributors and upkeep | P5.2 Changelog, single-sourced version and review stamps | Claude Sonnet 5 (`claude-sonnet-5`) | low | S | no | [#17](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/17) |
+| 6 · Install from the app store | done in the session, no prompt | — | — | L | — | [#18](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/18) |
 
 ### Phase 0 — Stop the drift
 
@@ -104,7 +109,7 @@ Two small code changes before any prose is written, so nothing documented is alr
 
 #### P0.1 — Fix the source strings that point at things that do not exist
 
-**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** medium · **Size:** S · **Parallel:** yes  
+**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** medium · **Size:** S · **Parallel:** yes · **Merged as:** [#3](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/3)  
 *Why this model and effort:* Mechanical edits with an exact list; a mid-effort Sonnet 5 run keeps it cheap and fast.
 
 ```text
@@ -136,7 +141,7 @@ Acceptance:
 
 #### P0.2 — Verify and fix three behaviours the documentation will advertise
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes · **Merged as:** [#4](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/4)  
 *Why this model and effort:* Concurrency and auth reasoning with regression tests to write; this is where a wrong fix costs more than the model does.
 
 ```text
@@ -169,7 +174,7 @@ A README that answers what, whether, how, and a real example config. Fixes A1 an
 
 #### P1.1 — README and config.example.yaml
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** no  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** no · **Merged as:** [#5](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/5)  
 *Why this model and effort:* The most-read page in the project; it must be accurate about what exists and honest about what does not, which takes judgement across the whole codebase.
 
 ```text
@@ -209,7 +214,7 @@ Configuration, panels, transports, CLI, HTTP API and MQTT references produced by
 
 #### P2.1 — Documentation generator and the configuration reference
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** L · **Parallel:** no  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** L · **Parallel:** no · **Merged as:** [#6](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/6)  
 *Why this model and effort:* Touches every model in config.py and introduces the mechanism the rest of the references depend on.
 
 ```text
@@ -236,7 +241,7 @@ Acceptance: `python scripts/gen_docs.py` produces identical output on a second r
 
 #### P2.2 — Panel catalogue, transports and CLI reference pages
 
-**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** medium · **Size:** M · **Parallel:** yes  
+**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** medium · **Size:** M · **Parallel:** yes · **Merged as:** [#7](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/7)  
 *Why this model and effort:* Extends an existing generator with three well-specified pages; the judgement was spent in P2.1.
 
 ```text
@@ -255,7 +260,7 @@ Acceptance: `python scripts/gen_docs.py --check` passes after regeneration; `pyt
 
 #### P2.3 — HTTP API and MQTT reference
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes · **Merged as:** [#8](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/8)  
 *Why this model and effort:* Two protocol descriptions that other people will code against; every topic, header and JSON key must be lifted from the source without omission.
 
 ```text
@@ -286,7 +291,7 @@ The four pages people search for: Home Assistant, devices, design for ink, and w
 
 #### P3.1 — Home Assistant guide
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes · **Merged as:** [#9](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/9)  
 *Why this model and effort:* Explains the auth rule, MQTT discovery, state triggers and the OpenDisplay path in the user's terms while staying true to the code.
 
 ```text
@@ -312,7 +317,7 @@ Acceptance: every config key mentioned exists in docs/reference/configuration.md
 
 #### P3.2 — Device recipes
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** L · **Parallel:** yes  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** L · **Parallel:** yes · **Merged as:** [#10](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/10)  
 *Why this model and effort:* Six device paths, one runnable client script, and strict honesty labels about what has and has not been tested.
 
 ```text
@@ -335,7 +340,7 @@ Acceptance: every option named exists in docs/reference/transports.md; every pan
 
 #### P3.3 — E-ink design guide
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** xhigh · **Size:** M · **Parallel:** yes  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** xhigh · **Size:** M · **Parallel:** yes · **Merged as:** [#11](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/11), [#12](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/12)  
 *Why this model and effort:* Synthesis across theme, lint, dither and palette with every number recomputed from the real functions; the page the linter sends users to has to be right.
 
 ```text
@@ -358,7 +363,7 @@ Constraints: every number must be reproducible by running functions in src/maver
 
 #### P3.4 — Troubleshooting
 
-**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** medium · **Size:** M · **Parallel:** yes  
+**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** medium · **Size:** M · **Parallel:** yes · **Merged as:** [#13](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/13)  
 *Why this model and effort:* A catalogue built by grep and reading; broad but systematic, with a coverage test to keep it honest.
 
 ```text
@@ -382,7 +387,7 @@ Split the evaluation into what is built and what is planned, and make its verifi
 
 #### P4.1 — Refresh the architecture document: built versus planned
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** xhigh · **Size:** L · **Parallel:** yes  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** xhigh · **Size:** L · **Parallel:** yes · **Merged as:** [#14](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/14)  
 *Why this model and effort:* Requires reading the whole service and deciding, sentence by sentence, what is true now; the highest-judgement task in the plan.
 
 ```text
@@ -411,7 +416,7 @@ Acceptance: no sentence in architecture.md describes something absent from src/;
 
 #### P4.2 — Make the "verified" claims reproducible
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** yes · **Merged as:** [#15](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/15)  
 *Why this model and effort:* Four numeric tests against the imaging code; the value is in choosing assertions that fail for the right reasons.
 
 ```text
@@ -433,7 +438,7 @@ Make the documentation set self-maintaining: contributor guide, an AI-facing CLA
 
 #### P5.1 — Contributor docs, CLAUDE.md and documentation CI
 
-**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** no  
+**Model:** Claude Opus 5 (`claude-opus-5`, alias `opus`) · **Effort:** high · **Size:** M · **Parallel:** no · **Merged as:** [#16](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/16)  
 *Why this model and effort:* CLAUDE.md sets the rules every later AI session follows; the invariants it lists must be the real ones.
 
 ```text
@@ -452,7 +457,7 @@ Acceptance: CI is green on the pull request; each statement in CLAUDE.md points 
 
 #### P5.2 — Changelog, single-sourced version and review stamps
 
-**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** low · **Size:** S · **Parallel:** no  
+**Model:** Claude Sonnet 5 (`claude-sonnet-5`, alias `sonnet`) · **Effort:** low · **Size:** S · **Parallel:** no · **Merged as:** [#17](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/17)  
 *Why this model and effort:* Housekeeping with a checklist; the last step once everything else has merged.
 
 ```text
@@ -466,6 +471,31 @@ Repository: maverick-eink-dashboard. Branch `docs/p5-changelog`. Last step; all 
 Acceptance: CI green; `maverick --version` prints 0.1.0; CHANGELOG names every top-level module. Commit and open a pull request.
 ```
 
+### Phase 6 — Install from the app store
+
+*Merged as [#18](https://github.com/ambient-home-systems/maverick-eink-dashboard/pull/18).* Not in the original plan, and done directly in the session rather than through a prompt. The request was a Home Assistant "add this repository" button for the README. That button adds the repository to Home Assistant's app store, so it only does something when the repository contains an app (the store item Home Assistant used to call an add-on). There was none, so the button came with a minimal, working app.
+
+**What was built**
+
+- `repository.yaml` at the root, so the repository is an app repository.
+- `app/config.yaml`: slug `maverick`, aarch64 and amd64, port 5000 with a Web UI button, `mqtt:want` so the Mosquitto broker app is picked up automatically, and `addon_config`, `media` and `share` mapped read-write for the config file, the OpenDisplay `mode: ha` path and the file transport.
+- `app/Dockerfile`: `ghcr.io/home-assistant/base-debian:bookworm` with Debian's own `chromium` and fonts, the package installed into a venv from this repository at a pinned commit (`MAVERICK_REF`), and a Docker `HEALTHCHECK` against `/health`. Debian on purpose: Playwright's driver needs glibc, and the distro Chromium removes the ARM problem inside the app.
+- `app/run.sh`: turns the options into the environment variables the starter `maverick.yaml` reads through `${VAR}` substitution, derives the pull `base_url` from the host address when unset, takes Mosquitto's credentials from the Supervisor, writes the starter config on first start and execs `maverick serve`.
+- `app/DOCS.md`, `README.md`, `CHANGELOG.md` and `translations/en.yaml` for the store and the Documentation tab; the README's install section with the my.home-assistant.io button; every page that said "there is no add-on" corrected.
+- `tests/test_app.py`: the option keys `run.sh` reads are in the schema, every variable the starter config substitutes is exported, the starter config loads through `load_config`, and the app version equals the package version. A CI job lints the manifest, runs shellcheck, builds the image and launches the bundled Chromium through `BrowserPool`.
+
+**What was verified**
+
+- On the merged head, CI built the image on amd64, printed `maverick 0.1.0` from inside it, loaded the panel catalogue, and launched Chromium through Playwright (`chromium ok: … Chrome/120.0.0.0 … Maverick/0.1`).
+- Three CI rounds were needed: `.gitignore`'s `config.yaml` rule had swallowed the manifest; the app linter rejects `boot`, `startup` and `watchdog`; both are fixed on main.
+- The first button did not work. It used the `supervisor_store` redirect, copied from Home Assistant's own example repository, and that redirect takes no parameters, so the `repository_url` was dropped and the click only opened the store. Home Assistant's frontend redirect table (`src/panels/my/ha-panel-my.ts`) is the authority: `supervisor_add_addon_repository` is the one that carries `repository_url` and pre-fills the dialog. Fixed in #19.
+
+**Still open**
+
+- Nothing has been installed on a real Home Assistant OS system: the Supervisor build, the aarch64 image, the Mosquitto hand-off and the derived `base_url` are read from the Supervisor's documentation and bashio's source. `app/DOCS.md` says so and asks for reports.
+- No ingress (the UI is on port 5000 behind the Web UI button), no pre-built image (installing builds it on the machine), and still no custom integration.
+- Home Assistant renamed add-ons to *apps*; the new pages use *app* and say the words mean the same thing, while older pages still say add-on.
+
 ## How to run these
 
 - **Each prompt is written for a fresh Claude Code session started at the repository root.** Start the session with the model and effort from the card: `claude --model opus --effort high`, or inside a session `/model opus` then `/effort high`. Aliases: `opus` is Claude Opus 5, `sonnet` is Claude Sonnet 5. Effort values are low, medium, high, xhigh and max; the default is high. Then paste the prompt.
@@ -476,6 +506,6 @@ Acceptance: CI green; `maverick --version` prints 0.1.0; CHANGELOG names every t
 
 ## Out of scope for this plan
 
-- A Dockerfile, the Home Assistant add-on and the custom integration are product work, not documentation; the plan documents their absence and points at the roadmap.
-- Hardware validation. Every recipe carries an untested banner until someone reports a run; the contributor guide says how to remove it.
+- The custom integration and ingress for the app are product work, not documentation; the roadmap holds them. The app itself was out of scope when this was written and was built afterwards as phase 6.
+- Hardware validation. Every recipe carries an untested banner until someone reports a run; the contributor guide says how to remove it. The same applies to the app on a real Home Assistant OS system.
 - A documentation site. The pages are plain Markdown under docs/ with an index; a site generator can be added later without changing them.
