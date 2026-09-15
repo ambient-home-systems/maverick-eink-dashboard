@@ -18,16 +18,16 @@ FROM ${BUILD_FROM}
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
 #
-# v0.2.5 covers the 0.2.5 release: it makes the setup UI work through Home
-# Assistant's ingress, where every URL it emitted used to resolve against Home
-# Assistant's own origin, and stops it hiding the "Link with Home Assistant"
-# card for a credential Home Assistant rejects.
+# b643213 is the 0.2.6 release commit: it lets the app read the host address
+# it fills base_url from, without which the setup UI showed "Set base_url
+# first" where "Link with Home Assistant" belongs.
 #
-# The tag names ba888b6 rather than the release commit 02c452b it follows,
-# which the procedure in CONTRIBUTING.md would tag. Harmless here: the two
-# differ only in this file, and pip installs the package from src/ and
-# pyproject.toml, which are identical between them.
-ARG MAVERICK_REF=v0.2.5
+# Deliberately NOT v0.2.6. That tag was published against the previous head,
+# 90df580, so it carries the 0.2.5 tree: no hassio_api, and a pyproject
+# version of 0.2.5. Naming it here would install 0.2.5 under a 0.2.6 label —
+# the mismatch tests/test_app.py's pinned-ref test exists to catch. Once the
+# tag is moved to this commit, the ref can name it, as CONTRIBUTING.md wants.
+ARG MAVERICK_REF=b643213fc3a633b5d2237b3bbdc5454c61fe1c2d
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
