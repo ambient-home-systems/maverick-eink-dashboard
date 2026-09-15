@@ -103,9 +103,65 @@ def test_run_sh_invokes_the_cli_the_way_the_cli_parses() -> None:
 
 
 def test_every_option_run_sh_reads_is_declared() -> None:
-    read = set(re.findall(r"bashio::config(?:\.has_value)? '([a-z_]+)'", RUN_SH))
+    read = set(
+        re.findall(r"(?:bashio::config(?:\.has_value)?|config_or_empty) '([a-z_]+)'", RUN_SH)
+    )
     assert read, "run.sh reads no options"
     assert read <= set(_manifest()["schema"])
+
+
+def test_an_unset_option_is_never_read_with_an_empty_bashio_default() -> None:
+    """`bashio::config key ''` yields the string "null", not an empty string.
+
+    bashio reads its own fallback as ``${2:-null}``, and ``:-`` substitutes on
+    an empty argument too, so an empty default becomes the literal ``null``
+    (bashio ``lib/config.sh``). Nothing downstream catches it: ``"null"`` is a
+    non-empty string, so it passes every ``${VAR:-default}`` in the starter
+    config and is stored as the value. The visible damage is a credential that
+    does not exist — ``refresh_token`` and ``client_id`` both ``"null"`` build
+    a linked account (`src/maverick/ha/auth.py`, `build_token_source`) whose
+    every refresh is answered `400 Invalid client id` — plus a ``base_url``
+    that blocks linking and an ``api_token`` gating the pull endpoints.
+    """
+    offenders = re.findall(r"bashio::config '([a-z_]+)' ''", RUN_SH)
+    assert not offenders, (
+        f"{offenders} are read with an empty bashio default, which yields the "
+        "string 'null'. Read optional options through config_or_empty instead."
+    )
+
+
+def test_config_or_empty_turns_an_unset_option_into_an_empty_string() -> None:
+    """The helper itself, run against bashio's real contract.
+
+    The stubs below reproduce ``bashio::config`` and ``bashio::config.has_value``
+    from bashio ``lib/config.sh``, including the ``${2:-null}`` fallback that
+    causes the problem, so this fails if the helper is rewritten to call
+    ``bashio::config`` with a default again.
+    """
+    body = re.search(r"^config_or_empty\(\) \{.*?^\}$", RUN_SH, re.M | re.S)
+    assert body, "run.sh no longer defines config_or_empty"
+
+    script = f"""
+    bashio::config() {{
+        local default_value=${{2:-null}}
+        case "${{1}}" in
+            set_option) printf '%s' 'a-value' ;;
+            *) echo "${{default_value}}" ;;
+        esac
+    }}
+    bashio::config.has_value() {{
+        [[ "$(bashio::config "${{1}}")" != "null" && -n "$(bashio::config "${{1}}")" ]]
+    }}
+    {body.group(0)}
+    printf '[%s][%s]' "$(config_or_empty 'unset_option')" "$(config_or_empty 'set_option')"
+    """
+    result = subprocess.run(
+        ["bash", "-o", "errexit", "-o", "pipefail", "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout == "[][a-value]", result.stdout
 
 
 def test_every_schema_key_is_translated() -> None:

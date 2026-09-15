@@ -232,6 +232,24 @@ token. Refresh tokens appear in Home Assistant's profile page alongside
 long-lived tokens and can be deleted there.
 **Fix:** press **Link with Home Assistant** again.
 
+```text
+Home Assistant rejected the token request (400): Invalid client id
+```
+
+**Cause:** `home_assistant.client_id` is not a URL Home Assistant's IndieAuth
+validator accepts, so the refresh that every render begins with is refused
+before the refresh token is even looked at
+(`homeassistant/components/auth/indieauth.py`, `verify_client_id`; a client id
+that is merely the *wrong* one answers `invalid_request` with no description
+instead). It must be the same http(s) origin the link was made with — the one
+`/api/auth/status` reports, derived from `server.base_url` by
+`client_id_for` (`src/maverick/ha/auth.py:72-85`). Under the Home Assistant
+app before 0.2.4 it could be the literal string `null`, which is what an
+unlinked install looked like; updating the app fixes that case.
+**Fix:** press **Link with Home Assistant** again, which rewrites
+`client_id` and `refresh_token` together — they only work as a pair. Editing
+one by hand is what breaks them.
+
 ### Reachability
 
 ```text

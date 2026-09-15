@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.4
+
+- **Fixes a fresh install failing with "Invalid client id".** Before you had
+  linked anything, the app started as though an account were already linked
+  and every render failed against Home Assistant. Unset options were reaching
+  the service as the text `null` instead of as nothing, which also left the
+  **Link with Home Assistant** button refusing to start (it saw `null` as the
+  base URL) and put an `api_token` nobody knew in front of the endpoints
+  panels pull frames from. If you hit this, update and restart: no
+  configuration change is needed.
+
 ## 0.2.3
 
 - **Open Web UI now opens inside Home Assistant.** The button used to link to

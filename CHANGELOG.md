@@ -6,6 +6,30 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-09-15
+
+### Fixed
+
+- A freshly installed Home Assistant app failed every render with
+  `AuthError: Home Assistant rejected the token request (400): Invalid client
+  id`, before anything had been linked. `run.sh` read its optional options as
+  `bashio::config 'key' ''`, and bashio takes its own fallback as `${2:-null}`
+  — `:-` substitutes on an empty argument too, so an unset option came back as
+  the literal string `null` rather than an empty one. Nothing downstream
+  caught it: `null` is not empty, so it passed every `${VAR:-default}` in the
+  starter config and was stored as the value. `home_assistant.refresh_token`
+  and `home_assistant.client_id` both holding `"null"` look exactly like a
+  linked account to `build_token_source`
+  (`src/maverick/ha/auth.py`), so Maverick refreshed a credential it never
+  had and Home Assistant's IndieAuth validator rejected the client id
+  (`homeassistant/components/auth/indieauth.py`, `verify_client_id`). The same
+  string also reached `server.base_url`, where it is not an http(s) URL and so
+  blocked the *Link with Home Assistant* button that would have fixed it, and
+  `server.api_token`, where it gated the pull and trigger endpoints behind a
+  token nobody had been told. Optional options are now read through a
+  `config_or_empty` helper built on `bashio::config.has_value`, which treats
+  both `null` and the empty string as unset.
+
 ## [0.2.3] - 2026-09-15
 
 ### Fixed
