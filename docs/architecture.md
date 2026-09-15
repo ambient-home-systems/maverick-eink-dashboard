@@ -56,6 +56,22 @@ A frame's identity is the digest of its palette indices, not of the screenshot
 produces the same checksum — which is what makes the skip-unchanged path below
 worth anything. The ETag served to devices is that checksum, quoted.
 
+**One lint check has teeth.** `blank_render` fires when a single ink covers
+99.5 % of the frame (`LintThresholds.blank_ratio`), because in practice that
+means the dashboard did not load — an expired token, a wrong URL, a card that
+threw. It is an error rather than a warning, so with `block_on_lint_error` set
+`Engine.render` counts a skip and leaves the panel showing the last good frame
+rather than spending a refresh on a blank one. `force` overrides it for one
+render, and `block_on_lint_error: false` for good.
+
+*Verified:
+[`tests/test_blank_render_gate.py`](../tests/test_blank_render_gate.py) —
+`test_a_frame_at_the_threshold_is_an_error` and
+`test_a_frame_just_below_the_threshold_is_not` fix the ratio;
+`test_the_engine_skips_delivery_when_lint_fails` and
+`test_force_delivers_a_frame_the_gate_would_block` drive `Engine.render` with a
+stub renderer and a stub transport.*
+
 ## Rendering
 
 **One Chromium, one browser context per display, a fresh page per render.** The
@@ -167,6 +183,12 @@ genuinely available to serve, so the check is `transport.pushes or display_id in
 self.frames`: with an empty frame store the frame is delivered anyway, rather
 than leaving a sleeping panel fetching 404s. `force` bypasses the whole thing,
 and so does a lint error, which is checked first.
+
+*Verified: [`tests/test_skip_unchanged.py`](../tests/test_skip_unchanged.py) —
+`test_an_unchanged_frame_is_not_pushed_twice`,
+`test_an_unchanged_frame_is_still_published_for_a_pull_transport` and
+`test_a_pull_transport_skips_once_the_frame_is_servable`, one fake transport
+with `pushes` toggled.*
 
 ## Full refresh and ghosting
 
@@ -289,8 +311,12 @@ DPI does — and legibility on ink is governed by millimetres, not pixels.
 `round(3.2 mm in px) / 14`, so a card's own 13 px text lands at 2.97 mm @111 dpi,
 3.04 mm @124 dpi and 2.99 mm @300 dpi. That the zoom is applied exactly once,
 and composes with `render.zoom` rather than being replaced by it, is covered by
-[`tests/test_render_zoom.py`](../tests/test_render_zoom.py); the millimetre
-figures themselves are not yet asserted anywhere.*
+[`tests/test_render_zoom.py`](../tests/test_render_zoom.py).*
+
+*Verified:
+[`tests/test_physical_type_size.py`](../tests/test_physical_type_size.py) —
+`test_card_text_lands_at_the_measured_physical_size` parses the `zoom` out of
+the generated stylesheet and asserts each figure to ±0.05 mm.*
 
 ### Dithering
 
@@ -301,12 +327,22 @@ regions (text) fixes it.
 
 *In the code: `DitherMode.AUTO` and `_continuous_tone_mask` in `eink/dither.py`
 diffuse only where the source is locally busy and snap flat regions to the
-nearest ink; `dither_speckle` in `eink/lint.py` measures the result. No test
-asserts the speckle ratio yet.*
+nearest ink; `dither_speckle` in `eink/lint.py` measures the result.*
 
-Turning those last three notes into tests is
-[P4.2 in the documentation plan](documentation-plan.md#p42--make-the-verified-claims-reproducible),
-which is not yet merged.
+*Verified:
+[`tests/test_dither_preserves_text.py`](../tests/test_dither_preserves_text.py)
+— against a synthetic dashboard,
+`test_no_error_is_diffused_over_the_text` asserts the text quantises exactly as
+plain nearest-ink does, `test_the_gradient_is_dithered_into_a_mixed_pattern`
+that the gradient still gets both inks, and
+`test_text_alone_quantises_without_speckle` that a page of text comes out below
+a 0.001 speckle ratio — where
+`test_diffusing_everywhere_speckles_the_same_text` shows plain Floyd–Steinberg
+does not.*
+
+The last two findings are reproducible from the project code alone, and the
+tests named beside each one do that. The first two are not: both need a browser
+to fail in, and nothing in the suite stands in for one.
 
 ## Known limitations
 
