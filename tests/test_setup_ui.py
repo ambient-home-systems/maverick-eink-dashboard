@@ -374,6 +374,7 @@ def test_the_display_editor_only_calls_routes_this_app_serves(app: Application) 
         "/api/schema/display",
         "/api/displays/kitchen",
         "/api/displays/kitchen/preview.png",
+        "/api/displays/kitchen/screenshot.png",
         "/api/displays/preview",
     ):
         assert expected in targets, f"app.js no longer references {expected}"

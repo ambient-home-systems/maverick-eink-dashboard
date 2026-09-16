@@ -367,8 +367,15 @@ def create_app(application: Application) -> FastAPI:
             raise HTTPException(status_code=502, detail=outcome.reason or "render failed")
         buffer = BytesIO()
         outcome.frame.preview.save(buffer, format="PNG")
+        screenshot_buffer = BytesIO()
+        outcome.screenshot.save(screenshot_buffer, format="PNG")
         return {
             "preview_png": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            # The pre-quantisation capture, downscaled the same way
+            # `Engine.render` stores it (`fit_to_panel`, `src/maverick/eink/
+            # pipeline.py`), so the editor's preview can show source and
+            # result side by side.
+            "screenshot_png": base64.b64encode(screenshot_buffer.getvalue()).decode("ascii"),
             "width": outcome.frame.width,
             "height": outcome.frame.height,
             "lint": {
@@ -492,6 +499,29 @@ def create_app(application: Application) -> FastAPI:
             content=frame.preview_png,
             media_type="image/png",
             headers={"Cache-Control": "no-cache", "ETag": frame.etag},
+        )
+
+    @api.get("/api/displays/{display_id}/screenshot.png", dependencies=[auth])
+    async def screenshot(display_id: str) -> Response:
+        """The pre-quantisation capture, downscaled to panel resolution.
+
+        Lets the setup UI answer "did the dashboard render wrong, or did the
+        pipeline do this" without Samba or SSH access to `<data_dir>/frames/`.
+        Stored by `Engine.render` when `render.keep_screenshot` is set
+        (`src/maverick/config.py`), independent of the frame a transport
+        delivers, so it exists for every transport once a display has
+        rendered — not only for `http_pull`, the one transport that ever
+        calls `FrameStore.put` (`src/maverick/transports/pull.py`). 404
+        before the first render, and always when the flag is off.
+        """
+        _lookup(application, display_id)
+        data = application.engine.frames.get_screenshot(display_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="no screenshot rendered yet")
+        return Response(
+            content=data,
+            media_type="image/png",
+            headers={"Cache-Control": "no-cache"},
         )
 
     @api.get(

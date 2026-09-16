@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Config, DisplayConfig, ResolvedDisplay
-from .eink import Frame, FrameFormat, PipelineOptions, process
+from .eink import Frame, FrameFormat, PipelineOptions, fit_to_panel, process
 from .eink.dither import DitherMode
 from .eink.pipeline import FitMode
 from .ha import HomeAssistantClient, HomeAssistantError
@@ -76,6 +76,10 @@ class RenderOutcome:
     skipped: bool = False
     reason: str = ""
     frame: Frame | None = None
+    #: The pre-quantisation capture, downscaled to panel resolution
+    #: (`eink.fit_to_panel`), set whenever `render.keep_screenshot` is on.
+    #: Not a `Frame`: it never goes through tone, dither or the lint gate.
+    screenshot: Any = None
     delivery: DeliveryResult | None = None
     render_s: float = 0.0
     process_s: float = 0.0
@@ -144,6 +148,12 @@ class FrameStore:
     def __init__(self, directory: Path | None = None) -> None:
         self._frames: dict[str, StoredFrame] = {}
         self._pulled: dict[str, datetime] = {}
+        #: The kept screenshot's bytes, independent of `_frames`: only
+        #: `HttpPullTransport.deliver` (`src/maverick/transports/pull.py`) ever
+        #: calls `put`, so a push-type display never gets a `StoredFrame` — but
+        #: `Engine.render` stores its screenshot directly, so every display
+        #: gets one regardless of transport.
+        self._screenshots: dict[str, bytes] = {}
         self._directory = directory
 
     # ------------------------------------------------------------- memory --
@@ -194,13 +204,14 @@ class FrameStore:
 
     # --------------------------------------------------------------- disk --
 
-    def _paths(self, display_id: str) -> tuple[Path, Path, Path]:
+    def _paths(self, display_id: str) -> tuple[Path, Path, Path, Path]:
         assert self._directory is not None
         base = self._directory
         return (
             base / f"{display_id}.frame",
             base / f"{display_id}.preview.png",
             base / f"{display_id}.json",
+            base / f"{display_id}.screenshot.png",
         )
 
     def _persist(self, stored: StoredFrame) -> None:
@@ -208,7 +219,7 @@ class FrameStore:
             return
         try:
             self._directory.mkdir(parents=True, exist_ok=True)
-            frame_path, preview_path, meta_path = self._paths(stored.display_id)
+            frame_path, preview_path, meta_path, _ = self._paths(stored.display_id)
             # Write-then-rename so a device fetching mid-write never sees a
             # truncated frame.
             for path, payload in (
@@ -222,10 +233,35 @@ class FrameStore:
         except OSError as exc:
             log.warning("could not persist frame for %s: %s", stored.display_id, exc)
 
-    def remove(self, display_id: str) -> None:
-        """Forget a display's frame, in memory and on disk.
+    def put_screenshot(self, display_id: str, screenshot: Any) -> None:
+        """Store the kept screenshot (`render.keep_screenshot`), a PIL image.
 
-        The three files `_persist` writes are the display's alone, so a removed
+        Independent of `put`: called directly by `Engine.render` after the
+        pipeline runs, whatever the transport, rather than by a transport's
+        `deliver` the way `put` is.
+        """
+        buffer = BytesIO()
+        screenshot.save(buffer, format="PNG")
+        data = buffer.getvalue()
+        self._screenshots[display_id] = data
+        if self._directory is None:
+            return
+        try:
+            self._directory.mkdir(parents=True, exist_ok=True)
+            _, _, _, screenshot_path = self._paths(display_id)
+            temporary = screenshot_path.with_suffix(screenshot_path.suffix + ".tmp")
+            temporary.write_bytes(data)
+            temporary.replace(screenshot_path)
+        except OSError as exc:
+            log.warning("could not persist screenshot for %s: %s", display_id, exc)
+
+    def get_screenshot(self, display_id: str) -> bytes | None:
+        return self._screenshots.get(display_id)
+
+    def remove(self, display_id: str) -> None:
+        """Forget a display's frame and screenshot, in memory and on disk.
+
+        The four files `_paths` names are the display's alone, so a removed
         display leaves nothing behind for an id someone later reuses to inherit.
         An undeletable file is logged rather than raised: the display is gone
         from the running service either way, and failing the removal over a
@@ -233,6 +269,7 @@ class FrameStore:
         """
         self._frames.pop(display_id, None)
         self._pulled.pop(display_id, None)
+        self._screenshots.pop(display_id, None)
         if self._directory is None:
             return
         for path in self._paths(display_id):
@@ -242,24 +279,35 @@ class FrameStore:
                 log.warning("could not delete the stored frame %s: %s", path, exc)
 
     def load(self, display_ids: list[str]) -> int:
-        """Restore persisted frames at startup. Returns how many were found."""
+        """Restore persisted frames and screenshots at startup.
+
+        Returns how many frames were found; a display's screenshot is
+        restored alongside its frame when both exist, but is not part of that
+        count — it survives even a display whose frame was never `put`.
+        """
         if self._directory is None or not self._directory.exists():
             return 0
         restored = 0
         for display_id in display_ids:
-            frame_path, preview_path, meta_path = self._paths(display_id)
-            if not (frame_path.exists() and meta_path.exists()):
-                continue
-            try:
-                meta = json.loads(meta_path.read_text())
-                self._frames[display_id] = StoredFrame(
-                    payload=frame_path.read_bytes(),
-                    preview_png=preview_path.read_bytes() if preview_path.exists() else b"",
-                    **meta,
-                )
-                restored += 1
-            except Exception as exc:  # noqa: BLE001 - a bad cache must not be fatal
-                log.warning("ignoring unreadable stored frame for %s: %s", display_id, exc)
+            frame_path, preview_path, meta_path, screenshot_path = self._paths(display_id)
+            if frame_path.exists() and meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text())
+                    self._frames[display_id] = StoredFrame(
+                        payload=frame_path.read_bytes(),
+                        preview_png=preview_path.read_bytes() if preview_path.exists() else b"",
+                        **meta,
+                    )
+                    restored += 1
+                except Exception as exc:  # noqa: BLE001 - a bad cache must not be fatal
+                    log.warning("ignoring unreadable stored frame for %s: %s", display_id, exc)
+            if screenshot_path.exists():
+                try:
+                    self._screenshots[display_id] = screenshot_path.read_bytes()
+                except OSError as exc:
+                    log.warning(
+                        "could not restore the screenshot for %s: %s", display_id, exc
+                    )
         if restored:
             log.info("restored %d frame(s) from %s", restored, self._directory)
         return restored
@@ -590,8 +638,9 @@ class Engine:
 
             outcome.render_s = result.duration_s
 
+            pipeline_options = self._pipeline_options(display)
             process_started = time.perf_counter()
-            frame = process(result.image, self._pipeline_options(display))
+            frame = process(result.image, pipeline_options)
             outcome.process_s = time.perf_counter() - process_started
             outcome.frame = frame
 
@@ -603,6 +652,16 @@ class Engine:
 
             if display.config.render.debug_artifacts:
                 self._write_debug(display, result.image, frame)
+
+            if display.config.render.keep_screenshot:
+                outcome.screenshot = fit_to_panel(
+                    result.image,
+                    pipeline_options.width,
+                    pipeline_options.height,
+                    pipeline_options.rotation,
+                    pipeline_options.fit,
+                )
+                self.frames.put_screenshot(display_id, outcome.screenshot)
 
             # Lint gate: a frame that failed a hard check is not worth an e-ink
             # refresh, and on a battery panel a bad frame persists for hours.
@@ -709,7 +768,10 @@ class Engine:
 
         `render.debug_artifacts` is ignored here. It writes to
         `<data_dir>/debug/<id>/`, and a preview must not overwrite the artefacts
-        of the registered display it is a candidate for.
+        of the registered display it is a candidate for. `outcome.screenshot`
+        is set regardless of `render.keep_screenshot`, which only gates what
+        `render` persists to `FrameStore` — a value handed back on `outcome`
+        and never written to disk costs nothing to compute.
         """
         outcome = RenderOutcome(display_id=display.id, ok=False, trigger="preview")
         if self._renderer is None:
@@ -737,9 +799,19 @@ class Engine:
             await self._pool.drop_contexts_for(candidate_id)
 
         outcome.render_s = result.duration_s
+        pipeline_options = self._pipeline_options(resolved)
         process_started = time.perf_counter()
-        outcome.frame = process(result.image, self._pipeline_options(resolved))
+        outcome.frame = process(result.image, pipeline_options)
         outcome.process_s = time.perf_counter() - process_started
+        # Always computed for the response, regardless of `keep_screenshot`:
+        # nothing here is persisted, so there is no memory cost to weigh.
+        outcome.screenshot = fit_to_panel(
+            result.image,
+            pipeline_options.width,
+            pipeline_options.height,
+            pipeline_options.rotation,
+            pipeline_options.fit,
+        )
         outcome.ok = True
         outcome.reason = "preview only (nothing delivered)"
         outcome.total_s = time.perf_counter() - started

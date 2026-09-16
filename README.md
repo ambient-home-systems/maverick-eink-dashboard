@@ -445,6 +445,7 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | POST | `/api/render` | yes | Render every enabled display |
 | GET | `/api/displays/{id}/frame` | yes | The current frame, in the panel's wire format |
 | GET | `/api/displays/{id}/preview.png` | yes | The frame as a viewable PNG |
+| GET | `/api/displays/{id}/screenshot.png` | yes | The pre-quantisation capture, downscaled to panel resolution |
 | GET | `/api/displays/{id}/esphome.yaml` | yes | A ready-to-flash ESPHome config for this display |
 | GET | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | GET | `/api/display` | no | TRMNL frame pointer |

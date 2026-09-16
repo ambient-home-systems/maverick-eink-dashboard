@@ -356,6 +356,7 @@ async def test_remove_display_takes_everything_with_it(make_app, no_browser_stop
         "study.frame",
         "study.json",
         "study.preview.png",
+        "study.screenshot.png",
     ]
 
     await harness.app.remove_display("study")

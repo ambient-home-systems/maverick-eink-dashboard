@@ -598,6 +598,16 @@ class RenderConfig(Base):
             "report, under `<data_dir>/debug/<id>/`."
         ),
     )
+    keep_screenshot: bool = Field(
+        default=True,
+        description=(
+            "Keep the pre-quantisation screenshot, downscaled to the panel's resolution, so "
+            "the setup UI can show the source render next to the quantised frame — the "
+            "question `debug_artifacts` otherwise needs Samba or SSH to answer. Stored in "
+            "memory and under `<data_dir>/frames/<id>.screenshot.png`, one PNG at panel "
+            "resolution per display; turn it off to save that memory."
+        ),
+    )
 
     @field_validator("settle", "timeout")
     @classmethod
