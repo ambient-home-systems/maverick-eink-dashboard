@@ -10,7 +10,7 @@ by a person.
 | Page | What it is |
 | --- | --- |
 | [README](../README.md) | What Maverick is, what it does not do yet, install, configuration, transports, the HTTP API, running it under systemd. |
-| [Quick start](../README.md#quick-start) | Six steps from `maverick init` to a rendered PNG you can look at before any panel is involved. |
+| [Quick start](../README.md#quick-start) | Seven steps from `maverick init` to a rendered PNG you can look at before any panel is involved. |
 | [`config.example.yaml`](../config.example.yaml) | The commented worked example: two displays, one pulling on a timer with quiet hours, one BLE tag rendering on entity change. |
 | [Home Assistant app](../app/DOCS.md) | Installing from the app store on Home Assistant OS or Supervised: the options, what the app maps and exposes, the starter config it writes, and what to check when it does not start. |
 
@@ -52,8 +52,15 @@ hardware; each carries a banner and says what was verified.
 
 ## Design
 
+Maverick renders a dashboard you already have, and the one you already have was
+built for a phone. Making a dashboard for the panel is its own problem, and
+these are the two ways into it: the guide explains the mechanism, and
+`maverick dashboard <id>` hands you a layout sized for your panel to start
+from.
+
 | Page | What it is |
 | --- | --- |
+| [Building a dashboard for e-ink](guides/home-assistant.md#building-a-dashboard-for-e-ink) | The short version: the generator, and the three rules that decide everything else. Start here. |
 | [The e-ink design guide](design-guide.md) | How to build a dashboard that survives quantisation: contrast, type size in millimetres, what dithering does to a card, what to remove. |
 
 ## Project

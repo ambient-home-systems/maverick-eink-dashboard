@@ -182,11 +182,11 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(
             f"  {flag} {display.id:16s} {resolved.profile.name}\n"
             f"      {resolved.width}x{resolved.height} {resolved.color_scheme.value} "
-            f"{resolved.dpi}dpi rot{resolved.rotation} -> {display.transport.type}\n"
+            f"{resolved.dpi}dpi rot{resolved.rotation} -> {display.transport_type}\n"
             f"{what}"
         )
         try:
-            get_transport(display.transport.type, {})
+            get_transport(display.transport_type, {})
         except KeyError as exc:
             print(f"      ERROR: {exc}")
             problems += 1
@@ -259,6 +259,51 @@ def cmd_esphome(args: argparse.Namespace) -> int:
     config = _load(args)
     display = config.display(args.display).resolved()
     text = generate_esphome_config(display, config)
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"wrote {args.out}", file=sys.stderr)
+    else:
+        print(text)
+    return 0
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    """Print a Lovelace dashboard sized for one display's panel.
+
+    Reaches Home Assistant for the entity list so the result names entities
+    the user actually has, and falls back to placeholders when it cannot —
+    with `--offline` to skip the attempt entirely. Either way the layout is
+    the same, so the command is useful before a credential works.
+    """
+    import asyncio
+
+    from .ha import HomeAssistantClient
+    from .lovelace import generate_dashboard
+
+    config = _load(args)
+    display = config.display(args.display).resolved()
+
+    states = None
+    if not args.offline and config.home_assistant.has_credentials:
+        async def fetch() -> list | None:
+            client = HomeAssistantClient(config.home_assistant)
+            try:
+                return await client.list_states()
+            except Exception as exc:  # noqa: BLE001
+                # Not fatal: a dashboard with placeholders is still the right
+                # dashboard for this panel, and saying so beats failing.
+                print(
+                    f"Could not read entities from Home Assistant ({exc}); "
+                    "using placeholder entity ids.",
+                    file=sys.stderr,
+                )
+                return None
+            finally:
+                await client.close()
+
+        states = asyncio.run(fetch())
+
+    text = generate_dashboard(display, states)
     if args.out:
         Path(args.out).write_text(text)
         print(f"wrote {args.out}", file=sys.stderr)
@@ -386,6 +431,18 @@ def build_parser() -> argparse.ArgumentParser:
     esphome.add_argument("display")
     esphome.add_argument("-o", "--out")
     esphome.set_defaults(func=cmd_esphome)
+
+    dashboard = sub.add_parser(
+        "dashboard", help="generate a starter Lovelace dashboard for a display"
+    )
+    dashboard.add_argument("display")
+    dashboard.add_argument("-o", "--out")
+    dashboard.add_argument(
+        "--offline",
+        action="store_true",
+        help="do not ask Home Assistant for entities; use placeholders",
+    )
+    dashboard.set_defaults(func=cmd_dashboard)
 
     scan = sub.add_parser("scan", help="discover OpenDisplay BLE tags in range")
     scan.add_argument("--timeout", type=float, default=10.0)

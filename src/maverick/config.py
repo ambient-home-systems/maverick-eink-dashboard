@@ -731,11 +731,13 @@ class TransportConfig(Base):
 
     model_config = ConfigDict(extra="allow")
 
-    type: str = Field(
-        default="http_pull",
+    type: str | None = Field(
+        default=None,
         description=(
-            "Registry name of the transport that delivers the frame. Every other key in this "
-            "section is that transport's own option; see Transport options."
+            "Registry name of the transport that delivers the frame. Unset uses the panel's "
+            "own `default_transport` from the catalogue — a BLE shelf label delivers over "
+            "`opendisplay` and a Waveshare module over `http_pull` without being told. Every "
+            "other key in this section is that transport's own option; see Transport options."
         ),
     )
 
@@ -1020,6 +1022,23 @@ class DisplayConfig(Base):
         return get_panel(self.panel)
 
     @property
+    def transport_type(self) -> str:
+        """The transport that delivers this display's frames.
+
+        `transport.type` when it is set, and the panel's own
+        `default_transport` when it is not (`src/maverick/devices/panels.yaml`).
+        The catalogue has always carried the field — the point of naming a
+        panel is that you stop having to know how it is wired — but nothing
+        read it, so every display fell back to `http_pull` and a BLE shelf
+        label silently published frames nothing would ever fetch.
+
+        Read this rather than `transport.type` anywhere a transport is looked
+        up: the raw field is `None` for a display that named no transport, and
+        that is not a registry key.
+        """
+        return self.transport.type or self.profile.default_transport
+
+    @property
     def page_entries(self) -> list[PageConfig]:
         """The pages this display renders, shorthand included.
 
@@ -1077,9 +1096,10 @@ class DisplayConfig(Base):
             color_scheme=self.color_scheme or p.color_scheme,
             dpi=self.dpi or p.dpi,
             rotation=self.rotation if self.rotation is not None else p.native_rotation,
+            transport_type=self.transport_type,
             frame_format=self.frame_format
             or (FrameFormat(p.default_format) if p.default_format else None)
-            or _default_format_for(self.transport.type),
+            or _default_format_for(self.transport_type),
             full_refresh_every=self.schedule.full_refresh_every or p.full_refresh_every,
         )
 
@@ -1149,6 +1169,9 @@ class ResolvedDisplay(BaseModel):
     color_scheme: ColorScheme = Field(description="Ink capability to quantize to, after overrides.")
     dpi: int = Field(description="Pixels per inch, after overrides.")
     rotation: int = Field(description="Rotation in degrees, after overrides.")
+    transport_type: str = Field(
+        description="Registry name of the delivering transport, after the panel default.",
+    )
     frame_format: FrameFormat = Field(description="Wire format for the frame, after overrides.")
     full_refresh_every: int = Field(
         description="Frames between forced full refreshes, after overrides.",

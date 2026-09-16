@@ -46,6 +46,7 @@ own documentation.
 | `GET` | `/api/displays/{display_id}/preview.png` | **yes** | The current frame as a viewable PNG |
 | `GET` | `/api/displays/{display_id}/screenshot.png` | **yes** | The pre-quantisation capture, downscaled to panel resolution |
 | `GET` | `/api/displays/{display_id}/esphome.yaml` | **yes** | A ready-to-flash ESPHome configuration |
+| `GET` | `/api/displays/{display_id}/dashboard.yaml` | **yes** | A starter Lovelace dashboard sized for this panel |
 | `GET` | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | `GET` | `/api/display` | no | TRMNL per-fetch metadata |
 | `GET` | `/api/auth/status` | no | Which Home Assistant credential is in use |
@@ -773,6 +774,34 @@ set, the generated document embeds it as an `Authorization: Bearer` header
 `_require_token` dependency as the other authenticated `/api/displays/...`
 routes — otherwise an unauthenticated request to this route would hand back
 the very token that gates every other endpoint.
+
+### `GET /api/displays/{display_id}/dashboard.yaml`
+
+**Token required.** **200** `text/plain` containing a Lovelace dashboard
+configuration — a top-level `views:` list, which is what Home Assistant's raw
+configuration editor takes — built for this display's panel. **404** for an
+unknown display.
+
+The layout is sized from the panel's own pixels and dpi rather than chosen:
+`budget_for` (`src/maverick/eink/layout.py`) gives the column count and how
+many lines of body text the frame holds, and cards are added until that budget
+is spent. It is the same arithmetic the
+[design guide's column table](../design-guide.md#how-many-columns-fit) is
+printed from, so a 7.5-inch panel gets three columns and twenty-one lines and a
+2.9-inch shelf label gets one column and five.
+
+Which cards appear is decided the same way: only the ones the design guide
+finds bimodal — entity lists, markdown, a weather card, a to-do list — with
+gauges, filled sparklines and camera thumbnails excluded and the reason for
+each written into the file as a closing comment
+(`CARD_ADVICE`, `src/maverick/lovelace/generator.py`).
+
+The entity ids come from Home Assistant, through
+`HomeAssistantClient.list_states`. **A failure there is not an error**: the
+route answers 200 with placeholder ids and a note in the file saying they are
+placeholders. A user whose credential is broken has one problem already, and
+the layout — which is what this route is for — does not depend on the entity
+list.
 
 ## TRMNL (bring your own server)
 

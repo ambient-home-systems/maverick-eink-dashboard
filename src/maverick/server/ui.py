@@ -85,17 +85,66 @@ _MQTT_HELP = """<details class="chip">
     </div>
   </details>"""
 
-# The Add display dialog. Static markup for a fixed set of fields: it asks for
-# what a display cannot be created without and leaves the hundred-odd others to
-# the editor drawer, which generates a control per field from the schema
-# instead (`static/app.js`). This form's shape does not change, so it is
-# server-rendered like the rest of the shell and app.js only fills in what has
-# to come from `/api/panels`, `/api/transports` and `/api/schema/display`:
-# panel and transport options, and every `data-help` node's text, which is each
-# field's own `Field(description=...)` in `src/maverick/config.py` so the two
-# copies cannot drift apart. Working with no script is not a goal here, unlike
-# the rest of the page: there is nothing for the dialog to do without one.
-_ADD_DIALOG = """<dialog id="add-dialog" aria-labelledby="add-dialog-title">
+# The Add display dialog. Static markup for a fixed set of fields, and the one
+# place in the UI that decides how much a person has to know before a panel
+# works.
+#
+# What is above the Advanced fold is what a display genuinely cannot be
+# guessed: a name, which panel it is, and which dashboard to put on it. Every
+# other field here has a default that is right far more often than not, so it
+# lives under `<details>` rather than in front of someone adding their first
+# display:
+#
+# * **Transport** defaults to the panel's own `default_transport`
+#   (`src/maverick/devices/panels.yaml`), which is the whole point of naming a
+#   panel — a BLE shelf label is reached over BLE and a Waveshare module over
+#   HTTP, and neither is a decision the user has information to make. The
+#   picker's first option is that, spelled out, so it is visible without being
+#   a question.
+# * **Refresh** is one `<select>` of intervals, not the `every`/`cron` pair the
+#   model takes. Those two are mutually exclusive
+#   (`ScheduleConfig._exclusive`, `src/maverick/config.py`), so offering both
+#   as empty text boxes asked the user to know a crontab and to know which
+#   field wins. Cron is still there, under Advanced, described as what it is:
+#   the override for a schedule an interval cannot express.
+# * **Id** is derived from the name by `slugify` in `static/app.js` and only
+#   needs touching when the derived one is not wanted.
+#
+# This form's shape does not change, so it is server-rendered like the rest of
+# the shell and app.js only fills in what has to come from `/api/panels`,
+# `/api/transports` and `/api/schema/display`: panel and transport options, and
+# every `data-help` node's text, which is each field's own
+# `Field(description=...)` in `src/maverick/config.py` so the two copies cannot
+# drift apart. Working with no script is not a goal here, unlike the rest of
+# the page: there is nothing for the dialog to do without one.
+
+#: The Refresh picker's options: label -> what goes in `schedule.every`.
+#:
+#: `5m` is first and selected because it is what every shipped starter config
+#: uses (`src/maverick/config.example.yaml`, `app/rootfs/usr/share/maverick/
+#: maverick.yaml`), so the UI and the YAML a user may already have agree. The
+#: long end of the range matters more than it looks: an e-ink refresh is
+#: visible and, on a battery panel, expensive, so "once a day" is a real
+#: answer for a panel showing a calendar rather than a joke option.
+_REFRESH_CHOICES: tuple[tuple[str, str], ...] = (
+    ("5m", "Every 5 minutes"),
+    ("10m", "Every 10 minutes"),
+    ("15m", "Every 15 minutes"),
+    ("30m", "Every 30 minutes"),
+    ("1h", "Every hour"),
+    ("2h", "Every 2 hours"),
+    ("6h", "Every 6 hours"),
+    ("12h", "Every 12 hours"),
+    ("24h", "Once a day"),
+    ("", "Only when something asks for it"),
+)
+
+_REFRESH_OPTIONS = "\n          ".join(
+    f'<option value="{value}"{" selected" if value == "5m" else ""}>{label}</option>'
+    for value, label in _REFRESH_CHOICES
+)
+
+_ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
   <form id="add-form">
     <h2 id="add-dialog-title">Add display</h2>
     <p class="dialog-error" id="add-dialog-error" role="alert" hidden></p>
@@ -107,20 +156,12 @@ _ADD_DIALOG = """<dialog id="add-dialog" aria-labelledby="add-dialog-title">
     </div>
 
     <div class="field">
-      <label for="add-id">Id</label>
-      <input id="add-id" name="id" type="text" autocomplete="off" required
-             pattern="[a-z0-9][a-z0-9_\\-]*">
-      <!-- The rule DisplayConfig._slug enforces (src/maverick/config.py): -->
-      <div class="help">Lower-case, with <code>-</code> for spaces: letters,
-        digits, <code>-</code> or <code>_</code>, starting with a letter or
-        digit. It becomes a URL path segment and an MQTT topic level.</div>
-      <div class="field-error" data-error="id"></div>
-    </div>
-
-    <div class="field">
       <label for="add-panel">Panel</label>
       <select id="add-panel" name="panel" required></select>
       <div class="help" id="add-panel-notes" hidden></div>
+      <!-- What this panel settles on its own, so the Advanced fold reads as
+           somewhere to disagree rather than somewhere to go and finish. -->
+      <div class="help" id="add-panel-summary"></div>
       <div class="field-error" data-error="panel"></div>
     </div>
 
@@ -134,32 +175,63 @@ _ADD_DIALOG = """<dialog id="add-dialog" aria-labelledby="add-dialog-title">
            (`resolve_url`, src/maverick/render/dashboard.py). -->
       <datalist id="add-dashboard-list"></datalist>
       <div class="help" data-help="dashboard"></div>
+      <!-- The one prompt in the flow that says a dashboard for ink is its own
+           design problem. It points at the generated starter, which is the
+           part that works with no internet; the design guide behind it is the
+           long version. -->
+      <div class="help">Don't have one built for e-ink yet? Add the display,
+        then open <b>Dashboard starter</b> on its card for a layout sized to
+        this panel.</div>
       <div class="field-error" data-error="dashboard"></div>
     </div>
 
     <div class="field">
-      <label for="add-transport">Transport</label>
-      <select id="add-transport" name="transport" required></select>
-      <div class="help" id="add-transport-help"></div>
+      <label for="add-refresh">Refresh</label>
+      <select id="add-refresh" name="refresh">
+          {_REFRESH_OPTIONS}
+      </select>
+      <div class="help" id="add-refresh-help">How often to re-render. Every
+        refresh is visible on the panel and costs a battery one wake, so slower
+        is kinder than it sounds. Advanced has quiet hours, a crontab and
+        rendering on an entity change.</div>
+      <div class="field-error" data-error="schedule"></div>
     </div>
-    <div id="add-transport-options"></div>
-    <div class="field-error" data-error="transport"></div>
 
-    <fieldset class="field-group">
-      <legend>Schedule</legend>
+    <details class="field-group" id="add-advanced">
+      <summary>Advanced</summary>
+
       <div class="field">
-        <label for="add-every">Every</label>
-        <input id="add-every" name="every" type="text" placeholder="e.g. 15m"
-               autocomplete="off">
-        <div class="help" data-help="schedule.every"></div>
+        <label for="add-id">Id</label>
+        <!-- No `required` and no `pattern`: a constraint violation on a
+             control inside a closed `<details>` cannot be reported, because
+             the browser has nothing focusable to point at, and the submission
+             is blocked with nothing shown. `submitAddDisplay` checks the same
+             two rules in script and opens the fold to say so. -->
+        <input id="add-id" name="id" type="text" autocomplete="off">
+        <!-- The rule DisplayConfig._slug enforces (src/maverick/config.py): -->
+        <div class="help">Filled in from the name. Lower-case, with
+          <code>-</code> for spaces: letters, digits, <code>-</code> or
+          <code>_</code>, starting with a letter or digit. It becomes a URL
+          path segment and an MQTT topic level.</div>
+        <div class="field-error" data-error="id"></div>
       </div>
+
+      <div class="field">
+        <label for="add-transport">Transport</label>
+        <select id="add-transport" name="transport"></select>
+        <div class="help" id="add-transport-help"></div>
+      </div>
+      <div id="add-transport-options"></div>
+      <div class="field-error" data-error="transport"></div>
+
       <div class="field">
         <label for="add-cron">Cron</label>
-        <input id="add-cron" name="cron" type="text" placeholder="e.g. */15 * * * *"
+        <input id="add-cron" name="cron" type="text" placeholder="e.g. 0 6-22 * * *"
                autocomplete="off">
         <div class="help" data-help="schedule.cron"></div>
+        <div class="help">Set this and it replaces <b>Refresh</b> above: the two
+          are alternatives, not a pair.</div>
       </div>
-      <div class="field-error" data-error="schedule"></div>
       <div class="field">
         <label for="add-quiet-hours">Quiet hours</label>
         <input id="add-quiet-hours" name="quiet_hours" type="text"
@@ -172,15 +244,12 @@ _ADD_DIALOG = """<dialog id="add-dialog" aria-labelledby="add-dialog-title">
                placeholder="sensor.a, sensor.b" autocomplete="off">
         <div class="help" data-help="schedule.on_change"></div>
       </div>
-    </fieldset>
 
-    <div class="field checkbox">
-      <label><input id="add-enabled" name="enabled" type="checkbox" checked> Enabled</label>
-      <div class="help" data-help="enabled"></div>
-    </div>
+      <div class="field checkbox">
+        <label><input id="add-enabled" name="enabled" type="checkbox" checked> Enabled</label>
+        <div class="help" data-help="enabled"></div>
+      </div>
 
-    <details class="field-group">
-      <summary>Advanced</summary>
       <div class="field">
         <label for="add-width">Width</label>
         <input id="add-width" name="width" type="number" min="1" autocomplete="off">

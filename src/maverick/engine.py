@@ -556,7 +556,7 @@ class Engine:
         log.info(
             "[%s] registered (%s%s)",
             display.id,
-            display.transport.type,
+            display.transport_type,
             "" if display.enabled else ", disabled",
         )
 
@@ -611,7 +611,7 @@ class Engine:
                         exc,
                     )
                 raise
-        log.info("[%s] updated (%s)", display.id, display.transport.type)
+        log.info("[%s] updated (%s)", display.id, display.transport_type)
 
     def is_rendering(self, display_id: str) -> bool:
         """Whether a render for this display is in its locked section right now."""
@@ -630,7 +630,7 @@ class Engine:
         ever asked for that display directly.
         """
         if display.enabled:
-            transport = get_transport(display.transport.type, _transport_options(display))
+            transport = get_transport(display.transport_type, _transport_options(display))
             await transport.start()
             self._transports[display.id] = transport
         self._locks.setdefault(display.id, asyncio.Lock())
@@ -885,7 +885,7 @@ class Engine:
                 transport = self._transports.get(display_id)
                 if transport is None:
                     transport = get_transport(
-                        display.config.transport.type, _transport_options(display.config)
+                        display.config.transport_type, _transport_options(display.config)
                     )
                     await transport.start()
                     self._transports[display_id] = transport
@@ -1011,7 +1011,7 @@ class Engine:
     async def probe(self, display_id: str) -> DeliveryResult:
         display = self.config.display(display_id).resolved()
         transport = self._transports.get(display_id) or get_transport(
-            display.config.transport.type, _transport_options(display.config)
+            display.config.transport_type, _transport_options(display.config)
         )
         return await transport.probe(
             DeliveryContext(display=display, config=self.config, services=self.services())

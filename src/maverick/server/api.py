@@ -31,6 +31,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -283,7 +284,7 @@ def create_app(application: Application) -> FastAPI:
             "dpi": resolved.dpi,
             "rotation": resolved.rotation,
             "frame_format": resolved.frame_format.value,
-            "transport": display.transport.type,
+            "transport": display.transport_type,
             # Always present, `pages` or not: a display with none has exactly
             # one page — its `dashboard` — so a client counts pages rather than
             # asking which form the display was written in
@@ -624,6 +625,39 @@ def create_app(application: Application) -> FastAPI:
 
         display = _lookup(application, display_id)
         return generate_esphome_config(display.resolved(), application.config)
+
+    @api.get(
+        "/api/displays/{display_id}/dashboard.yaml",
+        response_class=PlainTextResponse,
+        dependencies=[auth],
+    )
+    async def starter_dashboard(display_id: str) -> str:
+        """A Lovelace dashboard sized for this display's panel.
+
+        The gap this fills is the one at the very start: Maverick renders a
+        dashboard you already have, and the dashboard you already have was
+        built for a phone. This hands back one built for *this* panel — the
+        column count and the line budget from its own px and dpi
+        (`src/maverick/eink/layout.py`), and only cards that survive
+        quantisation.
+
+        The entity list is fetched from Home Assistant so the result names
+        entities that exist. A failure there is not an error: the generator
+        falls back to placeholder ids and says so in the file, because a
+        layout with the wrong entity names is still the right layout, and a
+        503 here would be the second thing to go wrong for a user whose
+        credential is what went wrong first.
+        """
+        from ..lovelace import generate_dashboard
+
+        display = _lookup(application, display_id)
+        states = None
+        if application.engine.ha_ok and application.engine.ha is not None:
+            try:
+                states = await application.engine.ha.list_states()
+            except (ha_client.HomeAssistantError, httpx.HTTPError):
+                states = None
+        return generate_dashboard(display.resolved(), states)
 
     # ------------------------------------------------------- TRMNL (BYOS) --
 

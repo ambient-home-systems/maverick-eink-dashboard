@@ -6,6 +6,56 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A starter dashboard, generated for the panel.** Maverick renders a
+  dashboard you already have — and the one you already have was built for a
+  phone, which is the commonest reason a first render looks wrong. There was
+  no way out of that but to read a 1,100-line design guide the setup UI never
+  linked to. `maverick dashboard <id>`, `GET
+  /api/displays/{id}/dashboard.yaml` and a **Dashboard starter** disclosure on
+  each card now emit a complete Lovelace configuration sized for that panel:
+  the column count and the body-line budget come from its own pixels and dpi
+  through the new `maverick.eink.layout` (which `scripts/design_tables.py`
+  now imports too, so the design guide's column table and the generated
+  layout cannot disagree), and the cards are only the ones the design guide
+  finds bimodal. Entity ids come from Home Assistant through the new
+  `HomeAssistantClient.list_states`; with no connection the same layout comes
+  back with placeholders and a note in the file saying so. Every choice is a
+  comment in the output, including the cards it refused to use and why.
+
+### Changed
+
+- **A display no longer has to name a transport.** `PanelProfile.default_transport`
+  has described how each catalogued panel is actually reached since the
+  catalogue existed, and `docs/reference/panels.md` documented it as "the
+  transport a display uses if it sets none of its own" — but `TransportConfig.type`
+  defaulted to the literal `"http_pull"`, so a display was never *not* naming
+  one and a BLE shelf label published frames to an HTTP endpoint nothing would
+  fetch. `type` is now optional and resolves through the new
+  `DisplayConfig.transport_type`. Configs that name a transport are unaffected.
+- **The Add display form asks four questions instead of seventeen.** Name,
+  panel, dashboard and one Refresh picker; the id is derived from the name,
+  the transport from the panel, and everything else — cron, quiet hours,
+  `on_change`, the geometry overrides — is under Advanced. The `every`/`cron`
+  pair in particular asked the user to know a crontab *and* to know which of
+  two mutually exclusive fields wins; cron is now described as what it is, the
+  override for a schedule an interval cannot express.
+- **The setup UI points at the design guidance.** The Dashboard field says
+  where to get a layout built for ink, each card's Dashboard starter links the
+  design guide, and `docs/guides/home-assistant.md` has a "Building a
+  dashboard for e-ink" section with the three rules that decide everything
+  else.
+
+### Fixed
+
+- **The Add display dialog's panel and transport pickers were empty** once a
+  display's Edit drawer had been opened. Both are built from the same cached
+  form data, and `ensureAddDialogData` guarded on *that* rather than on
+  whether this dialog had been filled in, so opening an editor first satisfied
+  the guard and the dialog was never populated. Nothing failed and nothing was
+  logged; the pickers were simply empty for the rest of the page's life.
+
 ## [0.3.0] - 2026-09-16
 
 ### Added

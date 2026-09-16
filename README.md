@@ -159,7 +159,7 @@ Then install Chromium once, as above.
 ## Quick start
 
 Installed [as the Home Assistant app](#install-as-a-home-assistant-app)? Open
-its **Web UI** and use **Add display** — that is steps 1, 2 and 6 below done
+its **Web UI** and use **Add display** — that is steps 1, 2 and 7 below done
 for you, with a picker for the panel and the dashboard instead of YAML. The
 rest of this section is the standalone path: a config file and the CLI loop
 that goes with it, which is also how to iterate on a display's rendering
@@ -204,7 +204,24 @@ OK
 
 It exits non-zero and prints `N problem(s) found` if anything is wrong.
 
-**4. Render one frame, without sending it anywhere.**
+**4. Get a dashboard built for the panel.** Maverick renders a dashboard you
+already have — but the one you already have was built for a phone, and a phone
+dashboard on ink is the commonest reason a first render looks wrong. This
+prints a Lovelace configuration sized for that panel's pixels and dpi, using
+the cards that survive dithering and the entities you actually have:
+
+```bash
+maverick dashboard kitchen -o view.yaml
+```
+
+Paste it into Home Assistant under **Settings → Dashboards → Add dashboard**,
+then **Edit → ⋮ → Raw configuration editor**, and point the display's
+`dashboard` at the view path in it. Every choice it made is a comment in the
+file; [docs/design-guide.md](docs/design-guide.md) is the long version, and
+[the guide's short version](docs/guides/home-assistant.md#building-a-dashboard-for-e-ink)
+is three rules.
+
+**5. Render one frame, without sending it anywhere.**
 
 ```bash
 maverick render kitchen --no-deliver -o out/
@@ -220,14 +237,14 @@ maverick render kitchen --no-deliver -o out/
 they were produced against a stand-in for Home Assistant rather than a live
 instance. Your timings, version and lint findings will differ.)*
 
-**5. Look at the PNG.** `out/kitchen.png` is exactly what the panel will show,
+**6. Look at the PNG.** `out/kitchen.png` is exactly what the panel will show,
 at the panel's resolution and in its measured ink colours. This is the whole
 point of the `--no-deliver` loop: iterate here, not by walking to the panel.
 Run `maverick -v render kitchen --no-deliver -o out/` to see each lint
 finding's hint, and see [docs/design-guide.md](docs/design-guide.md) for what
 to change.
 
-**6. Run the service.**
+**7. Run the service.**
 
 ```bash
 maverick serve

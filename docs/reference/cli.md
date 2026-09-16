@@ -91,6 +91,19 @@ generate an ESPHome config for a display
 | --- | --- | --- |
 | `-o`, `--out` | *unset* |  |
 
+### `maverick dashboard`
+
+generate a starter Lovelace dashboard for a display
+
+| Argument | Description |
+| --- | --- |
+| `display` |  |
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-o`, `--out` | *unset* |  |
+| `--offline` | `false` | do not ask Home Assistant for entities; use placeholders |
+
 ### `maverick scan`
 
 discover OpenDisplay BLE tags in range

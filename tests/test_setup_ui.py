@@ -331,11 +331,78 @@ def test_the_page_contains_the_add_display_dialog(app: Application) -> None:
     assert 'id="add-display-btn"' in page, "no button to open it from the header"
     for field in (
         "add-name", "add-id", "add-panel", "add-dashboard", "add-transport",
-        "add-every", "add-cron", "add-quiet-hours", "add-on-change", "add-enabled",
+        "add-refresh", "add-cron", "add-quiet-hours", "add-on-change", "add-enabled",
         "add-width", "add-height", "add-color-scheme", "add-dpi", "add-rotation",
         "add-frame-format", "add-submit",
     ):
         assert f'id="{field}"' in page, f"the add-display dialog is missing #{field}"
+
+
+def test_only_three_fields_sit_above_the_advanced_fold(app: Application) -> None:
+    """What a person has to answer to add a display, pinned.
+
+    The complaint this form was rebuilt for was that it asked for things a
+    user has no way to decide — a transport, an interval *and* a crontab —
+    before it would do anything. The panel supplies the transport
+    (`DisplayConfig.transport_type`), the interval is a picker with a default,
+    and everything else moved under `<details id="add-advanced">`. This fails
+    if a field creeps back above it.
+    """
+    page = _page(app)
+    dialog = page[page.index('<dialog id="add-dialog"'):page.index("</dialog>")]
+    above, _, below = dialog.partition('<details class="field-group" id="add-advanced">')
+    assert below, "the Advanced fold is gone from the add-display dialog"
+
+    for field in ("add-name", "add-panel", "add-dashboard", "add-refresh"):
+        assert f'id="{field}"' in above, f"#{field} should be asked for up front"
+    for field in (
+        "add-id", "add-transport", "add-cron", "add-quiet-hours", "add-on-change",
+        "add-enabled", "add-width", "add-height", "add-color-scheme", "add-dpi",
+        "add-rotation", "add-frame-format",
+    ):
+        assert f'id="{field}"' in below, f"#{field} should be under Advanced"
+
+
+def test_nothing_under_the_fold_carries_a_browser_constraint(app: Application) -> None:
+    """`required` and `pattern` inside a closed `<details>` are a trap.
+
+    The browser refuses the submission and then cannot report why, because
+    there is no focusable control to point at, so the button appears dead.
+    Every check on a folded field is `submitAddDisplay`'s instead, which opens
+    the fold to show the message.
+    """
+    page = _page(app)
+    dialog = page[page.index('<dialog id="add-dialog"'):page.index("</dialog>")]
+    _, _, below = dialog.partition('<details class="field-group" id="add-advanced">')
+    # Comments out first: the markup explains this rule in a comment that
+    # names the very attributes being searched for.
+    markup = re.sub(r"<!--.*?-->", "", below, flags=re.S)
+    for attribute in ("required", "pattern="):
+        assert attribute not in markup, (
+            f"a folded field carries {attribute!r}; validate it in submitAddDisplay instead"
+        )
+
+
+def test_the_refresh_picker_offers_one_interval_and_a_default(app: Application) -> None:
+    """One field in minutes or hours, not `every` plus `cron` side by side.
+
+    The values are what goes into `schedule.every`, so each has to be
+    something `parse_duration` accepts (`src/maverick/config.py`), and the
+    selected one has to match the interval every shipped starter config uses.
+    """
+    from maverick.config import parse_duration
+    from maverick.server.ui import _REFRESH_CHOICES
+
+    page = _page(app)
+    assert 'value="5m" selected' in page, "the Refresh picker has no default"
+    for value, label in _REFRESH_CHOICES:
+        assert f'<option value="{value}"' in page, f"the Refresh picker lost {label!r}"
+        if value:
+            parse_duration(value)
+    # The empty option is "only when something asks for it" — a display driven
+    # by `on_change` or by hand, which is a real configuration
+    # (`src/maverick/config.example.yaml`, the `hallway-tag` display).
+    assert any(value == "" for value, _ in _REFRESH_CHOICES)
 
 
 def test_the_add_display_form_only_calls_routes_this_app_serves(app: Application) -> None:

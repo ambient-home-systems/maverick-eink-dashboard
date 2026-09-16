@@ -776,6 +776,46 @@
         }
       }
     },
+    "/api/displays/{display_id}/dashboard.yaml": {
+      "get": {
+        "summary": "Starter Dashboard",
+        "description": "A Lovelace dashboard sized for this display's panel.\n\nThe gap this fills is the one at the very start: Maverick renders a\ndashboard you already have, and the dashboard you already have was\nbuilt for a phone. This hands back one built for *this* panel \u2014 the\ncolumn count and the line budget from its own px and dpi\n(`src/maverick/eink/layout.py`), and only cards that survive\nquantisation.\n\nThe entity list is fetched from Home Assistant so the result names\nentities that exist. A failure there is not an error: the generator\nfalls back to placeholder ids and says so in the file, because a\nlayout with the wrong entity names is still the right layout, and a\n503 here would be the second thing to go wrong for a user whose\ncredential is what went wrong first.",
+        "operationId": "starter_dashboard_api_displays__display_id__dashboard_yaml_get",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/setup": {
       "get": {
         "summary": "Trmnl Setup",
@@ -1826,10 +1866,16 @@
       "TransportConfig": {
         "properties": {
           "type": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Type",
-            "description": "Registry name of the transport that delivers the frame. Every other key in this section is that transport's own option; see Transport options.",
-            "default": "http_pull"
+            "description": "Registry name of the transport that delivers the frame. Unset uses the panel's own `default_transport` from the catalogue \u2014 a BLE shelf label delivers over `opendisplay` and a Waveshare module over `http_pull` without being told. Every other key in this section is that transport's own option; see Transport options."
           }
         },
         "additionalProperties": true,

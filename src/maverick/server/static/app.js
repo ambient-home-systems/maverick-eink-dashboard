@@ -335,6 +335,25 @@ const CARD = `
     </table>
     <p class="history-empty muted" hidden>No renders yet.</p>
   </div>
+</details>
+<details class="starter">
+  <summary>Dashboard starter</summary>
+  <div class="starter-body">
+    <p class="meta starter-intro">A Lovelace dashboard sized for this panel:
+      the column count and how much text fits come from its own pixels and dpi,
+      and every card in it is one that survives dithering. Paste it into Home
+      Assistant under Settings &rarr; Dashboards &rarr; Add dashboard, then
+      Edit &rarr; &#8942; &rarr; Raw configuration editor.</p>
+    <div class="row">
+      <button type="button" class="starter-copy">Copy</button>
+      <a class="starter-download" download>Download</a>
+      <a class="starter-guide" target="_blank" rel="noopener"
+         href="https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/design-guide.md"
+      >Designing for e-ink</a>
+    </div>
+    <p class="meta err starter-error" hidden></p>
+    <pre class="starter-yaml" tabindex="0"></pre>
+  </div>
 </details>`;
 
 function cardFor(id) {
@@ -364,8 +383,77 @@ function cardFor(id) {
   card.querySelector('.history').addEventListener('toggle', (e) => {
     if (e.currentTarget.open) loadHistory(id, card);
   });
+  // Fetched once and kept: the generated dashboard depends on the panel and
+  // on the entity list, neither of which changes while the page is open, and
+  // re-fetching it under a user who is mid-copy would be worse than stale.
+  card.querySelector('.starter').addEventListener('toggle', (e) => {
+    if (e.currentTarget.open) loadStarter(id, card);
+  });
+  card.querySelector('.starter-copy').addEventListener('click', (e) => {
+    copyStarter(card, e.currentTarget);
+  });
   cards.set(id, card);
   return card;
+}
+
+/** `GET /api/displays/{id}/dashboard.yaml`, once per card.
+ *
+ *  The route answers with placeholder entity ids rather than failing when
+ *  Home Assistant cannot be read (`src/maverick/server/api.py`), so there is
+ *  no "not connected" case to handle here — only a real transport failure. */
+async function loadStarter(id, card) {
+  const box = card.querySelector('.starter-yaml');
+  if (box.dataset.loaded) return;
+  const error = card.querySelector('.starter-error');
+  error.hidden = true;
+  box.textContent = 'Generating…';
+  try {
+    const response = await authFetch(
+      `api/displays/${encodeURIComponent(id)}/dashboard.yaml`
+    );
+    box.textContent = await response.text();
+    box.dataset.loaded = '1';
+    // A blob rather than the route itself: an <a download> cannot send the
+    // Authorization header, and putting the token in the URL would leave it
+    // in the browser's download history.
+    const url = URL.createObjectURL(new Blob([box.textContent], { type: 'text/yaml' }));
+    const link = card.querySelector('.starter-download');
+    link.href = url;
+    link.setAttribute('download', `${id}-dashboard.yaml`);
+  } catch (e) {
+    box.textContent = '';
+    if (!e.unauthorised) {
+      error.textContent = 'Could not generate the dashboard: ' + e.message;
+      error.hidden = false;
+    }
+  }
+}
+
+/** Copy, with the selection as the fallback.
+ *
+ *  `navigator.clipboard` is unavailable on a plain-HTTP origin, which is
+ *  exactly how Maverick is reached on a LAN, so the button selects the text
+ *  instead and says so rather than appearing to do nothing. */
+async function copyStarter(card, button) {
+  const box = card.querySelector('.starter-yaml');
+  if (!box.textContent) return;
+  const done = (message) => {
+    const was = button.textContent;
+    button.textContent = message;
+    setTimeout(() => { button.textContent = was; }, 2000);
+  };
+  try {
+    await navigator.clipboard.writeText(box.textContent);
+    done('Copied');
+  } catch (e) {
+    const range = document.createRange();
+    range.selectNodeContents(box);
+    const selection = getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    box.focus();
+    done('Selected — press Ctrl+C');
+  }
 }
 
 function setViewMode(id, mode) {
@@ -747,11 +835,13 @@ function resetAddForm() {
   // either — the panel notes, the advanced placeholders, the transport's own
   // option fields — so a second open of a dialog left mid-edit would show
   // last time's transport fields under this time's selection.
-  if (formData) {
+  const advanced = document.getElementById('add-advanced');
+  if (advanced) advanced.open = false;
+  if (addDialogPopulated) {
     onPanelChange();
-    onTransportChange();
   } else {
     updatePanelNotes(null);
+    updatePanelSummary(null);
   }
 }
 
@@ -804,12 +894,22 @@ async function populateDashboardList(datalist) {
   }
 }
 
+/** Whether `populateAddDialog` has filled this dialog's selects yet.
+ *
+ *  Not `formData`, which is shared with the editor drawer: opening an editor
+ *  first caches it, and guarding on it here then skipped the one call that
+ *  puts options into *this* dialog's <select>s, leaving the panel and
+ *  transport pickers empty for the rest of the page's life. What this has to
+ *  track is whether the dialog itself has been populated. */
+let addDialogPopulated = false;
+
 async function ensureAddDialogData() {
   const submit = document.getElementById('add-submit');
-  if (formData) return;
+  if (addDialogPopulated) return;
   setBusy(submit, true);
   try {
     populateAddDialog(await ensureFormData());
+    addDialogPopulated = true;
   } catch (error) {
     if (!error.unauthorised) dialogError('add-dialog-error', 'Could not load the form: ' + error.message);
   } finally {
@@ -863,8 +963,17 @@ function populatePanelSelect(select, panels) {
   }
 }
 
-function populateTransportSelect(select, transports) {
+/** The Add dialog's transport picker, whose first option is "let the panel
+ *  decide" and is what a display gets by leaving `transport.type` out
+ *  (`DisplayConfig.transport_type`, `src/maverick/config.py`). Its label picks
+ *  up the selected panel's own default in `updatePanelSummary`, so the
+ *  automatic answer is legible rather than merely implied. */
+function populateTransportSelect(select, transports, autoLabel) {
   select.replaceChildren();
+  const auto = document.createElement('option');
+  auto.value = '';
+  auto.textContent = autoLabel || 'automatic (from panel)';
+  select.appendChild(auto);
   for (const t of transports) {
     const opt = document.createElement('option');
     opt.value = t.name;
@@ -906,7 +1015,30 @@ function currentPanel() {
 function onPanelChange() {
   const panel = currentPanel();
   updatePanelNotes(panel);
+  updatePanelSummary(panel);
   updateAdvancedPlaceholders(panel);
+  // The transport's own option fields belong to whichever transport is
+  // *effective*, and on `automatic` that is the panel's — so changing the
+  // panel changes them.
+  onTransportChange();
+}
+
+/** One line under the panel picker saying what this panel has settled without
+ *  being asked: its geometry, its inks and the transport it is reached over.
+ *  The Advanced fold below is then somewhere to disagree with a stated answer
+ *  rather than somewhere a user has to go and guess. */
+function updatePanelSummary(panel) {
+  const summary = document.getElementById('add-panel-summary');
+  if (!summary) return;
+  if (!panel) {
+    summary.textContent = '';
+    return;
+  }
+  summary.textContent =
+    `${panel.width}×${panel.height}, ${panel.color_scheme}, ${panel.dpi} dpi, ` +
+    `delivered over ${panel.default_transport}. Change any of it under Advanced.`;
+  const auto = document.querySelector('#add-transport option[value=""]');
+  if (auto) auto.textContent = `automatic — ${panel.default_transport} for this panel`;
 }
 
 function updatePanelNotes(panel) {
@@ -932,12 +1064,24 @@ function defaultOptionLabel(selectId, label) {
   if (option) option.textContent = label;
 }
 
+/** The transport this form would actually use: the picker's value, or the
+ *  selected panel's `default_transport` while the picker is on `automatic`.
+ *  Mirrors `DisplayConfig.transport_type` (`src/maverick/config.py`); the two
+ *  have to agree, because this is what draws the option fields the user then
+ *  fills in. */
+function effectiveTransport() {
+  const chosen = document.getElementById('add-transport').value;
+  if (chosen) return chosen;
+  const panel = currentPanel();
+  return panel ? panel.default_transport : '';
+}
+
 function onTransportChange() {
   const container = document.getElementById('add-transport-options');
   const help = document.getElementById('add-transport-help');
   container.replaceChildren();
   if (!formData) return;
-  const type = document.getElementById('add-transport').value;
+  const type = effectiveTransport();
   const info = formData.schema.transports[type];
   help.textContent = (info && info.description) || '';
   if (!info) return;
@@ -980,18 +1124,35 @@ function fieldError(name, message) {
   }
   el.textContent = message;
   el.hidden = !message;
+  // Most of the form is folded away now, and a message inside a closed
+  // `<details>` is a form that rejects a submission and appears to say
+  // nothing. Anything that failed is worth the fold opening for.
+  const advanced = document.getElementById('add-advanced');
+  if (message && advanced && advanced.contains(el)) advanced.open = true;
 }
 
 function buildAddBody() {
   const value = (id) => document.getElementById(id).value.trim();
   const schedule = {};
-  if (value('add-every')) schedule.every = value('add-every');
-  if (value('add-cron')) schedule.cron = value('add-cron');
+  // `every` and `cron` are mutually exclusive in the model
+  // (`ScheduleConfig._exclusive`, `src/maverick/config.py`), so the form sends
+  // one of them and never both: a crontab under Advanced is the considered
+  // answer and replaces the interval picker, which is what its help says.
+  if (value('add-cron')) {
+    schedule.cron = value('add-cron');
+  } else if (value('add-refresh')) {
+    schedule.every = value('add-refresh');
+  }
   if (value('add-quiet-hours')) schedule.quiet_hours = value('add-quiet-hours');
   const onChange = value('add-on-change').split(',').map((s) => s.trim()).filter(Boolean);
   if (onChange.length) schedule.on_change = onChange;
 
-  const transport = { type: value('add-transport') };
+  // No `type` at all when the picker is on `automatic`: an absent one is what
+  // makes the panel's own `default_transport` apply
+  // (`DisplayConfig.transport_type`). Sending the resolved name instead would
+  // pin the display to today's catalogue entry.
+  const transport = {};
+  if (value('add-transport')) transport.type = value('add-transport');
   for (const input of document.querySelectorAll('#add-transport-options [data-transport-key]')) {
     if (input.value.trim()) transport[input.dataset.transportKey] = input.value.trim();
   }
@@ -1064,6 +1225,22 @@ async function submitAddDisplay(event) {
   for (const el of document.querySelectorAll('#add-dialog .field-error')) {
     el.textContent = '';
     el.hidden = true;
+  }
+  // `id` carries no `required` attribute: it lives under the Advanced fold
+  // now, and the browser cannot report a constraint violation on a control it
+  // cannot focus — the submission would be blocked with nothing shown. It is
+  // derived from the name, so the only way to arrive here without one is an
+  // empty name.
+  const id = document.getElementById('add-id');
+  if (!id.value.trim()) {
+    fieldError('id', 'Give the display a name, or set an id here: it becomes the URL path.');
+    document.getElementById('add-name').focus();
+    return;
+  }
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(id.value.trim())) {
+    fieldError('id', 'Lower-case letters, digits, - or _, starting with a letter or digit.');
+    id.focus();
+    return;
   }
   setBusy(submit, true);
   try {
@@ -1990,6 +2167,19 @@ function onEditorPanelChange() {
   const panel = (formData ? formData.panels : []).find((p) => p.id === select.value) || null;
   const notes = editorDialog.querySelector('.panel-notes');
   if (notes) notes.textContent = (panel && panel.notes) || '';
+  // The transport is a panel-resolved value too while the picker is on
+  // `automatic`, so a new panel renames that option and redraws the option
+  // fields underneath it.
+  const transport = editorDialog.querySelector('#editor-transport-type');
+  if (transport) {
+    const auto = transport.querySelector('option[value=""]');
+    if (auto) auto.textContent = editorAutoTransportLabel();
+    if (!transport.value && formData) {
+      redrawTransportOptions(
+        formData, editorDialog.querySelector('.transport-options'), editorEffectiveTransport()
+      );
+    }
+  }
   for (const name of PANEL_RESOLVED) {
     const field = editorFields.find((entry) => entry.path === name);
     if (!field) continue;
@@ -2029,10 +2219,14 @@ function transportFields(schema, data) {
   label.textContent = 'type';
   const select = document.createElement('select');
   select.id = 'editor-transport-type';
-  populateTransportSelect(select, data.transports);
-  const current = String(editorTransport.type || 'http_pull');
+  populateTransportSelect(select, data.transports, editorAutoTransportLabel());
+  // `''`, not `'http_pull'`: a display that names no transport is delivered
+  // over its panel's own (`DisplayConfig.transport_type`,
+  // `src/maverick/config.py`), and defaulting this control to a literal would
+  // both misreport that and pin it to `http_pull` on the next save.
+  const current = String(editorTransport.type || '');
   select.value = current;
-  if (select.value !== current) {
+  if (current && select.value !== current) {
     const missing = document.createElement('option');
     missing.value = current;
     missing.textContent = `${current} — not a registered transport`;
@@ -2046,7 +2240,9 @@ function transportFields(schema, data) {
     // away would put the old value back.
     editorTransport = Object.assign(withoutShownKeys(), collectTransport());
     editorTransport.type = select.value;
-    redrawTransportOptions(data, editorDialog.querySelector('.transport-options'), select.value);
+    redrawTransportOptions(
+      data, editorDialog.querySelector('.transport-options'), editorEffectiveTransport()
+    );
     markDirty();
   });
   const help = document.createElement('div');
@@ -2060,8 +2256,35 @@ function transportFields(schema, data) {
   const options = document.createElement('div');
   options.className = 'transport-options';
   fields.push(options);
-  redrawTransportOptions(data, options, select.value);
+  redrawTransportOptions(data, options, editorEffectiveTransport());
   return fields;
+}
+
+/** The panel the drawer's panel picker is on, or the display's own before one
+ *  has been drawn. */
+function editorPanelProfile() {
+  const select = editorDialog && editorDialog.querySelector('#editor-panel');
+  const id = (select && select.value) || (editorSummary && editorSummary.panel);
+  return ((formData && formData.panels) || []).find((p) => p.id === id) || null;
+}
+
+/** What the drawer's `automatic` option resolves to, named. */
+function editorAutoTransportLabel() {
+  const panel = editorPanelProfile();
+  return panel
+    ? `automatic — ${panel.default_transport} for this panel`
+    : 'automatic (from panel)';
+}
+
+/** The transport this display would actually be delivered over, which is what
+ *  decides the option fields shown under the picker. Mirrors
+ *  `DisplayConfig.transport_type` (`src/maverick/config.py`). */
+function editorEffectiveTransport() {
+  const select = editorDialog && editorDialog.querySelector('#editor-transport-type');
+  const chosen = select ? select.value : (editorTransport.type || '');
+  if (chosen) return chosen;
+  const panel = editorPanelProfile();
+  return panel ? panel.default_transport : '';
 }
 
 function redrawTransportOptions(data, box, type) {
@@ -2139,7 +2362,10 @@ function withoutShownKeys() {
  *  typed under another transport out of the body. */
 function collectTransport() {
   const select = editorDialog.querySelector('#editor-transport-type');
-  const transport = { type: select ? select.value : editorTransport.type };
+  const chosen = select ? select.value : editorTransport.type;
+  // No key rather than `type: ""`: both resolve to the panel's default, but
+  // only an absent one leaves the saved config saying what the user meant.
+  const transport = chosen ? { type: chosen } : {};
   for (const input of editorDialog.querySelectorAll('.transport-options [data-transport-key]')) {
     const value = parseOption(input.value, editorTransport[input.dataset.transportKey]);
     if (value !== undefined) transport[input.dataset.transportKey] = value;

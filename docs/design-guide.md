@@ -6,6 +6,15 @@ This is the page the render linter sends you to. It explains what Maverick does
 to a Home Assistant dashboard before it reaches a panel, why each rule exists,
 and what to change when a lint finding says something is wrong.
 
+**There is a shortcut.** `maverick dashboard <display id>` — or **Dashboard
+starter** on a display's card in the setup UI — generates a Lovelace dashboard
+already sized for that panel, using only the cards this page finds safe, with
+the reasoning written into the file
+(`src/maverick/lovelace/generator.py`). It applies section
+[2](#2-legibility-is-millimetres), [7](#7-cards-and-layout) and
+[4](#4-colour-by-panel-class) for you. Read on when you want to know why it
+chose what it chose, or when you are building one by hand.
+
 Two things to know before the numbers start.
 
 **Every figure here comes from the code.** The tables are printed verbatim by
