@@ -113,6 +113,35 @@ def app_server(empty_config, legible_image, monkeypatch):
 
 
 @pytest.fixture
+def pull_display_config(tmp_path) -> Config:
+    """A display on `http_pull`, which is the only transport that stores a frame.
+
+    `FrameStore.put` is called by `HttpPullTransport.deliver` and by nothing
+    else (`src/maverick/engine.py`), so a push-transport display has no
+    `checksum` in `GET /api/displays` and its card never shows a preview at
+    all. Anything testing the preview therefore needs a pull display — which
+    is also what most people have, since it is the catalogue default.
+    """
+    return Config.model_validate(
+        {
+            "data_dir": str(tmp_path / "data"),
+            "server": {"base_url": "http://maverick.local:5000"},
+            "displays": [{"id": "kitchen", "name": "Kitchen", "panel": "waveshare-7in5-mono"}],
+        }
+    )
+
+
+@pytest.fixture
+def preview_server(pull_display_config, legible_image, monkeypatch):
+    server = _serve(pull_display_config, legible_image, monkeypatch)
+    base_url = server.start()
+    try:
+        yield base_url
+    finally:
+        server.stop()
+
+
+@pytest.fixture
 def populated_server(one_display_config, legible_image, monkeypatch):
     server = _serve(one_display_config, legible_image, monkeypatch)
     base_url = server.start()
@@ -269,3 +298,108 @@ async def test_the_dashboard_starter_generates_yaml_on_the_card(populated_server
             await expect(starter.locator(".starter-guide")).to_have_attribute(
                 "href", re.compile(r"design-guide\.md$")
             )
+
+
+async def test_the_add_dialog_has_exactly_one_scrollbar(app_server):
+    """A user reported "multiple scroll bars" on the Add display dialog.
+
+    A `<dialog>` is `overflow:auto` in the UA stylesheet, so with a
+    `max-height` it scrolls on its own; the form inside then took
+    `max-height:inherit`, which is the dialog's *border-box* height, leaving
+    it 2px taller than the content box holding it. Both scrolled, side by
+    side. Only the form should.
+    """
+    async with async_playwright() as playwright:
+        async with _page(playwright) as page:
+            await page.goto(app_server)
+            await page.click("#add-display-btn")
+            await page.wait_for_selector('#add-panel option', state="attached")
+            # Open the fold: the form is only tall enough to scroll with it.
+            await page.locator("#add-advanced summary").click()
+            await page.wait_for_timeout(200)
+
+            scroll = await page.evaluate(
+                """() => {
+                  const measure = (el) => ({
+                    overflowY: getComputedStyle(el).overflowY,
+                    scrollable: el.scrollHeight > el.clientHeight + 1,
+                  });
+                  return {
+                    dialog: measure(document.getElementById('add-dialog')),
+                    form: measure(document.getElementById('add-form')),
+                  };
+                }"""
+            )
+            assert scroll["form"]["scrollable"], "the form should be what scrolls"
+            assert not scroll["dialog"]["scrollable"], (
+                "the dialog is scrolling too, which is the second scrollbar"
+            )
+            assert scroll["dialog"]["overflowY"] == "hidden"
+
+
+async def test_the_full_size_view_shows_the_frame_at_panel_resolution(preview_server):
+    """A card is one column of a grid, so the thumbnail is well under half
+    size — fine for "did it render", useless for "is it legible", which is
+    the question this page exists for.
+
+    The check that matters is that the image is at its *natural* size rather
+    than scaled by the `.shot` rule's `width:100%`, and that it is not
+    smoothed: a browser interpolating a dithered two-ink frame invents greys
+    the panel cannot print.
+    """
+    async with async_playwright() as playwright:
+        async with _page(playwright) as page:
+            await page.goto(preview_server)
+            card = page.locator("section.card").filter(has_text="kitchen")
+            await card.wait_for(state="visible", timeout=10000)
+            await card.locator(".act-render").click()
+            await card.locator("img.shot:not([hidden])").wait_for(timeout=20000)
+
+            thumbnail = await page.evaluate(
+                """() => {
+                  const img = document.querySelector('section.card img.shot');
+                  const r = img.getBoundingClientRect();
+                  return { natural: img.naturalWidth, rendered: r.width };
+                }"""
+            )
+            # The thumbnail really is scaled down — that is the whole reason
+            # the full-size view exists — and it keeps the frame's aspect, so
+            # nothing is cropped by the card.
+            assert thumbnail["rendered"] < thumbnail["natural"]
+
+            await card.locator(".view-full").click()
+            await page.wait_for_selector("dialog#fullsize[open]", timeout=5000)
+            full = await page.evaluate(
+                """() => {
+                  const img = document.querySelector('.full-img');
+                  const r = img.getBoundingClientRect();
+                  return {
+                    natural: [img.naturalWidth, img.naturalHeight],
+                    rendered: [Math.round(r.width), Math.round(r.height)],
+                    rendering: getComputedStyle(img).imageRendering,
+                  };
+                }"""
+            )
+            assert full["rendered"] == full["natural"], "the full-size view is not 1:1"
+            assert full["rendering"] == "pixelated"
+            # It says which panel, so the pixel size on screen means something.
+            await expect(page.locator(".full-meta")).to_contain_text("800×480")
+
+            # Escape closes it, like every other dialog on the page.
+            await page.keyboard.press("Escape")
+            await expect(page.locator("dialog#fullsize")).not_to_have_attribute("open", "")
+
+
+async def test_the_thumbnail_itself_opens_the_full_size_view(preview_server):
+    """Clicking the picture is the obvious gesture, so it does what the
+    button does rather than being inert."""
+    async with async_playwright() as playwright:
+        async with _page(playwright) as page:
+            await page.goto(preview_server)
+            card = page.locator("section.card").filter(has_text="kitchen")
+            await card.wait_for(state="visible", timeout=10000)
+            await card.locator(".act-render").click()
+            await card.locator("img.shot:not([hidden])").wait_for(timeout=20000)
+
+            await card.locator("img.shot").click()
+            await page.wait_for_selector("dialog#fullsize[open]", timeout=5000)

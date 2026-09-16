@@ -67,6 +67,32 @@ main{padding:24px;display:grid;gap:20px;
 /* [hidden] loses to display:block, so it has to be restated — the card ships
    with both the image and the placeholder and hides one of them. */
 .shot[hidden]{display:none}
+.shot.is-clickable{cursor:zoom-in}
+
+/* The full-size view. The card's thumbnail answers "did it render"; this
+   answers "is it legible", which is the question the page exists for. */
+dialog#fullsize{border:1px solid var(--line);border-radius:10px;padding:0;
+      max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);overflow:hidden;
+      background:var(--card);color:var(--fg)}
+dialog#fullsize[open]{display:flex;flex-direction:column}
+dialog#fullsize::backdrop{background:rgba(0,0,0,.6)}
+.full-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+      padding:10px 14px;border-bottom:1px solid var(--line)}
+.full-title{font-weight:600}
+.full-meta{color:var(--muted);font-size:12.5px}
+.full-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.full-actions a{font-size:12.5px}
+.full-body{overflow:auto;min-height:0;background:#e9e7e0;display:flex}
+/* 1:1 by default — `width:auto` beats the `.shot` rule's `width:100%`, which
+   would otherwise scale it right back down. `pixelated` because a browser
+   smoothing a dithered two-ink frame invents greys the panel cannot print,
+   which is exactly what someone inspecting a dither must not be shown. */
+.full-img{display:block;margin:auto;width:auto;height:auto;
+      image-rendering:pixelated}
+/* The escape hatch for a frame larger than the window — a 1872×1404 panel on a
+   laptop — reached by the Fit to window toggle rather than applied silently. */
+dialog#fullsize.is-fit .full-body{display:block}
+dialog#fullsize.is-fit .full-img{width:100%;height:auto;image-rendering:auto}
 .shot-empty{padding:40px;text-align:center;color:#888}
 /* Source/Frame, over the card's image. Shared sizing with `.compare-modes`
    in the editor's preview pane, which offers the same toggle. */
@@ -134,6 +160,11 @@ button[aria-busy=true]{cursor:progress}
 code{font:12px ui-monospace,monospace;background:var(--bg);padding:1px 5px;
      border-radius:4px;border:1px solid var(--line)}
 a{color:inherit}
+/* The header's documentation links. `gap` rather than separators so they
+   wrap as a group on a narrow window instead of leaving an orphan bullet. */
+.doclinks{display:flex;gap:14px;flex-wrap:wrap}
+.doclinks a{text-decoration:none;border-bottom:1px solid var(--line)}
+.doclinks a:hover{border-bottom-color:var(--muted)}
 .tokenbox{display:flex;gap:6px;align-items:center;font-size:13px}
 /* [hidden] loses to display:flex, so it has to be restated. */
 .tokenbox[hidden]{display:none}
@@ -155,13 +186,24 @@ a{color:inherit}
       background:var(--fg);color:var(--bg);cursor:pointer;transition:opacity .15s}
 .add-btn:hover{opacity:.85}
 
+/* `overflow:hidden` on the dialog is what keeps this to ONE scrollbar. A
+   <dialog> is `overflow:auto` in the UA stylesheet, so with a `max-height` it
+   scrolls too — and the form inside used to take `max-height:inherit`, which
+   is the dialog's *border-box* height. Two 1px borders later the form was 2px
+   taller than the box holding it, so the dialog grew its own scrollbar beside
+   the form's: measured at scrollHeight 680 against clientHeight 678. Making
+   the dialog a flex column and giving the form `flex:1;min-height:0` sizes the
+   form to the space that actually exists, so only it scrolls. */
 dialog#add-dialog{border:1px solid var(--line);border-radius:10px;padding:0;
       width:min(480px,calc(100vw - 32px));max-height:min(680px,calc(100vh - 48px));
-      background:var(--card);color:var(--fg)}
+      overflow:hidden;background:var(--card);color:var(--fg)}
+dialog#add-dialog[open]{display:flex;flex-direction:column}
 dialog#add-dialog::backdrop{background:rgba(0,0,0,.45)}
 /* [hidden] loses to display:block for a non-<dialog> element, but a closed
-   <dialog> is display:none by the UA stylesheet already — nothing to restate. */
-dialog#add-dialog form{display:flex;flex-direction:column;max-height:inherit;
+   <dialog> is display:none by the UA stylesheet already — nothing to restate.
+   `display:flex` above is scoped to [open] for that reason: unscoped, it would
+   beat the UA rule and leave the dialog on screen while closed. */
+dialog#add-dialog form{display:flex;flex-direction:column;flex:1;min-height:0;
       overflow-y:auto;padding:20px}
 dialog#add-dialog h2{margin:0 0 14px;font-size:17px}
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}

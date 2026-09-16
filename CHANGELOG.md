@@ -6,6 +6,34 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The header links the documentation.** It offered `api/docs` and nothing
+  else — the OpenAPI page, which is the right answer for someone writing a
+  client and no answer at all for someone asking how to build a dashboard for
+  ink. The design guide, the docs index and the troubleshooting catalogue are
+  named there now, and `tests/test_setup_ui.py` resolves each URL against the
+  working tree so a renamed page cannot leave the UI pointing at a 404 —
+  `scripts/check_links.py` checks relative Markdown links and never sees these.
+- **A full-size view for the frame.** A card is one column of a responsive
+  grid, so an 800×480 frame is shown at well under half size and a 1872×1404
+  one at a fifth: enough to answer "did it render", useless for "is it
+  legible", which is what the page is for. **Full size** beside Source/Frame —
+  or clicking the thumbnail — opens the frame at the panel's own pixel size
+  with `image-rendering: pixelated`, because a browser interpolating a
+  dithered two-ink frame invents greys the panel cannot print. *Fit to window*
+  is there for a frame larger than the screen, and *Open PNG* for a closer
+  look still.
+
+### Fixed
+
+- **The Add display dialog had two scrollbars.** A `<dialog>` is
+  `overflow:auto` in the UA stylesheet, so with a `max-height` it scrolls on
+  its own, and the form inside took `max-height:inherit` — the dialog's
+  *border-box* height — leaving it 2px taller than the content box holding it.
+  Both scrolled, side by side. The dialog is now a flex column that does not
+  scroll, and the form is sized to the space that exists.
+
 ## [0.4.0] - 2026-09-16
 
 ### Added
