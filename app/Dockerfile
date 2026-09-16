@@ -18,17 +18,16 @@ FROM ${BUILD_FROM}
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
 #
-# b85defa is the 0.4.1 release commit (PR #66's merge into main).
-#
-# Deliberately NOT v0.4.1, for the same reason 0.3.0 and 0.4.0 were not tags:
-# pushing one to origin is refused from these sessions — `git push origin
-# v0.4.1` disconnects mid-send-pack while a branch push on the same credential
+# be6d569 is the 0.5.0 release commit (PR #70's merge into main).
+# Deliberately NOT v0.5.0, for the same reason 0.3.0, 0.4.0 and 0.4.1 were not
+# tags: pushing one to origin is refused from these sessions — `git push origin
+# v0.5.0` disconnects mid-send-pack while a branch push on the same credential
 # succeeds, and the remote still carries no tag past v0.2.7 — so this names the
 # release commit's own SHA instead, per CONTRIBUTING.md's documented fallback.
-# It installs the same tree. Repointing it at v0.4.1 once someone with
+# It installs the same tree. Repointing it at v0.5.0 once someone with
 # tag-push rights creates that tag is a one-line change with no behavioural
 # difference.
-ARG MAVERICK_REF=b85defa27e3e55ba346582c0b4e494b56d795659
+ARG MAVERICK_REF=be6d569728e771e297e29c260ab8661c3fd86a75
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
