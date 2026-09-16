@@ -146,15 +146,24 @@ jobs:
                 [display.id for display in config.displays])
           EOF
 
-      # The reproduction the 0.2.x cycle did not have. Until 0.2.7 the options
-      # only became configuration inside a Supervisor, through bashio, so every
-      # fix to that translation was tested by releasing it. The service reads
-      # /data/options.json itself now (src/maverick/ha/options.py), which a
-      # container can do: an options file, a SUPERVISOR_TOKEN so the app path is
-      # taken at all, and nothing whatsoever in the environment. No Supervisor
-      # answers here, which is the point of the last two assertions — an
-      # unreachable one has to leave base_url on the option and MQTT off rather
-      # than fail the start.
+      # The reproduction the 0.2.x cycle did not have. Until now the options only
+      # became configuration inside a Supervisor, through bashio, so every fix to
+      # that translation was tested by releasing it. The service reads
+      # /data/options.json itself (src/maverick/ha/options.py), which a container
+      # can do: an options file, a SUPERVISOR_TOKEN so the app path is taken at
+      # all, and nothing whatsoever in the environment.
+      #
+      # This one runs *this commit's* package, mounted over the one the image
+      # installed — the mirror of the step above, which deliberately uses the
+      # package from MAVERICK_REF. The ref only moves at a release
+      # (CONTRIBUTING.md), so between the change and the release it names a
+      # commit that knows nothing of these options; the assertion on
+      # maverick.__file__ is what stops this silently testing that one instead.
+      # The image still supplies the interpreter and every dependency.
+      #
+      # No Supervisor answers here, which is the point of the last two
+      # assertions: an unreachable one has to leave base_url on the option and
+      # MQTT off rather than fail the start.
       - name: The app's options become the configuration in the image
         run: |
           mkdir -p "${RUNNER_TEMP}/options"
@@ -171,8 +180,15 @@ jobs:
           EOF
           docker run --rm -i \
             --volume "${RUNNER_TEMP}/options:/data:ro" \
+            --volume "${GITHUB_WORKSPACE}/src:/src:ro" \
+            --env PYTHONPATH=/src \
+            --env PYTHONDONTWRITEBYTECODE=1 \
             --env SUPERVISOR_TOKEN=not-a-real-token \
             --entrypoint python maverick-app:ci - <<'EOF'
+          import maverick
+
+          assert maverick.__file__.startswith("/src/"), maverick.__file__
+
           # _load is the function run.sh reaches through `maverick ... serve`,
           # and the only step between the Configuration tab and a loaded config.
           from maverick.cli import _load, build_parser
