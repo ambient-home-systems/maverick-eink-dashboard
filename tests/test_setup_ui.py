@@ -321,6 +321,61 @@ def test_mqtt_off_says_what_turning_it_on_would_give(app: Application) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# The documentation links
+# --------------------------------------------------------------------------- #
+
+def test_the_header_links_the_written_documentation(app: Application) -> None:
+    """The header used to offer `api/docs` and nothing else.
+
+    That is the OpenAPI page — the right answer for someone writing a client,
+    and no answer at all for someone asking how to build a dashboard that
+    survives being printed in two inks, which is the question this project
+    exists around. A user reported not being able to find any of it.
+    """
+    page = _page(app)
+    header = page[page.index("<header>"):page.index("</header>")]
+    for label in ("Design guide", "Docs", "Troubleshooting"):
+        assert f">{label}</a>" in header, f"the header does not link {label}"
+    # The OpenAPI page stays, it is just no longer the only thing here.
+    assert 'href="api/docs"' in header
+
+
+def test_every_header_doc_link_names_a_file_that_exists() -> None:
+    """A link into the repository is a claim about a path.
+
+    These are absolute GitHub URLs, so nothing offline can follow them and
+    `scripts/check_links.py` — which checks relative Markdown links — never
+    sees them. Renaming a page would leave the UI pointing at a 404 with
+    nothing to catch it, so the paths are resolved against the working tree
+    here instead.
+    """
+    from maverick.server import ui
+
+    root = Path(__file__).resolve().parent.parent
+    prefix = f"{ui._REPO}/blob/main/"
+    for url in (ui._DOCS_URL, ui._DESIGN_GUIDE_URL, ui._TROUBLESHOOTING_URL):
+        assert url.startswith(prefix), f"{url} is not a blob URL on main"
+        target = root / url[len(prefix):]
+        assert target.is_file(), f"the header links {url}, which is not a file in this repo"
+
+
+def test_the_doc_links_open_away_from_the_page(app: Application) -> None:
+    """`target=_blank` with `rel=noopener`.
+
+    Under Home Assistant's ingress the UI is an embedded frame, so a
+    same-frame navigation to GitHub would replace the setup UI inside Home
+    Assistant's own chrome with no way back to it but the browser's history.
+    """
+    page = _page(app)
+    header = page[page.index("<header>"):page.index("</header>")]
+    external = re.findall(r"<a [^>]*href=\"https://[^\"]+\"[^>]*>", header)
+    assert external, "no external links in the header"
+    for tag in external:
+        assert 'target="_blank"' in tag, f"{tag} would navigate the ingress frame away"
+        assert 'rel="noopener"' in tag, f"{tag} is missing rel=noopener"
+
+
+# --------------------------------------------------------------------------- #
 # The Add display form
 # --------------------------------------------------------------------------- #
 
