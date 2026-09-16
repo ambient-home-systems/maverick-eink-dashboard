@@ -27,7 +27,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from "rendering" to "ok". `tests/browser/conftest.py` skips the whole
   directory, rather than failing it, when no Chromium is reachable — the same
   rule `BrowserPool` uses. CI gains a `browser` job that installs Chromium and
-  runs it for real.
+  runs it for real. (#56)
 - **A standalone Docker image, and a local dev loop against a real Home
   Assistant.** The root [`Dockerfile`](Dockerfile) is modelled on
   `app/Dockerfile` — Debian bookworm, a venv, Debian's `chromium` package, the
@@ -43,7 +43,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`up`, `down`, `logs`, `render <id>`, `check`). CI gains an `image` job that
   builds the root image on pull requests (amd64) and runs the same smoke
   commands the `app` job runs. See "Docker" in README.md and "Running against
-  a real Home Assistant" in CONTRIBUTING.md.
+  a real Home Assistant" in CONTRIBUTING.md. (#55)
 - **Several dashboards per display, with rotation.** A display rendered the one
   dashboard named in its config, and `DisplayConfig` is `extra="forbid"`, so
   the `pages:` syntax `docs/roadmap.md` proposed was rejected at load. It is
@@ -69,6 +69,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a Pages section in the editor drawer for adding, removing and
   reordering. The display summary gains `page` (index, name, dashboard, count,
   names and `rotate`), and the MQTT state topic gains `page` and `page_index`.
+  (#58)
 - **Render history per display.** `DisplayState` (`src/maverick/engine.py`)
   keeps only the *last* error and a failure count, both cleared by the next
   success, so a panel that fails one render in ten had no trace of it
@@ -83,7 +84,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each card in the setup UI gains a History disclosure — a compact table of
   time, trigger, outcome and duration, with failed and blocked renders
   highlighted and their reason shown on expand — that loads when opened and
-  refreshes with the poll while open.
+  refreshes with the poll while open. (#54)
 - **The pre-quantisation screenshot next to the quantised frame.** Answering
   "did the dashboard render wrong, or did the pipeline do this" used to mean
   Samba or SSH: `render.debug_artifacts` wrote the raw capture to
@@ -101,7 +102,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   returns it too, as `screenshot_png`, so the editor's dry-run preview can
   show source and result together. The setup UI's cards and the editor's
   preview pane both gain a Source/Frame toggle over the image, defaulting to
-  Frame.
+  Frame. (#53)
 - **A Dashboard picker, fed from Home Assistant.** `HomeAssistantClient` gains
   `list_dashboards()` (`src/maverick/ha/client.py`), built on a new private
   `_ws_call`, factored out of `watch_states`, for a one-shot WebSocket command
@@ -115,7 +116,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   field now offer a `<datalist>` built from it, labelled with each dashboard
   and view's title; free text — an absolute URL or a `file://` page — is
   still accepted, and the picker fails quietly to a plain text field when the
-  endpoint is unavailable.
+  endpoint is unavailable. (#52)
 - **A display can now be added, changed or removed while the service runs.**
   Every per-display resource was built in a start-up loop — the engine's
   transport, lock and state entry (`Engine.start`), the scheduler's job and the
@@ -134,17 +135,17 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeps the state entry and the stored frame, because `frames_since_full`
   describes the panel rather than the config and a pull device that wakes before
   the next render still needs something to fetch; a removal deletes both
-  (`FrameStore.remove`). Nothing reaches this over HTTP yet — that is the next
-  change.
+  (`FrameStore.remove`). Nothing reached this over HTTP yet — the entries below
+  are what did. (#47)
 - **`Engine.render_candidate` renders a display config without keeping
   anything** (`src/maverick/engine.py`): it renders a config that need not be
   registered, runs the pipeline and the linter, reports the findings instead of
   gating on them, and delivers nothing. No state entry, no stored frame, no
   write to `state.json`, and the browser context it rendered through is dropped
-  again on the way out. This is what a Preview button will call.
+  again on the way out. This is what the Preview button calls. (#47)
 - **`Engine.is_rendering(display_id)`** says whether a display is inside the
   locked section of `Engine.render` right now, so the API and the setup UI can
-  report a render in progress rather than inferring it from a timestamp.
+  report a render in progress rather than inferring it from a timestamp. (#47)
 - **Displays are now kept in a file Maverick owns**, `<data_dir>/displays.yaml`
   by default and `displays_file` wherever else you want it
   (`src/maverick/store.py`). Until now a display existed only in the config
@@ -160,7 +161,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   memory — the store belongs to loading a file, not to the model — and a store
   that cannot be written is logged and survived, because a panel on the wall
   cares about the render, not about where the display was written down.
-  `maverick check` prints which of the two files the displays came from.
+  `maverick check` prints which of the two files the displays came from. (#46)
 - **A display can now be created, replaced, deleted and previewed over HTTP,**
   and its schedule paused at runtime, closing the gap the previous two entries
   left: `Application.add_display`, `update_display`, `remove_display` and
@@ -186,7 +187,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing called before this) and `last_render_s`/`last_total_s`, two new
   `DisplayState` fields (`src/maverick/engine.py`) that persist the last
   render's durations and are now published in the MQTT state payload
-  alongside `render_duration` too.
+  alongside `render_duration` too. (#48)
 - **The setup UI keeps itself up to date, and its buttons no longer reload the
   page.** It had no polling and no push, so a scheduled render in the
   background was invisible until someone pressed reload, and *Refresh* waited
@@ -205,14 +206,14 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   flag, so a slow dashboard no longer holds the click open for the whole render
   timeout; a *Pause*/*Resume* control drives
   `POST /api/displays/{id}/schedule`, and a disabled display offers *Enable*.
-  The preview image is re-fetched only when the frame's checksum changes.
+  The preview image is re-fetched only when the frame's checksum changes. (#49)
 - **`GET /api/displays` now carries each display's own configuration** under
   `config`, in the shortest form that loads back as it (`dump_display`,
   `src/maverick/store.py`) — the same form the display store writes. Every
   other key in the summary is a resolved value or live state, so nothing over
   HTTP described a display the way `PUT` wants it back, and a client could only
   flip `enabled` by reconstructing the rest and losing whatever it did not know
-  about. The setup UI's *Enable* action is the first caller.
+  about. The setup UI's *Enable* action is the first caller. (#49)
 - **"MQTT off" in the header now says what turning it on would give, and how.**
   It was a fact with nothing to act on, while "Home Assistant not connected"
   got a whole card. The chip opens a short explanation — the button, the
@@ -222,7 +223,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   broker app, which the app picks up through the Supervisor, or the `mqtt_host`
   option (`app/run.sh`); and `mqtt.enabled: true` standalone
   (`src/maverick/config.py`). It is a `<details>` element, so it opens with no
-  script.
+  script. (#49)
 - **An "Add display" dialog** in the setup UI, built entirely from the API a
   form needs: `GET /api/panels` fills a Panel select grouped by vendor, with
   the profile's notes shown once one is chosen; `GET /api/transports` fills
@@ -241,7 +242,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   named in pydantic's `loc`, a 409 marks the id field, and a network failure
   is shown in the dialog rather than as an alert. The empty-state card, which
   used to tell the user to edit the config file and restart, now offers the
-  same dialog.
+  same dialog. (#50)
 - **Every field of a display is editable in the setup UI.** An *Edit* action on
   each card opens a drawer — a side panel, full-screen at phone width — with a
   section for the display itself and one for each nested model of
@@ -277,7 +278,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   key the stored configuration already has under `transport` on screen
   whichever transport is selected, because the file is the only record of
   those. Every other section sends known keys only, since one stray key fails
-  the whole `PUT`.
+  the whole `PUT`. (#51)
 
 ### Changed
 
@@ -306,7 +307,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is down to copying the starter config and starting the service, and CI now
   runs the built image against an `options.json` with nothing in the
   environment (`.github/workflows/ci.yml`) — the local reproduction the 0.2.x
-  cycle did without.
+  cycle did without. (#57)
 - **The setup UI's stylesheet and script are files now, not strings in Python.**
   `_CSS` and `_JS` lived in `src/maverick/server/ui.py`, which also rendered
   every card server-side; they are now `src/maverick/server/static/app.css` and
@@ -320,7 +321,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unchanged: no build step, no framework, nothing fetched from a CDN, because
   this runs on a LAN that may have no internet. `/static` is not behind
   `server.api_token`, since the page that asks for the token is served exactly
-  when the browser has none to offer.
+  when the browser has none to offer. (#49)
 - **The card grid no longer scrolls sideways on a narrow phone.**
   `minmax(340px, 1fr)` inside 24px of page padding is wider than a 360px
   screen, so the whole page moved horizontally; the columns are
@@ -328,7 +329,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   light and dark tokens are unchanged. Buttons carry `aria-busy` while a
   request is in flight, keyboard focus is visible again, and the one animation
   — the pulsing `rendering` pill — is dropped under
-  `prefers-reduced-motion: reduce`.
+  `prefers-reduced-motion: reduce`. (#49)
 - **A set `server.api_token` now switches each display's MQTT image entity to
   the frame bytes.** Discovery published an `image_topic` only when
   `server.base_url` was empty and a `url_topic` pointing at
@@ -336,7 +337,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   With that PNG behind the token (below), the URL would answer 401 to an image
   entity, which fetches with no credentials and has nowhere to put a token, so
   a token now picks the same branch an empty `base_url` does. The cost is the
-  one the bytes mode always had: a retained PNG per panel on the broker.
+  one the bytes mode always had: a retained PNG per panel on the broker. (#45)
 
 ### Fixed
 
@@ -351,7 +352,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ingress proxy and only while running as an app
   (`src/maverick/ha/supervisor.py`): Home Assistant has already authenticated
   them and sends no token of ours. No header is trusted for this, because the
-  published port takes requests from the whole LAN.
+  published port takes requests from the whole LAN. (#45)
 - **The setup UI's buttons failed silently when a token was set.** The page
   read the token only from its own query string, so unless the user knew to
   open `/?token=...` — which nothing on the page or in the documentation
@@ -362,7 +363,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which cannot send a header. `/?token=...` still works and fills the same
   store. Through the app's ingress there was no query string to put a token in
   at all, so with a token set those buttons could not be made to work; ingress
-  requests are now exempt.
+  requests are now exempt. (#45)
 - **`GET /api/displays/{id}/esphome.yaml` leaked `server.api_token` to anyone
   who could reach the server.** The generated ESPHome configuration embeds the
   token verbatim as an `Authorization: Bearer` header
@@ -374,7 +375,7 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   route now requires the token like its siblings; the setup UI's "ESPHome
   config" link appends `?token=` itself when the page was opened with one
   (`src/maverick/server/ui.py`), since a plain anchor cannot send an
-  `Authorization` header.
+  `Authorization` header. (#44)
 
 ## [0.2.7] - 2026-09-15
 

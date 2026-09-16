@@ -1,6 +1,6 @@
 # Maverick — Architecture
 
-> Last reviewed against commit `a964f6c`.
+> Last reviewed against commit `42696c0`.
 >
 > This page describes the service as it is built. Everything proposed but not
 > written — ingress for the app, the integration, the control card, the
@@ -307,6 +307,160 @@ dwell spanning several ticks and the wrap back to the first page), selection by
 name and by index with the out-of-range error, the HTTP route, the select's
 discovery payload and the MQTT commands.*
 
+## The display store and precedence rule
+
+A display used to exist only in the config file, read once at start-up and
+never written back. Displays now live in a file Maverick itself owns —
+`<data_dir>/displays.yaml` by default, or wherever `displays_file` points
+(`src/maverick/store.py`) — so the setup UI has somewhere to put a display it
+creates or edits.
+
+**One source of truth at a time.** `resolve_displays`, called from
+`load_config` on every load (`src/maverick/config.py`), decides which:
+
+- **The store exists** — it is the source, and a `displays:` list still in the
+  config file is ignored, with one warning naming both files
+  (`Config.displays_source` records which).
+- **No store, but the config file has a `displays:` list** — that list is
+  imported into the store once and read from the store from then on.
+- **Neither** — there are no displays.
+
+The store is a mapping, `{"version": 1, "displays": [...]}`, and each entry
+omits whatever is left at its default, so a stored display reads like the
+hand-written one it replaced. `${VAR}` in a hand-edited store file is expanded
+on load exactly as in the config file, but a save writes the file back with
+those variables already resolved, so a substitution added by hand survives
+only until the next save — secrets stay in the config file, which nothing
+rewrites. A store that cannot be written (a read-only `data_dir`, a full disk)
+is logged and the display still renders; `load_config(..., use_display_store=False)`
+skips the store entirely, for a caller that wants the parsed file with no side
+effect, such as loading the app's starter config in a test.
+
+*Verified: [`tests/test_display_store.py`](../tests/test_display_store.py) —
+`test_displays_are_imported_once_and_read_from_the_store_after`,
+`test_the_store_wins_and_says_so`, `test_a_stored_display_is_as_short_as_a_hand_written_one`,
+`test_a_save_resolves_the_substitution_it_read`,
+`test_a_store_that_cannot_be_written_is_not_fatal` and
+`test_a_config_built_in_memory_never_touches_the_store`.*
+
+## Changing a display while the service runs
+
+Every per-display resource used to be built once, in a start-up loop — the
+engine's transport, lock and state entry, the scheduler's job and `on_change`
+subscription, the MQTT device — so the only way to add, edit or remove one was
+a restart, which relaunches Chromium and redraws every panel at once with
+`schedule.render_on_start` on. Each of those steps is now callable for one
+display on its own: `Engine.register_display`, `update_display` and
+`unregister_display` (`src/maverick/engine.py`),
+`RenderScheduler.add_display`, `remove_display` and `refresh_state_watch`
+(`src/maverick/scheduling/scheduler.py`), and `MqttDiscovery.announce_display`
+/ `remove_display` (`src/maverick/ha/discovery.py`), composed in that order by
+`Application.add_display`, `update_display` and `remove_display`
+(`src/maverick/app.py`), which then writes the display store.
+
+**Chromium itself is never restarted.** Only the changed display's own browser
+contexts are dropped (`BrowserPool.drop_contexts_for`,
+`src/maverick/render/browser.py`); every other panel keeps rendering through
+the same browser. An update keeps the state entry and the stored frame —
+`frames_since_full` describes the panel, not the config, and a pull device
+that wakes before the next render still needs something to fetch — and a
+removal deletes both. A rename (the id in the body differs from the path) is
+done as a removal and an addition, because the id is threaded through the MQTT
+topics, the frame filenames and the state key, and nothing would say which of
+those to move in place. Two failure paths are deliberately not silent: an
+update whose new transport will not start restores the previous one and, if
+that also fails, says so and leaves the display on its old config
+(`Engine.update_display`); a store that cannot be written after a runtime
+change is reported to the caller, because the change itself is not undone — a
+panel rendering correctly should keep rendering even if the file describing it
+falls behind.
+
+`POST`/`PUT`/`DELETE /api/displays[/{id}]` (`src/maverick/server/api.py`) are
+what reach this over HTTP, and the setup UI's Add display dialog and per-field
+editor drawer (`src/maverick/server/static/app.js`) are what call them.
+
+*Verified: [`tests/test_runtime_displays.py`](../tests/test_runtime_displays.py)
+— `test_add_display_starts_a_transport_a_job_and_one_render`,
+`test_update_swaps_the_transport_without_touching_the_browser`,
+`test_update_keeps_the_state_entry_and_the_stored_frame`,
+`test_a_new_id_moves_the_display`, `test_remove_display_takes_everything_with_it`,
+`test_remove_waits_for_a_render_in_flight` and
+`test_drop_contexts_for_takes_one_displays_contexts_and_no_others`.*
+
+## Dry-run previews
+
+`Engine.render_candidate` (`src/maverick/engine.py`) renders a `DisplayConfig`
+that need not be registered — the one someone is editing in the setup UI's
+drawer — runs it through the pipeline and the linter, and hands back the frame
+without keeping anything: no `states` entry, no `frames` entry, no write to
+`state.json`, and the browser context it rendered through is dropped again on
+the way out. Lint findings are reported rather than enforced, because the
+point of a preview is to see a blank or illegible frame before saving, not to
+be refused one. `POST /api/displays/preview` (`src/maverick/server/api.py`)
+is the route, returning the frame as base64 PNG alongside the lint report and
+the pre-quantisation screenshot; the editor's Preview button calls it and
+shows the result beside what the panel is currently showing, saving nothing
+either way.
+
+*Verified: [`tests/test_runtime_displays.py`](../tests/test_runtime_displays.py)
+— `test_render_candidate_touches_nothing` and
+`test_render_candidate_works_for_a_registered_display_too`;
+[`tests/test_display_api.py`](../tests/test_display_api.py) —
+`test_preview_renders_but_saves_nothing` and
+`test_preview_reports_lint_findings_without_a_non_200`.*
+
+## Render history
+
+`DisplayState` keeps only the *last* error and a failure count, both cleared
+by the next success — so a panel that failed one render in ten had no trace of
+it once it recovered. `Engine` also keeps a bounded history per display: the
+last 50 outcomes, each with its trigger, success, timings, lint summary,
+checksum, full-refresh flag and delivery detail, appended by `Engine._notify`
+on every path `Engine.render` can take — success, failure, a lint block, or an
+unchanged-frame skip — and persisted write-then-rename to
+`<data_dir>/history/<id>.json`, loaded at startup and deleted alongside a
+display's other files by `unregister_display`. `render_candidate` (the dry-run
+preview above) never calls it, so previews leave no trace here.
+
+`GET /api/displays/{id}/history?limit=N` (behind the API token, newest first,
+default 20, maximum 50) serves it, and each card in the setup UI has a History
+disclosure — a compact table of time, trigger, outcome and duration, with
+failed and blocked renders highlighted and their reason shown on expand — that
+loads when opened and refreshes with the card's own poll.
+
+*Verified: [`tests/test_render_history.py`](../tests/test_render_history.py)
+— `test_history_route_returns_newest_first`,
+`test_history_route_honours_limit` and
+`test_history_route_404s_for_an_unknown_display`.*
+
+## The screenshot store
+
+Answering "did the dashboard render wrong, or did the pipeline do this" used
+to mean reading `<data_dir>/debug/<id>/` over Samba or SSH, since
+`render.debug_artifacts` wrote the raw capture there and nothing served it.
+`Engine.render` now downscales the raw Chromium capture to the panel's
+resolution — with `fit_to_panel` (`src/maverick/eink/pipeline.py`), the same
+fit-rotate-resize maths `process` uses, factored out so both share it — and
+stores it in `FrameStore` as a fourth file, `<id>.screenshot.png`, written and
+restored the same write-then-rename way as the frame, its preview PNG and its
+metadata. Unlike those three, it is written directly by `Engine.render` rather
+than by a transport's `deliver`, so it exists for every transport once a
+display has rendered, not only `http_pull`. `RenderConfig.keep_screenshot`
+(`src/maverick/config.py`, on by default) turns it off.
+
+`GET /api/displays/{id}/screenshot.png` serves it — 404 before the first
+render, or always with the flag off — and `POST /api/displays/preview` returns
+it too, as `screenshot_png`, so the editor's dry-run preview can show source
+and result together. The setup UI's cards and the editor's preview pane both
+carry a Source/Frame toggle over the image, defaulting to Frame.
+
+*Verified: [`tests/test_screenshot_route.py`](../tests/test_screenshot_route.py)
+— `test_put_and_get_screenshot_round_trip`,
+`test_load_restores_the_screenshot_after_a_simulated_restart`,
+`test_screenshot_route_serves_the_stored_screenshot`,
+`test_screenshot_route_stays_404_with_keep_screenshot_false` and
+`test_preview_returns_the_screenshot_alongside_the_frame`.*
+
 ## The Home Assistant surface today
 
 Two surfaces, and only two. There is no custom integration and no `maverick.*`
@@ -454,15 +608,6 @@ assume works.
   `chromium` package and sets `MAVERICK_CHROMIUM_PATH` itself. Standalone,
   Playwright ships no aarch64 Linux build, so a Raspberry Pi needs the distro
   package and the same variable.
-- **The setup UI cannot add or edit a display.** It shows what each panel
-  rendered and what the linter found, polls for that while it is open, offers
-  refresh and full-refresh buttons, pauses and resumes a schedule, re-enables a
-  disabled display and links to the generated ESPHome config
-  (`src/maverick/server/static/app.js`) — but creating one, or changing its
-  dashboard, panel or transport, means either the HTTP API
-  (`POST`/`PUT /api/displays`) or editing a file by hand and restarting: the
-  config file, or the display store Maverick keeps the displays in once it has
-  imported them (`src/maverick/store.py`, `<data_dir>/displays.yaml`).
 - **`maverick scan` needs a local Bluetooth adapter.** Tag discovery does not go
   through Home Assistant's Bluetooth proxies, even though delivery can.
 

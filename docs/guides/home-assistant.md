@@ -1,6 +1,6 @@
 # Connecting Maverick to Home Assistant
 
-*Last reviewed against commit `a964f6c`.*
+*Last reviewed against commit `42696c0`.*
 
 Maverick talks to Home Assistant over its public APIs, whether it runs as the
 Home Assistant app ([`app/DOCS.md`](../../app/DOCS.md)) or standalone. There is
@@ -14,14 +14,58 @@ This page picks up where [the README's quick start](../../README.md#quick-start)
 leaves off: you have Maverick installed and a `config.yaml`, and you want it
 reading a real dashboard and controllable from inside Home Assistant.
 
-1. [The credential](#the-credential)
-2. [Which dashboard URL to use](#which-dashboard-url-to-use)
-3. [Making it a device: MQTT discovery](#making-it-a-device-mqtt-discovery)
-4. [Without MQTT: a rest_command](#without-mqtt-a-rest_command)
-5. [Rendering when data changes](#rendering-when-data-changes)
-6. [OpenDisplay tags through Home Assistant's Bluetooth](#opendisplay-tags-through-home-assistants-bluetooth)
-7. [What the API token protects](#what-the-api-token-protects)
-8. [What is not there yet](#what-is-not-there-yet)
+1. [The setup UI](#the-setup-ui)
+2. [The credential](#the-credential)
+3. [Which dashboard URL to use](#which-dashboard-url-to-use)
+4. [Making it a device: MQTT discovery](#making-it-a-device-mqtt-discovery)
+5. [Without MQTT: a rest_command](#without-mqtt-a-rest_command)
+6. [Rendering when data changes](#rendering-when-data-changes)
+7. [OpenDisplay tags through Home Assistant's Bluetooth](#opendisplay-tags-through-home-assistants-bluetooth)
+8. [What the API token protects](#what-the-api-token-protects)
+9. [What is not there yet](#what-is-not-there-yet)
+
+## The setup UI
+
+> Status: written from the source; not yet verified against a live Home Assistant instance.
+
+Everything below — the credential, the dashboard, MQTT discovery — can be done
+by hand in `config.yaml`, but the setup UI at `/` (or **Open Web UI** in the
+Home Assistant app, which embeds the same page through ingress) is where most
+of it happens day to day.
+
+**Add display** builds a display from what the running service already knows.
+`GET /api/panels` fills a panel picker grouped by vendor and shows the
+profile's own notes once one is chosen; `GET /api/transports` fills a
+transport picker, with each transport's own option fields drawn underneath
+from its `options_doc`; and the Dashboard field's suggestions come from
+[the dashboard picker](#a-dashboard-path) below. Submitting posts to `POST
+/api/displays` — no config file, and nothing to restart.
+
+**Edit**, on each card, opens a drawer with every field of that display: the
+schedule, the theme, the image and render settings, the lint thresholds, the
+transport's own options, the wire format and the ESPHome settings, each
+labelled with the same help text `docs/reference/configuration.md` is
+generated from. **Preview** renders the drawer's current state — without
+saving it — and shows it beside what the panel is currently showing, with the
+lint findings underneath; **Save** applies it live, and **Delete** removes the
+display and its stored frames, both with a confirmation first. This is
+[the `Engine.render_candidate` dry-run path](../architecture.md#dry-run-previews)
+and
+[the runtime add/update/remove path](../architecture.md#changing-a-display-while-the-service-runs)
+— nothing here needs a restart, and Chromium itself is never relaunched.
+
+Each card also carries a **History** disclosure — the last render outcomes,
+newest first, with a failed or lint-blocked one highlighted and its reason
+on expand — and a **Source/Frame** toggle over the image, so you can compare
+what Chromium actually captured against what the panel will show after
+dithering. Both read `GET /api/displays/{id}/history` and
+`GET /api/displays/{id}/screenshot.png`
+([HTTP API reference](../reference/http-api.md)).
+
+Nothing here replaces `config.yaml` for the three sections that are not
+per-display: `home_assistant:`, `mqtt:` and `server:` are still edited by hand
+(or, running as the app, from its Configuration tab) and need a restart to
+take effect.
 
 ## The credential
 

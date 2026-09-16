@@ -1,6 +1,6 @@
 # Maverick — Roadmap
 
-> Last reviewed against commit `a964f6c`.
+> Last reviewed against commit `42696c0`.
 >
 > Every feature proposed here is unbuilt, with one exception: the page list
 > under Decision 3 is built, and its syntax has moved to
@@ -26,16 +26,19 @@ different layer.
 | HA Core | custom integration | config flow, devices and entities, actions |
 | Supervisor | add-on | render engine, Chromium, ingress UI |
 
-- **An add-on with ingress** would embed the UI in the sidebar with auth handled
-  by Home Assistant — no exposed port, no second login. **Add-ons exist only on
-  HA OS and Supervised**, so Container and Core users would need the same image
-  as plain Docker plus the integration pointed at its URL. The add-on exists —
+- **An add-on with ingress** would embed the UI with auth handled by Home
+  Assistant — no exposed port, no second login. **Add-ons exist only on HA OS
+  and Supervised**, so Container and Core users would need the same image as
+  plain Docker plus the integration pointed at its URL. The add-on exists —
   Home Assistant now calls it an *app*, and it lives in
-  [`app/`](../app/DOCS.md) — but without ingress: it exposes port 5000 rather
-  than a sidebar entry. The plain-Docker image Container and Core users would
-  need now exists too, as the root [`Dockerfile`](../Dockerfile) — see
-  "Docker" in [README.md](../README.md#docker) — but it is only that: a
-  general-purpose image, with none of ingress's auth handling.
+  [`app/`](../app/DOCS.md) — and ingress is on (`app/config.yaml`): **Open Web
+  UI** embeds the setup UI inside Home Assistant on any connection, with no
+  second login. It is not a sidebar panel of its own, and port 5000 stays
+  published too, for panels that pull frames and as the way in if ingress is
+  unavailable. The plain-Docker image Container and Core users would need now
+  exists too, as the root [`Dockerfile`](../Dockerfile) — see "Docker" in
+  [README.md](../README.md#docker) — but it is only that: a general-purpose
+  image, with none of ingress's auth handling.
 - **An integration** would be distributed via HACS, provide UI setup with no
   YAML, one device per panel, and `maverick.render` / `set_page` actions —
   **with no MQTT broker required**. That last point is the argument for it:
@@ -159,22 +162,24 @@ Estimates are re-based on what the repository now contains.
 |---|-------|--------|----------|---------|
 | 0 | The render service | Done | *was 3–5 weeks* | Pipeline, panel catalogue, five transports, scheduler, HTTP API, CLI, MQTT discovery |
 | 1 | Hardware validation | Not started | 1–2 weeks | One panel per transport path confirms the catalogue, the measured inks and the refresh behaviour |
-| 2 | Add-on, ingress and integration | In progress | 2–3 weeks | The app is built ([`app/`](../app/DOCS.md)), without ingress; the sidebar entry, UI setup, and devices and actions without a broker remain |
+| 2 | Add-on, ingress and integration | In progress | 1–2 weeks | UI setup is done, without the integration: the app has ingress, a display store a setup UI can write to, and a display can be added, edited, previewed and removed from that UI with no restart ([architecture.md](architecture.md#the-display-store-and-precedence-rule), [architecture.md](architecture.md#changing-a-display-while-the-service-runs)). The integration itself remains, for devices and actions that need no MQTT broker and a config flow instead of a token pasted by hand |
 | 3 | Pages and rotation | **Done** | *was part of 2 weeks* | An ordered `pages` list per display with dwell times and rotation, page actions over HTTP and MQTT, a Page select in Home Assistant and a picker in the setup UI ([architecture.md](architecture.md#pages)) |
 | 3b | Control surface | Not started | 1–2 weeks | The Home Assistant end of it: tile feature, card, fleet view, over the page actions phase 3 built |
-| 4 | Strategy, live preview and linting | Not started | 1–2 weeks | It becomes authorable by someone who has never thought about dithering. Cheaper than first estimated: the linter and the millimetre type scale exist |
+| 4 | Strategy, live preview and linting | Not started | 1–2 weeks | It becomes authorable by someone who has never thought about dithering. Cheaper than first estimated: the linter, the millimetre type scale and a preview pane in the setup UI all exist |
 | 5 | Template source | Not started | 1 week | Power users get precise control for dense layouts. Cheaper than first estimated: the renderer already loads any URL |
 
-**6–10 weeks remaining** — phase 3's page list has come off the table since the
-last estimate — against the three to five the render service was estimated at
-and the 8–12 originally put on phases 2–5. The three questions above more than
-double the project: an argument for sequencing them, not for dropping them.
+**5–9 weeks remaining** — phase 2 is down to the integration alone since the
+last estimate, and phase 3's page list came off the table before that —
+against the three to five the render service was estimated at and the 8–12
+originally put on phases 2–5. The remaining questions still more than double
+the project: an argument for sequencing them, not for dropping them.
 
 ## Still open
 
 - No hardware testing has happened. Every panel-side claim — refresh timing,
   ghosting cadence, measured ink values — is from documentation, not a bench.
-  This is why phase 1 above comes before the product work.
+  This is why phase 1 above comes before the product work, and it is
+  unaffected by how much of phase 2 has since landed.
 - Whether the dashboard strategy can produce layouts good enough that users
   accept them rather than immediately taking control.
 - Whether OpenDisplay's BLE-proxy path is reliable enough at range to be the
@@ -182,9 +187,10 @@ double the project: an argument for sequencing them, not for dropping them.
 - Memory headroom for the renderer on a Raspberry Pi 4 running Home Assistant OS
   alongside everything else. The concurrency cap exists because of this
   question; nothing has answered it.
-- Whether an integration should own the config, or keep reading the YAML file
-  the service uses today. Two sources of truth for the same displays is the
-  failure mode to avoid.
+- Whether an integration should own the config, or keep reading the display
+  store the service now writes for itself
+  ([architecture.md](architecture.md#the-display-store-and-precedence-rule)).
+  Two sources of truth for the same displays is the failure mode to avoid.
 
 ## References
 

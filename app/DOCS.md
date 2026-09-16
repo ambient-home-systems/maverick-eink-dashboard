@@ -42,8 +42,12 @@ project still say add-on; the two words mean the same thing.
    `home_assistant_token` on the **Configuration** tab instead.
 
 The first start writes `maverick.yaml`, with one example display, into the
-app's configuration folder. Edit it to describe your panels and restart the
-app; see [The configuration file](#the-configuration-file).
+app's configuration folder, and copies that example display into
+`data/displays.yaml` beside it. Open the **Web UI** and use **Add display** to
+describe your own panels — no file to edit and no restart; see
+[The configuration file](#the-configuration-file) for where displays actually
+live and [docs/architecture.md](https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/architecture.md#changing-a-display-while-the-service-runs)
+for how a change reaches the running service.
 
 ## Options
 
@@ -100,18 +104,22 @@ displays:
       type: http_pull
 ```
 
-Edit `displays:`; leave the substituted blocks alone. Each display needs an
-`id`, a `panel` from the catalogue and a `dashboard` path; everything else
-defaults from the panel profile.
+Leave the substituted blocks (`home_assistant:`, `mqtt:`, `server:`) alone —
+they come from the Configuration tab. The `displays:` list shown above is only
+the example the app wrote on its first start; add or change a display from the
+**Web UI**'s **Add display** dialog and per-card **Edit** drawer instead of
+editing it, since that is what actually reaches the running service.
 
 The displays are the one part of this file that moves. The first start copies
 the `displays:` list into `data/displays.yaml` — in the same folder, beside the
 frames and the state — and that file is the source of the displays from then
 on, because it is one Maverick itself can write
 (`src/maverick/store.py`). The `displays:` list here is ignored once it exists,
-with a line in the log naming both files, so a display is added or changed in
-`data/displays.yaml` and the app restarted. Deleting `data/displays.yaml`
-brings the list in this file back at the next start.
+with a line in the log naming both files. A display added, edited or removed
+in the Web UI is written straight to `data/displays.yaml` and applied
+immediately, with no restart; hand-editing that file works too, but needs a
+restart to be picked up, same as editing `displays:` here would have. Deleting
+`data/displays.yaml` brings the list in this file back at the next start.
 
 The full key reference is
 [docs/reference/configuration.md](https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/reference/configuration.md),
@@ -120,8 +128,9 @@ the panel ids are in
 and there is a recipe per device path under
 [docs/recipes/](https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/recipes/README.md).
 
-Restart the app after editing. Unknown keys are errors, and the log names the
-key.
+Restart the app after hand-editing `maverick.yaml` or `data/displays.yaml`;
+changes made from the Web UI apply immediately, with no restart. Unknown keys
+are errors either way, and the log names the key.
 
 ## Panels that pull frames
 
@@ -155,7 +164,9 @@ needs an adapter the process can see and is not supported inside the app.
 | Inside the app | Where you see it | What is there |
 | --- | --- | --- |
 | `/config/maverick.yaml` | `/addon_configs/<something>_maverick/maverick.yaml` | The configuration. Survives updates and reinstalls. |
-| `/config/data/` | the same folder, `data/` | The frame store, `state.json`, and `debug/<id>/` when a display sets `render.debug_artifacts: true`. |
+| `/config/data/displays.yaml` | `data/displays.yaml` | The displays themselves, written by the Web UI (or by hand) — the source of truth once it exists; see [The configuration file](#the-configuration-file). |
+| `/config/data/` | the same folder, `data/` | The frame store — the current frame, its preview PNG and the pre-quantisation screenshot per display — plus `state.json` and `debug/<id>/` when a display sets `render.debug_artifacts: true`. |
+| `/config/data/history/` | `data/history/` | Up to the last 50 render outcomes per display, `<id>.json`, behind each card's History disclosure and `GET /api/displays/{id}/history`. |
 | `/media/maverick/` | Home Assistant's media folder | Frames for OpenDisplay tags. |
 | `/share/` | the Samba share, other apps | Available to the file transport (`transport: {type: file, path: /share/maverick}`). |
 
@@ -189,6 +200,14 @@ was derived as, and whether the panel can reach that address on port 5000. Set
 **Chromium will not start.** The log shows `Could not start Chromium`. That
 should not happen in this image; open an issue with the log, the machine and
 the Home Assistant version.
+
+**Adding or editing a display in the Web UI says it changed but the log warns
+it could not be saved.** The change is live — the panel renders with it — but
+`data/displays.yaml` could not be written, so it reverts on the app's next
+restart. The log names the underlying error; it is almost always the
+`/config` volume being full or the wrong owner. See
+[the display store](https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/troubleshooting.md#the-display-store)
+in the project's troubleshooting page.
 
 **Where the logs are.** The app's **Log** tab. Set `log_level` to `debug` for
 the browser and scheduler detail.

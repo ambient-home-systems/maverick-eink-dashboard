@@ -30,7 +30,7 @@ by a person.
 
 | Page | What it is |
 | --- | --- |
-| [Home Assistant](guides/home-assistant.md) | Making the token, getting the URL rule right, MQTT discovery, and rendering when your data changes rather than on a timer. |
+| [Home Assistant](guides/home-assistant.md) | The setup UI — adding, editing and previewing a display — making the token, getting the URL rule right, MQTT discovery, and rendering when your data changes rather than on a timer. |
 | [Troubleshooting](troubleshooting.md) | The failures people actually hit, each keyed to the message Maverick prints. |
 
 ## Recipes
