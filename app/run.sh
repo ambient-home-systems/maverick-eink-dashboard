@@ -3,114 +3,19 @@
 # ==============================================================================
 # Maverick: Home Assistant app entrypoint.
 #
-# The app's options never reach the service directly. They become environment
-# variables, and /config/maverick.yaml reads them through the ${VAR}
-# substitution the config loader already supports (src/maverick/config.py).
-# That keeps one source of truth for the displays, the file the user edits,
-# and lets the connection details change from the Configuration tab without
-# touching it.
+# The app's options are not translated here. The service reads them itself,
+# from /data/options.json, and sets the environment variables /config/maverick.yaml
+# substitutes (src/maverick/ha/options.py, called by `_load` in
+# src/maverick/cli.py). That keeps one source of truth for the connection
+# details — the Configuration tab — and leaves this script the two things that
+# genuinely belong to the container: putting a config file where the user can
+# edit it, and starting the service.
 # ==============================================================================
 set -o errexit -o pipefail
 
 readonly CONFIG_DIR=/config
 readonly CONFIG_FILE="${CONFIG_DIR}/maverick.yaml"
 readonly TEMPLATE=/usr/share/maverick/maverick.yaml
-
-# ----------------------------------------------------------------- options --
-# `bashio::config key ''` does NOT hand back an empty string for an option the
-# user has not set: bashio reads its own second argument as `${2:-null}`, and
-# `:-` substitutes on an *empty* argument too, so the fallback becomes the
-# literal string "null" (bashio lib/config.sh). That string is not empty, so it
-# sails past every `${VAR:-default}` in maverick.yaml and lands in the config as
-# a value: `client_id: "null"` with `refresh_token: "null"` looks exactly like a
-# linked account, and every render then fails with "Home Assistant rejected the
-# token request (400): Invalid client id"; `base_url: "null"` is not an http(s)
-# URL, so the setup UI refuses to start the link that would fix it; and
-# `api_token: "null"` gates the pull endpoints behind a token nobody was told.
-# Optional options are read through this instead, which spells "unset" the way
-# the config file expects. `bashio::config.has_value` treats both "null" and the
-# empty string as unset, which is exactly the question being asked.
-
-config_or_empty() {
-    if bashio::config.has_value "${1}"; then
-        bashio::config "${1}"
-    fi
-}
-
-# ------------------------------------------------------------- credentials --
-# Starting without one is allowed on purpose. The setup UI can obtain a
-# credential itself (Link with Home Assistant), and it can only do that if the
-# service is running, so an empty token is a warning rather than a fatal error.
-# Refusing to start would leave the user with nothing but a log line.
-
-HA_URL="$(bashio::config 'home_assistant_url' 'http://homeassistant:8123')"
-HA_TOKEN="$(config_or_empty 'home_assistant_token')"
-HA_REFRESH_TOKEN="$(config_or_empty 'home_assistant_refresh_token')"
-HA_CLIENT_ID="$(config_or_empty 'home_assistant_client_id')"
-
-if [[ -z "${HA_TOKEN}" && -z "${HA_REFRESH_TOKEN}" ]]; then
-    bashio::log.warning "No Home Assistant credential yet, so rendering will fail."
-    bashio::log.warning "Open this app's web UI and press 'Link with Home Assistant'."
-    bashio::log.warning "You can instead paste a long-lived access token (your profile,"
-    bashio::log.warning "Security tab) into the home_assistant_token option."
-fi
-
-MAVERICK_LOG_LEVEL="$(bashio::config 'log_level' 'info')"
-MAVERICK_API_TOKEN="$(config_or_empty 'api_token')"
-MAVERICK_BASE_URL="$(config_or_empty 'base_url')"
-
-# ---------------------------------------------------------------- base URL --
-# Panels that pull frames need an address they can reach, which is never the
-# container's own. Without an explicit option, use the host's first IPv4
-# address; bashio reports it with its prefix length, hence the cut.
-
-if [[ -z "${MAVERICK_BASE_URL}" ]]; then
-    host_ip="$(bashio::network.ipv4_address 2>/dev/null | head -n 1 | cut -d/ -f1 || true)"
-    if [[ -n "${host_ip}" && "${host_ip}" != "null" ]]; then
-        MAVERICK_BASE_URL="http://${host_ip}:5000"
-        bashio::log.info "base_url is not set; panels will be told to fetch from ${MAVERICK_BASE_URL}"
-    else
-        bashio::log.warning "base_url is not set and the host address could not be read;"
-        bashio::log.warning "panels that pull frames will not know where to fetch from."
-    fi
-fi
-
-# -------------------------------------------------------------------- MQTT --
-# Explicit options win. Otherwise the Mosquitto broker app, when installed,
-# hands over its host and credentials through the Supervisor (services:
-# mqtt:want in config.yaml). Neither present means no MQTT, which is allowed:
-# displays then do not appear as Home Assistant devices.
-
-MQTT_ENABLED=false
-MQTT_HOST=core-mosquitto
-MQTT_PORT=1883
-MQTT_USERNAME=""
-MQTT_PASSWORD=""
-
-if bashio::config.has_value 'mqtt_host'; then
-    MQTT_ENABLED=true
-    MQTT_HOST="$(bashio::config 'mqtt_host')"
-    MQTT_PORT="$(bashio::config 'mqtt_port' '1883')"
-    MQTT_USERNAME="$(config_or_empty 'mqtt_username')"
-    MQTT_PASSWORD="$(config_or_empty 'mqtt_password')"
-    bashio::log.info "MQTT: using the broker from the app options (${MQTT_HOST}:${MQTT_PORT})"
-elif bashio::services.available 'mqtt'; then
-    MQTT_ENABLED=true
-    MQTT_HOST="$(bashio::services 'mqtt' 'host')"
-    MQTT_PORT="$(bashio::services 'mqtt' 'port')"
-    MQTT_USERNAME="$(bashio::services 'mqtt' 'username')"
-    MQTT_PASSWORD="$(bashio::services 'mqtt' 'password')"
-    bashio::log.info "MQTT: using the Mosquitto broker app (${MQTT_HOST}:${MQTT_PORT}); displays will appear as devices"
-else
-    bashio::log.notice "MQTT: no broker configured and the Mosquitto broker app is not installed;"
-    bashio::log.notice "displays will not appear as Home Assistant devices. Set mqtt_host to change that."
-fi
-
-export HA_URL HA_TOKEN HA_REFRESH_TOKEN HA_CLIENT_ID
-export MAVERICK_LOG_LEVEL MAVERICK_API_TOKEN MAVERICK_BASE_URL
-export MQTT_ENABLED MQTT_HOST MQTT_PORT MQTT_USERNAME MQTT_PASSWORD
-
-# ------------------------------------------------------------------ config --
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
     bashio::log.info "No ${CONFIG_FILE} yet; writing the starter configuration with one example display."

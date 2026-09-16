@@ -21,16 +21,16 @@ explicitly, and a path that does not exist is an error rather than a fallback.
 With no flag, the first of these that exists wins:
 
 1. `config.yaml`, relative to the working directory
-2. `/config/maverick.yaml` — the Home Assistant add-on's `/config` share
-3. `/data/options.json` — the add-on's own options
-4. `~/.config/maverick/config.yaml`
+2. `/config/maverick.yaml` — the Home Assistant app's `/config` share
+3. `~/.config/maverick/config.yaml`
 
 If nothing is found, Maverick lists those paths and suggests `maverick init`.
 
-The third entry is a diagnostic rather than a usable format: `/data/options.json`
-is the add-on's schema, which the add-on's run script is supposed to translate
-into `/config/maverick.yaml` before starting the service. Reaching it means that
-translation did not happen, and Maverick says so instead of trying to read it.
+The app's own options (`/data/options.json`) are not one of them. They are not a
+configuration file in this format and never were: they are the Configuration
+tab's values, which Maverick reads separately and turns into the environment
+variables the file substitutes (`load_app_options` in
+`src/maverick/ha/options.py`), before looking for the file itself.
 
 ## Where the displays live
 
@@ -89,8 +89,9 @@ to the empty string**, which is what `:-` means in a shell (`expand_env` in
 `src/maverick/config.py`). An empty default (`${MQTT_PASSWORD:-}`) is therefore
 the way to say "optional, usually empty", and `${MQTT_PORT:-1883}` still gives
 you 1883 when something upstream exported `MQTT_PORT=`. That matters under the
-Home Assistant app, whose `run.sh` exports a value for every substitution in
-the starter config, empty for the options you have not filled in.
+Home Assistant app, which sets a value for every substitution in the starter
+config, empty for the options you have not filled in (`load_app_options` in
+`src/maverick/ha/options.py`).
 
 `${VAR}` without a default is the only form that cares whether a variable is
 set at all: unset fails the load, set-and-empty yields the empty string, since

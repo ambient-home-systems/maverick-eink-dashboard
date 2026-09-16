@@ -311,7 +311,7 @@ def test_mqtt_off_says_what_turning_it_on_would_give(app: Application) -> None:
 
     The two ways to turn it on are the Mosquitto broker app (or the
     `mqtt_host` option) under the Supervisor, and `mqtt.enabled` standalone —
-    `app/run.sh` and `MqttConfig` respectively.
+    `src/maverick/ha/options.py` and `MqttConfig` respectively.
     """
     page = _page(app)
     assert "MQTT off" in page

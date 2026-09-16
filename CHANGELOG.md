@@ -245,6 +245,32 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The Home Assistant app's options are read by the service, not by
+  `run.sh`.** The options reached Maverick through bashio until now: `run.sh`
+  read each one, exported it, and the starter `maverick.yaml` substituted it
+  back. Three of the seven 0.2.x fixes were that chain rather than Maverick —
+  `bashio::config key ''` handing back the *string* `"null"` for an unset
+  option (0.2.4), `${VAR:-default}` not standing in for a variable exported
+  empty (0.2.1), and `maverick serve -c file` being an argparse error (0.2.2)
+  — and none of them could be reproduced outside a Supervisor. A new
+  `src/maverick/ha/options.py` reads `/data/options.json` itself and sets the
+  same environment variable names, so the starter config and every file a user
+  has already edited are unchanged: a missing key, a JSON `null` and an empty
+  string are all "unset", and the two derived values keep their old rules —
+  `base_url` from the host's first IPv4 address (`GET /network/info`, prefix
+  length stripped) and MQTT from the explicit `mqtt_host` or else the
+  Mosquitto broker app (`GET /services/mqtt`), both through `api_get` in
+  `src/maverick/ha/supervisor.py`, both degrading to the documented fallback
+  when the Supervisor will not answer. The module's docstring records which
+  permission grants each call, `hassio_api` being only one of the two.
+  `cli._load` applies them whenever `SUPERVISOR_TOKEN` is set and the file
+  exists (`src/maverick/cli.py`), which also retires the
+  `/data/options.json` entry in `DEFAULT_CONFIG_PATHS` and the "The add-on
+  should have generated one" error that entry existed to raise. `app/run.sh`
+  is down to copying the starter config and starting the service, and CI now
+  runs the built image against an `options.json` with nothing in the
+  environment (`.github/workflows/ci.yml`) — the local reproduction the 0.2.x
+  cycle did without.
 - **The setup UI's stylesheet and script are files now, not strings in Python.**
   `_CSS` and `_JS` lived in `src/maverick/server/ui.py`, which also rendered
   every card server-side; they are now `src/maverick/server/static/app.css` and

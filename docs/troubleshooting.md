@@ -1,6 +1,6 @@
 # Troubleshooting
 
-*Last reviewed against commit `7c6ec4f`.*
+*Last reviewed against commit `a964f6c`.*
 
 Every user-facing failure message Maverick can produce, grouped in the order
 you meet them: loading the config, connecting to Home Assistant, rendering,
@@ -71,10 +71,14 @@ locations.
 No config file found. Looked in: {paths}. Run `maverick init > config.yaml` to create one.
 ```
 
-**Cause:** no `-c` given, and none of `config.yaml`, `/config/maverick.yaml`,
-`/data/options.json` or `~/.config/maverick/config.yaml` exist.
+**Cause:** no `-c` given, and none of `config.yaml`, `/config/maverick.yaml`
+or `~/.config/maverick/config.yaml` exist (`DEFAULT_CONFIG_PATHS` in
+`src/maverick/cli.py`).
 **Fix:** `maverick init > config.yaml` writes a starter file in the current
-directory; edit it and re-run, or pass `-c` explicitly.
+directory; edit it and re-run, or pass `-c` explicitly. Inside the Home
+Assistant app it means the starter config was never written to
+`/config/maverick.yaml`, which `app/run.sh` does on the first start — start the
+app once and read its log.
 
 ```text
 Config file not found: {path}
@@ -86,18 +90,71 @@ path has already been chosen). In practice this fires only if the file is
 deleted between `_find_config` finding it and `load_config` reading it.
 **Fix:** as above.
 
-### Home Assistant add-on: options.json without a translated config
+### The Home Assistant app's options
+
+Under the app, the connection settings come from the Configuration tab rather
+than from `maverick.yaml`. The service reads them itself, from
+`/data/options.json`, and sets the environment variables the config file
+substitutes — `HA_URL`, `MQTT_HOST` and the rest (`load_app_options` in
+`src/maverick/ha/options.py`, called by `_load` in `src/maverick/cli.py`
+whenever a `SUPERVISOR_TOKEN` is in the environment). Everything in this
+section is a **log** message written while that happens, and none of them stops
+the app: what several of them describe is fixed in the app's own web UI, which
+has to be running to be reached.
 
 ```text
-Found /data/options.json but no maverick.yaml. The add-on should have generated one; check the add-on log.
+Could not read the app's options from %s (%s); every option will be treated as unset.
 ```
 
-**Cause:** inside the Home Assistant app's container, `/data/options.json`
-exists (the app's own options) and `maverick` was run without `-c` before the
-app's `run.sh` had written `/config/maverick.yaml`. Normally that means someone
-ran the CLI by hand in the container, since `run.sh` always passes `-c`.
-**Fix:** start the app once so `run.sh` writes the file, or pass
-`-c /config/maverick.yaml`.
+**Cause:** `/data/options.json` could not be read, or does not hold a JSON
+object. The Supervisor writes that file for every app, and Maverick only reads
+it when it is there (`_load` in `src/maverick/cli.py` checks first), so inside
+the app this means something went wrong outside Maverick — a file that vanished
+mid-start, or one truncated by a full disk.
+**Fix:** none inside the app — it starts with every option unset, which is the
+state a fresh install is in, and the Configuration tab is read again on the
+next start. Elsewhere, put the settings in `maverick.yaml` or the environment
+instead.
+
+```text
+No Home Assistant credential yet, so rendering will fail.
+Open this app's web UI and press 'Link with Home Assistant'.
+You can instead paste a long-lived access token (your profile, Security tab) into the home_assistant_token option.
+```
+
+**Cause:** neither `home_assistant_token` nor `home_assistant_refresh_token` is
+set, which is how a freshly installed app arrives. Starting anyway is
+deliberate: linking happens in the web UI, so refusing to start would put the
+fix out of reach.
+**Fix:** what the lines say. The credential itself, and what each kind is good
+for, is [The credential](#the-credential) below.
+
+```text
+base_url is not set and the host address could not be read;
+panels that pull frames will not know where to fetch from.
+```
+
+**Cause:** the `base_url` option is empty and the host's own address could not
+be read. Maverick asks the Supervisor for `GET /network/info` and takes the
+first IPv4 address it lists (`_host_ipv4` in
+`src/maverick/ha/options.py`); this is what an app with no `hassio_api`
+permission, or a Supervisor that refused the call, leaves behind. The variable
+is left empty rather than guessed, because a panel told to fetch from an
+address that is not the host's simply stops refreshing.
+**Fix:** set **Base URL for panels** (`base_url`) on the Configuration tab to
+an address the panel can reach, for example `http://192.168.1.10:5000`. The
+line above it in the log says why the lookup failed.
+
+Five more lines are logged at **info** on the same path, and they are the trail
+worth reading when a panel or a broker is not where you expected:
+
+| Message | Means |
+|---|---|
+| `base_url is not set; panels will be told to fetch from %s` | The address above was derived successfully; this is the one panels get. |
+| `MQTT: using the broker from the app options (%s:%s)` | `mqtt_host` is set, so the Mosquitto app is not consulted at all. |
+| `MQTT: using the Mosquitto broker app (%s:%s); displays will appear as devices` | The broker app's own host and credentials came back from `GET /services/mqtt`. |
+| `MQTT: no broker configured and the Mosquitto broker app is not installed;` | Neither source answered. MQTT is off, displays do not appear as Home Assistant devices, and rendering is unaffected. |
+| `The Supervisor did not answer GET %s (%s).` | One of those two Supervisor calls failed, with its status. `400 Service not enabled` on `/services/mqtt` is the ordinary "Mosquitto is not installed" case; a `403` means a permission the app is missing (`hassio_api` for `/network/info`, `services: mqtt:want` for `/services/mqtt`, both in `app/config.yaml`). |
 
 ### The YAML itself is wrong
 
