@@ -21,6 +21,7 @@ import json
 import logging
 import time
 import uuid
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
@@ -46,6 +47,11 @@ from .transports import (
 from .transports.base import Transport
 
 log = logging.getLogger(__name__)
+
+#: How many past render outcomes `Engine` keeps per display, in memory and in
+#: `<data_dir>/history/<id>.json`. Also the maximum a caller of `render_history`
+#: or `GET /api/displays/{id}/history` may ask for.
+HISTORY_LIMIT = 50
 
 
 @dataclass
@@ -98,6 +104,31 @@ class RenderOutcome:
             f"[{self.display_id}] ok in {self.total_s:.2f}s "
             f"(render {self.render_s:.2f}s) lint={lint} — {detail}"
         )
+
+
+@dataclass
+class HistoryEntry:
+    """One past outcome of `Engine.render`, kept after a later render erases it
+    from `DisplayState`.
+
+    A render that fails, is blocked by lint or skips because the frame is
+    unchanged all clear `state.last_error` the next time it succeeds, so the
+    only trace any of them leave is here — appended by `Engine._notify`,
+    which every path through `render` calls, so every outcome is recorded.
+    """
+
+    at: str
+    trigger: str
+    ok: bool
+    skipped: bool
+    reason: str
+    render_s: float
+    process_s: float
+    total_s: float
+    lint_summary: str
+    checksum: str
+    full_refresh: bool
+    delivery: str
 
 
 @dataclass
@@ -325,6 +356,9 @@ class Engine:
         self.data_dir = Path(config.data_dir)
         self.frames = FrameStore(self.data_dir / "frames")
         self.states: dict[str, DisplayState] = {}
+        #: The last `HISTORY_LIMIT` render outcomes per display, oldest first,
+        #: persisted one file per display under `<data_dir>/history/`.
+        self.history: dict[str, deque[HistoryEntry]] = {}
 
         self._pool = BrowserPool(max_concurrent=int(_env_int("MAVERICK_MAX_RENDERS", 2)))
         self._ha: HomeAssistantClient | None = None
@@ -352,6 +386,13 @@ class Engine:
         self._listeners.append(callback)
 
     async def _notify(self, outcome: RenderOutcome) -> None:
+        """Record `outcome` to history, then tell every listener about it.
+
+        `render` calls this at every point an outcome is final — success,
+        failure, a lint block or an unchanged skip — so recording history here
+        rather than at each call site is what keeps every path covered.
+        """
+        self._append_history(outcome)
         for listener in self._listeners:
             try:
                 await listener(outcome)
@@ -365,6 +406,7 @@ class Engine:
             return
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._load_state()
+        self._load_history()
         self.frames.load([d.id for d in self.config.enabled_displays])
 
         # One token source shared by the REST client, the WebSocket watcher and
@@ -518,6 +560,7 @@ class Engine:
             self.states.pop(display_id, None)
             self._save_state()
             self.frames.remove(display_id)
+            self._forget_history(display_id)
         self._locks.pop(display_id, None)
         log.info("[%s] unregistered", display_id)
 
@@ -558,6 +601,11 @@ class Engine:
     def is_rendering(self, display_id: str) -> bool:
         """Whether a render for this display is in its locked section right now."""
         return display_id in self._rendering
+
+    def render_history(self, display_id: str, limit: int = HISTORY_LIMIT) -> list[dict[str, Any]]:
+        """The last `limit` render outcomes for a display, newest first."""
+        newest_first = list(reversed(self.history.get(display_id, ())))
+        return [asdict(entry) for entry in newest_first[:limit]]
 
     async def _install(self, display: DisplayConfig) -> None:
         """Build one display's runtime pieces: transport, render lock, state.
@@ -923,6 +971,65 @@ class Engine:
         except OSError as exc:
             log.warning("could not persist state: %s", exc)
 
+    # -------------------------------------------------------------- history --
+
+    def _history_path(self, display_id: str) -> Path:
+        return self.data_dir / "history" / f"{display_id}.json"
+
+    def _load_history(self) -> None:
+        """Restore every display's history at startup, matching `_load_state`:
+        an unreadable file is logged and skipped, never fatal."""
+        directory = self.data_dir / "history"
+        if not directory.exists():
+            return
+        for path in directory.glob("*.json"):
+            display_id = path.stem
+            try:
+                raw = json.loads(path.read_text())
+                self.history[display_id] = deque(
+                    (HistoryEntry(**row) for row in raw), maxlen=HISTORY_LIMIT
+                )
+            except Exception as exc:  # noqa: BLE001 - a bad history file must not be fatal
+                log.warning("ignoring unreadable history file %s: %s", path, exc)
+
+    def _append_history(self, outcome: RenderOutcome) -> None:
+        entry = HistoryEntry(
+            at=_now(),
+            trigger=outcome.trigger,
+            ok=outcome.ok,
+            skipped=outcome.skipped,
+            reason=outcome.reason,
+            render_s=round(outcome.render_s, 3),
+            process_s=round(outcome.process_s, 3),
+            total_s=round(outcome.total_s, 3),
+            lint_summary=outcome.frame.lint.summary() if outcome.frame else "",
+            checksum=outcome.frame.checksum if outcome.frame else "",
+            full_refresh=outcome.full_refresh,
+            delivery=outcome.delivery.detail if outcome.delivery else "",
+        )
+        bucket = self.history.setdefault(outcome.display_id, deque(maxlen=HISTORY_LIMIT))
+        bucket.append(entry)
+        self._save_history(outcome.display_id)
+
+    def _save_history(self, display_id: str) -> None:
+        try:
+            path = self._history_path(display_id)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            serialised = [asdict(entry) for entry in self.history.get(display_id, ())]
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(serialised, indent=2))
+            temporary.replace(path)
+        except OSError as exc:
+            log.warning("could not persist history for %s: %s", display_id, exc)
+
+    def _forget_history(self, display_id: str) -> None:
+        self.history.pop(display_id, None)
+        path = self._history_path(display_id)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            log.warning("could not delete history file %s: %s", path, exc)
+
 
 def _transport_options(display: Any) -> dict[str, Any]:
     data = display.transport.model_dump()
@@ -943,4 +1050,11 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-__all__ = ["Engine", "RenderOutcome", "DisplayState", "FrameStore", "StoredFrame"]
+__all__ = [
+    "Engine",
+    "RenderOutcome",
+    "DisplayState",
+    "HistoryEntry",
+    "FrameStore",
+    "StoredFrame",
+]

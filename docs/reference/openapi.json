@@ -307,6 +307,63 @@
         }
       }
     },
+    "/api/displays/{display_id}/history": {
+      "get": {
+        "summary": "Display History",
+        "description": "Past render outcomes for this display, newest first.\n\n`Engine.render_history` (`src/maverick/engine.py`) reads from the\nbounded, persisted buffer `Engine._notify` appends to on every render \u2014\nsuccess, failure, a lint block or an unchanged skip \u2014 which is what\nlets this answer \"what happened\" after `DisplayState.last_error` has\nalready been cleared by a later success.",
+        "operationId": "display_history_api_displays__display_id__history_get",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Display History Api Displays  Display Id  History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/displays/{display_id}/schedule": {
       "post": {
         "summary": "Set Schedule",

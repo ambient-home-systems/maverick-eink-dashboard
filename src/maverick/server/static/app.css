@@ -91,6 +91,27 @@ button[aria-busy=true]{cursor:progress}
 .issues:empty{display:none}
 .issues li{padding:6px 0;border-top:1px dotted var(--line)}
 .issues .hint{color:var(--muted)}
+
+/* A per-card disclosure, same free-disclosure pattern as the MQTT chip and
+   the editor's field-group sections. */
+.card details.history{border-top:1px solid var(--line)}
+.card details.history>summary{padding:10px 16px;font-size:12.5px;font-weight:600;
+      cursor:pointer;list-style:none}
+.card details.history>summary::-webkit-details-marker{display:none}
+.card details.history[open]>summary{border-bottom:1px solid var(--line)}
+.history-body{padding:8px 16px 14px;overflow-x:auto}
+.history-empty{margin:0;font-size:12.5px;padding:4px 0}
+.history-table{width:100%;border-collapse:collapse;font-size:12px}
+.history-table th{text-align:left;color:var(--muted);font-weight:500;
+      padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.history-table td{padding:4px 6px;border-bottom:1px dotted var(--line);
+      vertical-align:top}
+.history-row.err{background:rgba(163,39,31,.08)}
+/* Only a failed/blocked row's pill is a <button>; give it back the plain
+   look every other pill has instead of the page-background button reset. */
+.history-pill{padding:1px 7px;font-size:11px;background:transparent}
+.history-reason td{color:var(--muted);white-space:pre-wrap;font-size:11.5px;
+      padding-top:0;border-bottom:1px dotted var(--line)}
 code{font:12px ui-monospace,monospace;background:var(--bg);padding:1px 5px;
      border-radius:4px;border:1px solid var(--line)}
 a{color:inherit}

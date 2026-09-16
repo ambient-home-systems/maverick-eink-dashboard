@@ -126,7 +126,9 @@ root `zoom`. [The design guide](design-guide.md) covers that half.
 ## State that survives a restart
 
 Two pieces of per-display state earn persistence to `<data_dir>/state.json`; the
-rest of `DisplayState` is diagnostics that ride along with them.
+rest of `DisplayState` is diagnostics that ride along with them. Render history
+is kept separately, one file per display, because it grows and is trimmed
+rather than merely updated in place.
 
 | Field | Why it is kept |
 |---|---|
@@ -135,6 +137,7 @@ rest of `DisplayState` is diagnostics that ride along with them.
 | `sequence`, `render_count`, `skip_count` | Counters published on the MQTT state topic; `sequence` is also the *Frames delivered* sensor |
 | `last_render_at`, `last_delivery_at`, `last_pulled_at` | Enough to see that a panel has silently stopped updating |
 | `last_error`, `consecutive_failures` | Drives the `status` sensor and the problem binary sensor |
+| History (`<data_dir>/history/<id>.json`) | Up to 50 past render outcomes per display — trigger, success, timings, lint summary — so a failure or a lint block that a later success clears from `last_error` still shows up in `GET /api/displays/{id}/history` and the setup UI's History disclosure |
 
 **Frames are persisted too, and that is a correctness fix rather than a cache.**
 `FrameStore` writes each frame, its preview PNG and its metadata under
@@ -145,10 +148,10 @@ dashboard content happens to change. Restoring from disk also means a device
 that wakes seconds after a restart is served immediately instead of waiting for
 the next scheduled render.
 
-Both the state file and the frame files are written write-then-rename, so a
-device fetching mid-write never sees a truncated frame and a crash mid-save
-never leaves unparseable JSON. An unreadable file is logged and ignored, never
-fatal.
+The state file, the frame files and the per-display history files are all
+written write-then-rename, so a device fetching mid-write never sees a
+truncated frame and a crash mid-save never leaves unparseable JSON. An
+unreadable file is logged and ignored, never fatal.
 
 ## Push, pull, and "pending"
 

@@ -8,6 +8,21 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Render history per display.** `DisplayState` (`src/maverick/engine.py`)
+  keeps only the *last* error and a failure count, both cleared by the next
+  success, so a panel that fails one render in ten had no trace of it
+  afterwards. `Engine` now keeps a bounded history per display — the last 50
+  outcomes, each with its trigger, success, timings, lint summary, checksum,
+  full-refresh flag and delivery detail — appended by `Engine._notify` on
+  every path `Engine.render` can take (success, failure, a lint block or an
+  unchanged skip) and persisted write-then-rename to
+  `<data_dir>/history/<id>.json`, loaded at startup and deleted by
+  `Engine.unregister_display`. `GET /api/displays/{id}/history?limit=N`
+  (behind the API token, newest first, default 20, maximum 50) serves it, and
+  each card in the setup UI gains a History disclosure — a compact table of
+  time, trigger, outcome and duration, with failed and blocked renders
+  highlighted and their reason shown on expand — that loads when opened and
+  refreshes with the poll while open.
 - **The pre-quantisation screenshot next to the quantised frame.** Answering
   "did the dashboard render wrong, or did the pipeline do this" used to mean
   Samba or SSH: `render.debug_artifacts` wrote the raw capture to

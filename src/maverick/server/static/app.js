@@ -298,7 +298,17 @@ const CARD = `
   <a class="esphome-link">ESPHome config</a>
 </div>
 <div class="meta err card-error" hidden></div>
-<ul class="issues"></ul>`;
+<ul class="issues"></ul>
+<details class="history">
+  <summary>History</summary>
+  <div class="history-body">
+    <table class="history-table" hidden>
+      <thead><tr><th>Time</th><th>Trigger</th><th>Outcome</th><th>Duration</th><th>Lint</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="history-empty muted" hidden>No renders yet.</p>
+  </div>
+</details>`;
 
 function cardFor(id) {
   const existing = cards.get(id);
@@ -317,6 +327,11 @@ function cardFor(id) {
   button('.act-edit').addEventListener('click', (e) => openEditor(id, e.currentTarget));
   button('.view-source').addEventListener('click', () => setViewMode(id, 'source'));
   button('.view-frame').addEventListener('click', () => setViewMode(id, 'frame'));
+  // Loads on open, same as every other on-demand fetch here; `paint` below
+  // refreshes it again on every poll while it stays open.
+  card.querySelector('.history').addEventListener('toggle', (e) => {
+    if (e.currentTarget.open) loadHistory(id, card);
+  });
   cards.set(id, card);
   return card;
 }
@@ -403,6 +418,9 @@ function paint(card, display) {
   text(card, '.card-error', message.slice(0, 300));
 
   issues(card, display.lint ? display.lint.issues : []);
+
+  const history = card.querySelector('.history');
+  if (history.open) loadHistory(display.id, card);
 }
 
 /** Whether this display is rendering, or was asked to and has not started yet. */
@@ -491,6 +509,101 @@ function issues(card, found) {
 
 function severityClass(severity) {
   return { error: 'err', warning: 'warn', info: 'muted' }[severity] || '';
+}
+
+// -------------------------------------------------------------- history --
+
+async function loadHistory(id, card) {
+  try {
+    const response = await authFetch(`api/displays/${encodeURIComponent(id)}/history?limit=20`);
+    paintHistory(card, await response.json());
+  } catch (error) {
+    // A 401 already opened the token field; the poll or the next open tries
+    // again. Anything else is worth a line, same as any other failed fetch.
+    if (!error.unauthorised) report(error);
+  }
+}
+
+function paintHistory(card, rows) {
+  const table = card.querySelector('.history-table');
+  const empty = card.querySelector('.history-empty');
+  const signature = JSON.stringify(rows);
+  if (table.dataset.signature === signature) return;
+  table.dataset.signature = signature;
+  if (!rows.length) {
+    table.hidden = true;
+    empty.hidden = false;
+    table.querySelector('tbody').replaceChildren();
+    return;
+  }
+  empty.hidden = true;
+  table.hidden = false;
+  table.querySelector('tbody').replaceChildren(...rows.map(historyRow));
+}
+
+/** "failed", "blocked", "skipped" or "ok" — what a history row's pill says. */
+function historyOutcome(row) {
+  if (!row.ok) return 'failed';
+  if (row.skipped) return row.reason.startsWith('blocked by lint') ? 'blocked' : 'skipped';
+  return 'ok';
+}
+
+/** One history row. A failed or blocked pill is a button that reveals a
+ *  second, hidden row with the reason — an ordinary skip or success has
+ *  nothing worth a click. */
+function historyRow(row) {
+  const outcome = historyOutcome(row);
+  const highlighted = outcome === 'failed' || outcome === 'blocked';
+  const expandable = highlighted && Boolean(row.reason);
+
+  const tr = document.createElement('tr');
+  tr.className = 'history-row' + (highlighted ? ' err' : '');
+
+  const time = document.createElement('td');
+  time.textContent = relative(row.at);
+  time.title = absolute(row.at);
+  tr.append(time);
+
+  const trigger = document.createElement('td');
+  trigger.textContent = row.trigger;
+  tr.append(trigger);
+
+  const outcomeCell = document.createElement('td');
+  const pill = document.createElement(expandable ? 'button' : 'span');
+  if (expandable) pill.type = 'button';
+  pill.className = 'pill history-pill ' + (highlighted ? 'err' : outcome === 'ok' ? 'ok' : 'muted');
+  pill.textContent = outcome;
+  outcomeCell.append(pill);
+  tr.append(outcomeCell);
+
+  const duration = document.createElement('td');
+  duration.textContent = row.total_s ? `${row.total_s.toFixed(2)} s` : '';
+  tr.append(duration);
+
+  const lint = document.createElement('td');
+  lint.textContent = row.lint_summary || '';
+  tr.append(lint);
+
+  const fragment = document.createDocumentFragment();
+  fragment.append(tr);
+
+  if (expandable) {
+    const reasonRow = document.createElement('tr');
+    reasonRow.className = 'history-reason';
+    reasonRow.hidden = true;
+    const cell = document.createElement('td');
+    cell.colSpan = 5;
+    cell.textContent = row.reason;
+    reasonRow.append(cell);
+    pill.setAttribute('aria-expanded', 'false');
+    pill.addEventListener('click', () => {
+      reasonRow.hidden = !reasonRow.hidden;
+      pill.setAttribute('aria-expanded', String(!reasonRow.hidden));
+    });
+    fragment.append(reasonRow);
+  }
+
+  return fragment;
 }
 
 function emptyState(main) {

@@ -31,7 +31,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -39,6 +39,7 @@ from pydantic import BaseModel
 from ..app import VERSION, Application
 from ..config import DisplayConfig
 from ..devices import all_panels
+from ..engine import HISTORY_LIMIT
 from ..ha import auth as ha_auth
 from ..ha import client as ha_client
 from ..ha import supervisor
@@ -290,6 +291,21 @@ def create_app(application: Application) -> FastAPI:
     async def get_display(display_id: str) -> dict[str, Any]:
         _lookup(application, display_id)
         return _display_summary(display_id)
+
+    @api.get("/api/displays/{display_id}/history", dependencies=[auth])
+    async def display_history(
+        display_id: str, limit: int = Query(default=20, ge=1, le=HISTORY_LIMIT)
+    ) -> list[dict[str, Any]]:
+        """Past render outcomes for this display, newest first.
+
+        `Engine.render_history` (`src/maverick/engine.py`) reads from the
+        bounded, persisted buffer `Engine._notify` appends to on every render —
+        success, failure, a lint block or an unchanged skip — which is what
+        lets this answer "what happened" after `DisplayState.last_error` has
+        already been cleared by a later success.
+        """
+        _lookup(application, display_id)
+        return application.engine.render_history(display_id, limit=limit)
 
     @api.post("/api/displays", status_code=201, dependencies=[auth])
     async def create_display(display: DisplayConfig) -> dict[str, Any]:
