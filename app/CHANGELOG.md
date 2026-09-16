@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.0
+
+- **Displays can be added, edited and deleted from the web UI**, with no more
+  hand-editing `/config/maverick.yaml` and restarting: an *Add display*
+  dialog, and an *Edit* drawer on every card covering every setting the
+  display has, including a live *Preview* before you save.
+- **A display can now show several dashboards, one after another.** Add pages
+  in the Edit drawer, turn on rotation, and the panel cycles through them on
+  its own; a picker on the card and an MQTT select let you jump to one
+  directly.
+- **The Dashboard field now offers your actual Home Assistant dashboards** in
+  a dropdown, instead of asking you to type or paste a URL.
+- **Each card shows its render history** — an expandable log of past renders,
+  what triggered each one, and why any of them failed.
+- **Each card can show what the dashboard looked like before it was
+  converted for the panel**, next to the converted frame, to tell a rendering
+  problem from a conversion one at a glance.
+- **The web UI updates itself** — cards refresh on their own, and buttons no
+  longer reload the whole page.
+- **"MQTT off" now explains what enabling it gets you and how**, instead of
+  just stating it.
+- **Fixes: the web UI and panel-preview images could be read by anyone on
+  your network even with an access token set**, and the generated ESPHome
+  configuration leaked that token to anyone who could reach the app. Both are
+  closed; if you use an access token, update as soon as you can.
+- **Fixes the card grid scrolling sideways on a phone.**
+
 ## 0.2.7
 
 - **The same app as 0.2.6, released under a tag that works.** Nothing in the
