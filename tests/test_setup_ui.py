@@ -313,3 +313,47 @@ def test_mqtt_off_says_what_turning_it_on_would_give(app: Application) -> None:
     assert "Mosquitto broker" in page
     assert "mqtt_host" in page
     assert "mqtt.enabled: true" in page
+
+
+# --------------------------------------------------------------------------- #
+# The Add display form
+# --------------------------------------------------------------------------- #
+
+def test_the_page_contains_the_add_display_dialog(app: Application) -> None:
+    """The dialog is server-rendered shell (`_ADD_DIALOG`); app.js only fills it in."""
+    page = _page(app)
+    assert '<dialog id="add-dialog"' in page, "no <dialog> for adding a display"
+    assert 'id="add-display-btn"' in page, "no button to open it from the header"
+    for field in (
+        "add-name", "add-id", "add-panel", "add-dashboard", "add-transport",
+        "add-every", "add-cron", "add-quiet-hours", "add-on-change", "add-enabled",
+        "add-width", "add-height", "add-color-scheme", "add-dpi", "add-rotation",
+        "add-frame-format", "add-submit",
+    ):
+        assert f'id="{field}"' in page, f"the add-display dialog is missing #{field}"
+
+
+def test_the_add_display_form_only_calls_routes_this_app_serves(app: Application) -> None:
+    """The four endpoints the form is built from and posts to, named explicitly.
+
+    `test_the_script_only_calls_routes_this_app_serves` already scans the whole
+    of `app.js` generically; this pins the specific targets P2.2 adds so a
+    typo in one of them fails here by name rather than only in the sweep.
+    """
+    api = create_app(app)
+    targets = _script_targets()
+    for expected in ("api/panels", "api/transports", "api/schema/display", "api/displays"):
+        assert expected in targets, f"app.js no longer references {expected}"
+        assert _resolves(api, "/" + expected), f"{expected} resolves to no route"
+
+
+def test_the_empty_state_no_longer_tells_the_user_to_restart() -> None:
+    """The empty state used to say "add a `displays:` entry ... and restart".
+
+    That card is drawn by `app.js` now (`emptyState`), not server-rendered by
+    `ui.py`, so what is checked here is what the server ships: the script must
+    no longer instruct a restart, and must offer the button that replaces it.
+    """
+    script = _script()
+    assert "restart" not in script.lower(), "app.js still tells the user to restart"
+    assert "Add display" in script, "the empty state no longer offers a way to add one"

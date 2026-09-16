@@ -29,6 +29,7 @@
     "/api/panels": {
       "get": {
         "summary": "Panels",
+        "description": "The panel catalogue, including the two fields the Add display form\nneeds to placehold `DisplayConfig.rotation` and `.frame_format`:\n`rotation` is `PanelProfile.native_rotation` and `frame_format` is\n`PanelProfile.default_format` (`src/maverick/devices/profiles.py`) \u2014\nneither was exposed here before the setup UI had a form that resolved\na panel's own value for those two overrides.",
         "operationId": "panels_api_panels_get",
         "responses": {
           "200": {

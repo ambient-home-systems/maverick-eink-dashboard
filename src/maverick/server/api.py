@@ -148,11 +148,20 @@ def create_app(application: Application) -> FastAPI:
 
     @api.get("/api/panels")
     async def panels() -> list[dict[str, Any]]:
+        """The panel catalogue, including the two fields the Add display form
+        needs to placehold `DisplayConfig.rotation` and `.frame_format`:
+        `rotation` is `PanelProfile.native_rotation` and `frame_format` is
+        `PanelProfile.default_format` (`src/maverick/devices/profiles.py`) —
+        neither was exposed here before the setup UI had a form that resolved
+        a panel's own value for those two overrides.
+        """
         return [
             {
                 "id": p.id, "name": p.name, "vendor": p.vendor,
                 "width": p.width, "height": p.height,
                 "color_scheme": p.color_scheme.value, "dpi": p.dpi,
+                "rotation": p.native_rotation,
+                "frame_format": p.default_format,
                 "supports_partial": p.supports_partial,
                 "default_transport": p.default_transport,
                 "esphome_model": p.esphome_model,

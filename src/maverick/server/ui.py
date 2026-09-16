@@ -82,6 +82,149 @@ _MQTT_HELP = """<details class="chip">
     </div>
   </details>"""
 
+# The Add display dialog. Static markup for a fixed set of fields — unlike the
+# per-display editor P2.3 generates from the schema, this form's shape does not
+# change, so it is server-rendered like the rest of the shell and app.js only
+# fills in what has to come from `/api/panels`, `/api/transports` and
+# `/api/schema/display`: panel and transport options, and every `data-help`
+# node's text, which is each field's own `Field(description=...)` in
+# `src/maverick/config.py` so the two copies cannot drift apart. Working with
+# no script is not a goal here, unlike the rest of the page: there is nothing
+# for the dialog to do without one.
+_ADD_DIALOG = """<dialog id="add-dialog" aria-labelledby="add-dialog-title">
+  <form id="add-form">
+    <h2 id="add-dialog-title">Add display</h2>
+    <p class="dialog-error" id="add-dialog-error" role="alert" hidden></p>
+
+    <div class="field">
+      <label for="add-name">Name</label>
+      <input id="add-name" name="name" type="text" autocomplete="off" autofocus>
+      <div class="help" data-help="name"></div>
+    </div>
+
+    <div class="field">
+      <label for="add-id">Id</label>
+      <input id="add-id" name="id" type="text" autocomplete="off" required
+             pattern="[a-z0-9][a-z0-9_\\-]*">
+      <!-- The rule DisplayConfig._slug enforces (src/maverick/config.py): -->
+      <div class="help">Lower-case, with <code>-</code> for spaces: letters,
+        digits, <code>-</code> or <code>_</code>, starting with a letter or
+        digit. It becomes a URL path segment and an MQTT topic level.</div>
+      <div class="field-error" data-error="id"></div>
+    </div>
+
+    <div class="field">
+      <label for="add-panel">Panel</label>
+      <select id="add-panel" name="panel" required></select>
+      <div class="help" id="add-panel-notes" hidden></div>
+      <div class="field-error" data-error="panel"></div>
+    </div>
+
+    <div class="field">
+      <label for="add-dashboard">Dashboard</label>
+      <input id="add-dashboard" name="dashboard" type="text" value="/lovelace/0"
+             autocomplete="off">
+      <div class="help" data-help="dashboard"></div>
+      <div class="field-error" data-error="dashboard"></div>
+    </div>
+
+    <div class="field">
+      <label for="add-transport">Transport</label>
+      <select id="add-transport" name="transport" required></select>
+      <div class="help" id="add-transport-help"></div>
+    </div>
+    <div id="add-transport-options"></div>
+    <div class="field-error" data-error="transport"></div>
+
+    <fieldset class="field-group">
+      <legend>Schedule</legend>
+      <div class="field">
+        <label for="add-every">Every</label>
+        <input id="add-every" name="every" type="text" placeholder="e.g. 15m"
+               autocomplete="off">
+        <div class="help" data-help="schedule.every"></div>
+      </div>
+      <div class="field">
+        <label for="add-cron">Cron</label>
+        <input id="add-cron" name="cron" type="text" placeholder="e.g. */15 * * * *"
+               autocomplete="off">
+        <div class="help" data-help="schedule.cron"></div>
+      </div>
+      <div class="field-error" data-error="schedule"></div>
+      <div class="field">
+        <label for="add-quiet-hours">Quiet hours</label>
+        <input id="add-quiet-hours" name="quiet_hours" type="text"
+               placeholder="23:00-06:30" autocomplete="off">
+        <div class="help" data-help="schedule.quiet_hours"></div>
+      </div>
+      <div class="field">
+        <label for="add-on-change">On change</label>
+        <input id="add-on-change" name="on_change" type="text"
+               placeholder="sensor.a, sensor.b" autocomplete="off">
+        <div class="help" data-help="schedule.on_change"></div>
+      </div>
+    </fieldset>
+
+    <div class="field checkbox">
+      <label><input id="add-enabled" name="enabled" type="checkbox" checked> Enabled</label>
+      <div class="help" data-help="enabled"></div>
+    </div>
+
+    <details class="field-group">
+      <summary>Advanced</summary>
+      <div class="field">
+        <label for="add-width">Width</label>
+        <input id="add-width" name="width" type="number" min="1" autocomplete="off">
+        <div class="help" data-help="width"></div>
+        <div class="field-error" data-error="width"></div>
+      </div>
+      <div class="field">
+        <label for="add-height">Height</label>
+        <input id="add-height" name="height" type="number" min="1" autocomplete="off">
+        <div class="help" data-help="height"></div>
+        <div class="field-error" data-error="height"></div>
+      </div>
+      <div class="field">
+        <label for="add-color-scheme">Colour scheme</label>
+        <select id="add-color-scheme" name="color_scheme"></select>
+        <div class="help" data-help="color_scheme"></div>
+        <div class="field-error" data-error="color_scheme"></div>
+      </div>
+      <div class="field">
+        <label for="add-dpi">DPI</label>
+        <input id="add-dpi" name="dpi" type="number" min="1" autocomplete="off">
+        <div class="help" data-help="dpi"></div>
+        <div class="field-error" data-error="dpi"></div>
+      </div>
+      <div class="field">
+        <label for="add-rotation">Rotation</label>
+        <select id="add-rotation" name="rotation">
+          <option value="">panel default</option>
+          <option value="0">0&deg;</option>
+          <option value="90">90&deg;</option>
+          <option value="180">180&deg;</option>
+          <option value="270">270&deg;</option>
+        </select>
+        <div class="help" data-help="rotation"></div>
+        <div class="field-error" data-error="rotation"></div>
+      </div>
+      <div class="field">
+        <label for="add-frame-format">Frame format</label>
+        <select id="add-frame-format" name="frame_format"></select>
+        <div class="help" data-help="frame_format"></div>
+        <div class="field-error" data-error="frame_format"></div>
+      </div>
+    </details>
+
+    <p class="dialog-error" id="add-network-error" role="alert" hidden></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="add-cancel">Cancel</button>
+      <button type="submit" id="add-submit">Add display</button>
+    </div>
+  </form>
+</dialog>"""
+
 
 def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
     """The page shell, with ``displays`` embedded for the first paint.
@@ -129,6 +272,8 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
 <header>
   <h1>Maverick</h1>
   <span class="sub">{count} display{"" if count == 1 else "s"}</span>
+  <button type="button" id="add-display-btn" class="add-btn"
+          aria-haspopup="dialog">Add display</button>
   {ha_chip}
   {mqtt_chip}
   <span class="sub spacer"><a href="api/docs">API docs</a></span>
@@ -139,6 +284,7 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
 <p class="notice" id="notice" role="status" hidden></p>
 {lede}
 <main id="displays"></main>
+{_ADD_DIALOG}
 <script type="application/json" id="initial-displays">{embedded}</script>
 <script type="module" src="static/app.js"></script>
 </body></html>"""

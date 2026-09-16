@@ -104,3 +104,42 @@ a{color:inherit}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
         transition-duration:.01ms!important}
 }
+
+/* -------------------------------------------------------- add-display dialog */
+
+.add-btn{font:inherit;padding:6px 12px;border:1px solid var(--fg);border-radius:6px;
+      background:var(--fg);color:var(--bg);cursor:pointer;transition:opacity .15s}
+.add-btn:hover{opacity:.85}
+
+dialog#add-dialog{border:1px solid var(--line);border-radius:10px;padding:0;
+      width:min(480px,calc(100vw - 32px));max-height:min(680px,calc(100vh - 48px));
+      background:var(--card);color:var(--fg)}
+dialog#add-dialog::backdrop{background:rgba(0,0,0,.45)}
+/* [hidden] loses to display:block for a non-<dialog> element, but a closed
+   <dialog> is display:none by the UA stylesheet already — nothing to restate. */
+dialog#add-dialog form{display:flex;flex-direction:column;max-height:inherit;
+      overflow-y:auto;padding:20px}
+dialog#add-dialog h2{margin:0 0 14px;font-size:17px}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.field label{font-size:13px;font-weight:600}
+.field input[type=text],.field input[type=number],.field select{
+      font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+      background:var(--bg);color:var(--fg);width:100%}
+.field .help{font-size:12px;color:var(--muted)}
+.field .help.warn{color:var(--warn)}
+.field .help:empty{display:none}
+.field-error{font-size:12px;color:var(--err)}
+.field-error:empty{display:none}
+.field.checkbox label{display:flex;align-items:center;gap:8px;font-weight:400}
+.field-group{border:1px solid var(--line);border-radius:8px;padding:12px;margin:0 0 14px}
+.field-group>legend,.field-group>summary{font-size:13px;font-weight:600;padding:0 4px}
+details.field-group>summary{cursor:pointer}
+details.field-group[open]>summary{margin-bottom:10px}
+.dialog-error{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;
+      background:rgba(163,39,31,.12);color:var(--err)}
+.dialog-error:empty{display:none}
+.dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+@media (max-width:480px){
+  dialog#add-dialog{width:calc(100vw - 32px);border-radius:8px}
+  dialog#add-dialog form{padding:16px}
+}

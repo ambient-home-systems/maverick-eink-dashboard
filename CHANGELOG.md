@@ -115,6 +115,25 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   option (`app/run.sh`); and `mqtt.enabled: true` standalone
   (`src/maverick/config.py`). It is a `<details>` element, so it opens with no
   script.
+- **An "Add display" dialog** in the setup UI, built entirely from the API a
+  form needs: `GET /api/panels` fills a Panel select grouped by vendor, with
+  the profile's notes shown once one is chosen; `GET /api/transports` fills
+  the Transport select, and each transport's `options_doc`
+  (`src/maverick/transports/base.py`) draws its own option fields underneath,
+  with a note that `mqtt` needs MQTT enabled globally; `GET /api/schema/display`
+  supplies every field's help text, so the copy in the dialog and the
+  `Field(description=...)` in `src/maverick/config.py` cannot drift apart. The
+  id derives from the name as it is typed — lower-case, `-` for spaces,
+  matching the pattern `DisplayConfig._slug` enforces — and stays editable. An
+  Advanced disclosure holds the geometry overrides (width, height, colour
+  scheme, dpi, rotation, frame format), each placeholder showing the selected
+  panel's own value, which `GET /api/panels` now also reports as `rotation`
+  and `frame_format` (`PanelProfile.native_rotation` and `.default_format`).
+  Submitting posts to `POST /api/displays`; a 422 is mapped onto the field
+  named in pydantic's `loc`, a 409 marks the id field, and a network failure
+  is shown in the dialog rather than as an alert. The empty-state card, which
+  used to tell the user to edit the config file and restart, now offers the
+  same dialog.
 
 ### Changed
 
