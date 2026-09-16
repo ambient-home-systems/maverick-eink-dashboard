@@ -362,9 +362,6 @@ assume works.
   is no sidebar panel, no config flow, no HACS listing and no `maverick.*`
   actions. Outside the app, Maverick is a standalone service that talks to
   Home Assistant over its APIs.
-- **There is no standalone Dockerfile.** The app image is built by the
-  Supervisor and expects the app's options; elsewhere, running it means a
-  Python 3.11+ environment and systemd, as the README describes.
 - **A display renders one dashboard.** There is no page list, no dwell time and
   no rotation: a display names one `dashboard:` and renders that. The setting
   itself can be changed while the service runs (`Application.update_display`,

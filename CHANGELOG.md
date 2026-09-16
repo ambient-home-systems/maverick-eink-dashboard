@@ -8,6 +8,22 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A standalone Docker image, and a local dev loop against a real Home
+  Assistant.** The root [`Dockerfile`](Dockerfile) is modelled on
+  `app/Dockerfile` — Debian bookworm, a venv, Debian's `chromium` package, the
+  same fonts and `HEALTHCHECK` — but installs the package from the build
+  context rather than a pinned git ref, reads no `/data/options.json` and
+  assumes no Supervisor; it runs
+  `maverick -c /config/maverick.yaml serve --host 0.0.0.0 --port 5000` with
+  `/config`, `/media` and `/share` as volumes. `docker-compose.dev.yml` stands
+  it up next to a real Home Assistant (`dev/homeassistant/`, seeded with
+  `demo:` entities and a dashboard) and Mosquitto (`dev/mosquitto.conf`), with
+  the source tree bind-mounted so a code change needs only
+  `docker compose restart maverick`; `scripts/dev.sh` wraps the loop
+  (`up`, `down`, `logs`, `render <id>`, `check`). CI gains an `image` job that
+  builds the root image on pull requests (amd64) and runs the same smoke
+  commands the `app` job runs. See "Docker" in README.md and "Running against
+  a real Home Assistant" in CONTRIBUTING.md.
 - **Render history per display.** `DisplayState` (`src/maverick/engine.py`)
   keeps only the *last* error and a failure count, both cleared by the next
   success, so a panel that fails one render in ten had no trace of it

@@ -8,15 +8,16 @@ here has been checked against hardware, so a report from someone who owns a
 panel is worth more than a patch written from a datasheet.
 
 1. [Development setup](#development-setup)
-2. [Running the checks](#running-the-checks)
-3. [The documentation workflow](#the-documentation-workflow)
-4. [Adding a panel profile](#adding-a-panel-profile)
-5. [Adding a transport](#adding-a-transport)
-6. [The Home Assistant app](#the-home-assistant-app)
-7. [The hardware-untested banner](#the-hardware-untested-banner)
-8. [Spelling](#spelling)
-9. [Releasing](#releasing)
-10. [Pull request checklist](#pull-request-checklist)
+2. [Running against a real Home Assistant](#running-against-a-real-home-assistant)
+3. [Running the checks](#running-the-checks)
+4. [The documentation workflow](#the-documentation-workflow)
+5. [Adding a panel profile](#adding-a-panel-profile)
+6. [Adding a transport](#adding-a-transport)
+7. [The Home Assistant app](#the-home-assistant-app)
+8. [The hardware-untested banner](#the-hardware-untested-banner)
+9. [Spelling](#spelling)
+10. [Releasing](#releasing)
+11. [Pull request checklist](#pull-request-checklist)
 
 ## Development setup
 
@@ -52,6 +53,44 @@ Two environment variables are worth knowing while working:
 - `render.debug_artifacts: true` on a display writes the raw screenshot and the
   quantised frame to `<data_dir>/debug/<id>/`, which is how you find out what
   Chromium actually saw.
+
+## Running against a real Home Assistant
+
+Rendering needs a Home Assistant frontend to point Chromium at, and until now
+getting one on a developer machine meant installing Home Assistant by hand —
+which is why the app's packaging (`app/`) took seven releases, 0.2.0 through
+0.2.6, to settle (`CHANGELOG.md`), without ever exercising a fresh install as
+part of the checks. `docker-compose.dev.yml`
+at the repository root fixes that: three services, `homeassistant`
+(`ghcr.io/home-assistant/home-assistant:stable`, seeded by `dev/homeassistant/`
+with `demo:` entities and a dashboard at `dev/homeassistant/ui-lovelace.yaml`),
+`mosquitto` (`eclipse-mosquitto`, `dev/mosquitto.conf` allowing anonymous
+connections), and `maverick`, built from the root [`Dockerfile`](Dockerfile)
+with the repository bind-mounted and reinstalled in editable mode on start
+(see the `command` in `docker-compose.dev.yml`), so a code change needs only
+`docker compose restart maverick`.
+
+```bash
+scripts/dev.sh up      # build and start all three
+scripts/dev.sh logs    # follow logs
+scripts/dev.sh check   # run `maverick check` inside the container
+scripts/dev.sh render kitchen   # render one display now (omit the id for all)
+scripts/dev.sh down    # stop and remove the stack
+```
+
+The one manual step: open <http://localhost:8123>, finish onboarding (create
+the user — nothing pre-seeds a password) and create a long-lived access token
+under that user's profile, Security tab. Export it as `HA_TOKEN` before
+`scripts/dev.sh up`; `dev/maverick.yaml` reads it through `${HA_TOKEN}`
+(`src/maverick/config.py`'s environment-variable expansion).
+
+**This is not the Supervisor.** There is no ingress — `maverick` publishes on
+`localhost:5000` directly, the way it does outside the app entirely — no
+`/data/options.json`, and no `bashio`; `run.sh` and the option-reading it does
+(see [The Home Assistant app](#the-home-assistant-app) below) are not exercised
+by this loop at all. It reproduces the standalone path: a config file, a real
+Home Assistant instance and a real broker. Testing the app itself still means
+CI's `app` job, or a real Supervisor.
 
 ## Running the checks
 

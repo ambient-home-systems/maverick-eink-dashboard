@@ -68,6 +68,46 @@ jobs:
       - name: Check relative links
         run: python scripts/check_links.py
 
+  image:
+    name: Standalone image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # amd64 only, and never pushed: there is no registry for it yet. This is
+      # the one place the root image is built — nothing else in the suite
+      # touches Docker.
+      - name: Build image
+        run: docker build --tag maverick:ci .
+
+      # The same three smoke commands the `app` job below runs against the
+      # Home Assistant app image, against this one instead: the CLI starts,
+      # the panel catalogue loads, and Chromium launches through this
+      # project's own launcher (src/maverick/render/browser.py), flags
+      # included.
+      - name: Smoke test
+        run: |
+          docker run --rm --entrypoint maverick maverick:ci --version
+          docker run --rm --entrypoint maverick maverick:ci panels --json > /dev/null
+          docker run --rm -i --entrypoint python3 maverick:ci - <<'EOF'
+          import asyncio
+
+          from maverick.render.browser import BrowserPool
+
+
+          async def main() -> None:
+              pool = BrowserPool(max_concurrent=1)
+              await pool.start()
+              async with pool.page("ci", (320, 240)) as page:
+                  await page.goto("about:blank")
+                  print("chromium ok:", await page.evaluate("navigator.userAgent"))
+              await pool.stop()
+
+
+          asyncio.run(main())
+          EOF
+
   app:
     name: Home Assistant app
     runs-on: ubuntu-latest
