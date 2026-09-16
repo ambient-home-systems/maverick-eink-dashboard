@@ -15,6 +15,24 @@ the reasoning written into the file
 [4](#4-colour-by-panel-class) for you. Read on when you want to know why it
 chose what it chose, or when you are building one by hand.
 
+## The five rules
+
+The setup UI shows these on one screen (*Designing for ink* in its header,
+rendered from `RULES` in `src/maverick/lovelace/rules.py`), beside the starter
+and beside each lint finding; `tests/test_starter_dashboard.py` keeps this
+section and that screen saying the same thing. Everything below is the
+mechanism behind them.
+
+**Size text in millimetres.** Body text about 3 mm tall; nothing under 2.5 mm. Legibility depends on the size on the glass, not on pixels, and 124 dpi ink has no antialiasing to save small type.
+
+**No thin lines, no grey text.** Bold weights, solid black, borders at least a quarter of a millimetre. A two-ink panel has no grey: hairlines break up and grey text vanishes into dots.
+
+**Cards that are text on white.** Entities, markdown, glance, weather and to-do cards. No gauges, sparklines, photos or brightness sliders. Dark glyphs on a light ground snap to the nearest ink and stay crisp; tonal shapes turn to mush.
+
+**Colour is for alerts only.** On a panel with a red or yellow ink, use it to say 'look here' and nothing else. The colour ink refreshes slowly and ghosts; used as decoration it leaves nothing to signal with.
+
+**Count lines, not cards.** A panel holds a fixed number of lines of text and never scrolls. What does not fit is cut off, not moved to page two; the starter's line budget is the ceiling.
+
 Two things to know before the numbers start.
 
 **Every figure here comes from the code.** The tables are printed verbatim by

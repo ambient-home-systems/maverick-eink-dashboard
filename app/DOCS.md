@@ -175,6 +175,15 @@ Add and Edit dialogs pick the tag from a list rather than asking for its
 registry id, and **Test delivery** checks the id against Home Assistant
 before anything is saved.
 
+## Building the dashboard
+
+A phone dashboard is the wrong dashboard for ink. In the Web UI each display's
+**Dashboard starter** creates one sized for that panel in Home Assistant with
+one click and points the display at it; **Edit in Home Assistant** on the card
+opens it in Home Assistant's editor, and **Designing for ink** in the header
+is the five rules on one screen. Creating a dashboard is an administrator
+action in Home Assistant, so the linked account has to be an administrator's.
+
 ## Files and folders
 
 | Inside the app | Where you see it | What is there |

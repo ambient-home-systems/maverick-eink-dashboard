@@ -418,6 +418,67 @@ def _footer(display: ResolvedDisplay, budget: LayoutBudget) -> list[str]:
     return lines
 
 
+def dashboard_url_path(display: ResolvedDisplay) -> str:
+    """The Home Assistant dashboard `url_path` the one-click create uses.
+
+    Home Assistant requires a hyphen in a storage dashboard's `url_path`
+    (`STORAGE_DASHBOARD_CREATE_FIELDS` in `homeassistant/components/lovelace/const.py`
+    allows a single word only with an explicit flag), so the display id — which
+    may carry none — is prefixed, and its underscores become hyphens because
+    the path is a URL segment.
+    """
+    return f"maverick-{display.id}".replace("_", "-")
+
+
+def starter_view_path(display: ResolvedDisplay) -> str:
+    """The view path inside the generated dashboard, as `displays[].dashboard` takes it."""
+    return f"/{dashboard_url_path(display)}/eink-{display.id}"
+
+
+def generate_dashboard_config(
+    display: ResolvedDisplay, states: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """The starter dashboard as the mapping Home Assistant stores.
+
+    The same cards :func:`generate_dashboard` writes as YAML, without the
+    comments: this is what `lovelace/config/save` takes, so the one-click
+    create in the setup UI (`POST /api/displays/{id}/dashboard/create`,
+    `src/maverick/server/api.py`) sends this rather than parsing its own
+    output back.
+    """
+    budget, picks = _plan(display, states)
+    cards: list[dict[str, Any]] = [_heading_card(display, budget)]
+    cards += [_card_for(pick) for pick in picks]
+    return {
+        "views": [
+            {
+                "title": display.name,
+                "path": f"eink-{display.id}",
+                "type": "masonry",
+                "columns": budget.columns,
+                "cards": cards,
+            }
+        ]
+    }
+
+
+def _plan(
+    display: ResolvedDisplay, states: list[dict[str, Any]] | None
+) -> tuple[LayoutBudget, list[EntityPick]]:
+    """The budget and the entity picks, from the viewport rather than the panel.
+
+    A panel with a native rotation of 90 or 270 is rendered transposed and
+    rotated afterwards (`DashboardRenderer.viewport_for`,
+    `src/maverick/render/dashboard.py`), so a 152×296 shelf label is laid out
+    as 296×152 and gets the columns that shape holds.
+    """
+    width, height = display.width, display.height
+    if display.rotation in (90, 270):
+        width, height = height, width
+    budget = budget_for(width, height, display.dpi)
+    return budget, pick_entities(states, budget)
+
+
 def generate_dashboard(
     display: ResolvedDisplay, states: list[dict[str, Any]] | None = None
 ) -> str:
@@ -433,14 +494,9 @@ def generate_dashboard(
     a 152×296 shelf label is laid out as 296×152 and gets the columns that
     shape holds.
     """
-    width, height = display.width, display.height
-    if display.rotation in (90, 270):
-        width, height = height, width
-    budget = budget_for(width, height, display.dpi)
-    picks = pick_entities(states, budget)
-
-    cards: list[dict[str, Any]] = [_heading_card(display, budget)]
-    cards += [_card_for(pick) for pick in picks]
+    budget, picks = _plan(display, states)
+    config = generate_dashboard_config(display, states)
+    cards = config["views"][0]["cards"]
 
     path = f"eink-{display.id}"
     out = _header(display, budget, picks)
@@ -467,4 +523,12 @@ def generate_dashboard(
     return "\n".join(out) + "\n"
 
 
-__all__ = ["CARD_ADVICE", "EntityPick", "generate_dashboard", "pick_entities"]
+__all__ = [
+    "CARD_ADVICE",
+    "EntityPick",
+    "dashboard_url_path",
+    "generate_dashboard",
+    "generate_dashboard_config",
+    "pick_entities",
+    "starter_view_path",
+]

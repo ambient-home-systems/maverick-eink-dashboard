@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **One click to a dashboard.** In a display's *Dashboard starter*, **Create
+  in Home Assistant** makes the dashboard for you, sized for that panel, and
+  points the display at it. No YAML to paste. **Edit in Home Assistant** on
+  the card opens it in Home Assistant's editor; Refresh shows the result.
+- **The rules, where you need them.** *Designing for ink* in the header is
+  the five rules on one screen, with the cards that work and the ones to
+  avoid. Each warning under a display now says what to change first.
 - **Plain words everywhere.** Every setting in the Add dialog and the Edit
   drawer now has a short, plain label and one line of help, instead of the
   reference text it used to show.

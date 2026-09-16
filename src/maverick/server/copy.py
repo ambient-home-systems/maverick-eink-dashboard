@@ -291,6 +291,39 @@ TRANSPORT_OPTIONS: Final[dict[str, dict[str, str]]] = {
 }
 
 
+#: What to do about each lint finding, in one plain sentence. The linter's
+#: own `hint` (`src/maverick/eink/lint.py`) names the mechanism; this names
+#: the change, and the card shows it first. Keyed by the finding's code, or
+#: its prefix for the per-ink `spot_ink_overuse.<ink>` findings.
+LINT_ADVICE: Final[dict[str, str]] = {
+    "empty_frame": (
+        "Nothing rendered at all. Check the dashboard path and the Home Assistant link."
+    ),
+    "blank_render": (
+        "The page did not load. Check the dashboard path, then the Home Assistant link."
+    ),
+    "heavy_ink": "Too much dark ink. Use white space and lines instead of filled blocks.",
+    "spot_ink_overuse": (
+        "Too much colour ink. Keep the colour for alerts and let the rest be black."
+    ),
+    "hairlines": "Lines and letters are too thin. Use bolder text and thicker borders.",
+    "dither_speckle": (
+        "Flat areas are turning to dots. Set Dithering to auto, or none for text-only pages."
+    ),
+    "sub_threshold_pixel": (
+        "Fine detail is smaller than the eye can see on this panel. Use size and weight instead."
+    ),
+    "palette_underused": (
+        "This panel can show more shades than the page uses. Turn Restyle for e-ink off to check."
+    ),
+}
+
+
+def lint_advice(code: str) -> str:
+    """The plain sentence for a finding, matching `spot_ink_overuse.red` by prefix."""
+    return LINT_ADVICE.get(code) or LINT_ADVICE.get(code.split(".")[0], "")
+
+
 def ui_copy() -> dict[str, Any]:
     """The whole thing, as ``GET /api/schema/display`` serves it."""
     return {
@@ -300,4 +333,4 @@ def ui_copy() -> dict[str, Any]:
     }
 
 
-__all__ = ["FIELDS", "SECTIONS", "TRANSPORT_OPTIONS", "ui_copy"]
+__all__ = ["FIELDS", "LINT_ADVICE", "SECTIONS", "TRANSPORT_OPTIONS", "lint_advice", "ui_copy"]

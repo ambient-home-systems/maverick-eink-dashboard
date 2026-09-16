@@ -6,6 +6,34 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Create the starter dashboard in Home Assistant with one click.**
+  **Create in Home Assistant** in each card's Dashboard starter panel creates
+  a storage-mode dashboard called `maverick-<id>`, saves the generated starter
+  into it and points the display at its view — `POST
+  /api/displays/{id}/dashboard/create`, over Home Assistant's own
+  `lovelace/dashboards/create` and `lovelace/config/save`
+  (`HomeAssistantClient.create_dashboard`, `.save_dashboard_config`,
+  `.dashboard_url_paths`). A dashboard already at that path is replaced only
+  on confirmation; a display with pages keeps them. The copy-and-paste into
+  the raw configuration editor is now the fallback for a credential without
+  administrator rights.
+- **Edit in Home Assistant.** Each card, and the Edit drawer's preview row,
+  links straight to the page in Home Assistant's own editor (`?edit=1`);
+  `GET /api/displays` carries `dashboard_url` and `edit_url`.
+- **The five rules for ink, where the mistakes happen.** *Designing for ink*
+  in the header opens one screen with the five rules and the cards that work
+  and do not (`RULES` in `src/maverick/lovelace/rules.py`, rendered with
+  `CARD_ADVICE`); the design guide repeats them word for word and a test
+  keeps the two in step. Every lint finding on a card now leads with what to
+  change, in plain words (`LINT_ADVICE`, `src/maverick/server/copy.py`), with
+  the measurement and the mechanism beneath.
+- A dashboard **strategy** — generating the dashboard live inside Home
+  Assistant's editor — is recorded as the future goal in `docs/roadmap.md`
+  and the guide; it needs a frontend module and a real installation to test
+  on.
+
 ### Changed
 
 - **The setup UI speaks plainly.** Every label and line of help in the Add

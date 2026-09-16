@@ -21,7 +21,7 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Thirty-two routes and one static mount, plus the two FastAPI adds for its
+Thirty-three routes and one static mount, plus the two FastAPI adds for its
 own documentation.
 
 | Method | Path | Token | Purpose |
@@ -54,6 +54,7 @@ own documentation.
 | `GET` | `/api/displays/{display_id}/esphome` | **yes** | That configuration plus the secrets it expects and where to install it |
 | `POST` | `/api/displays/{display_id}/esphome/install` | **yes** | Write it where the ESPHome Device Builder reads configurations |
 | `GET` | `/api/displays/{display_id}/dashboard.yaml` | **yes** | A starter Lovelace dashboard sized for this panel |
+| `POST` | `/api/displays/{display_id}/dashboard/create` | **yes** | Create that starter as a dashboard in Home Assistant and point the display at it |
 | `GET` | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | `GET` | `/api/display` | no | TRMNL per-fetch metadata |
 | `GET` | `/api/auth/status` | no | Which Home Assistant credential is in use |
@@ -1000,6 +1001,33 @@ displays:
 ```
 
 A TRMNL panel needs nothing else.
+
+### `POST /api/displays/{display_id}/dashboard/create`
+
+**Token required.** Body `{"overwrite": false}`. Creates the same starter
+`GET .../dashboard.yaml` hands back as a storage-mode dashboard in Home
+Assistant, at `url_path` `maverick-<display id>` (underscores become hyphens;
+Home Assistant requires a hyphen in a dashboard's path), saves the starter into
+it, and sets the display's `dashboard` to its view
+(`generate_dashboard_config`, `dashboard_url_path` and `starter_view_path` in
+`src/maverick/lovelace/generator.py`; `create_dashboard` and
+`save_dashboard_config` in `src/maverick/ha/client.py`). **200**:
+
+```json
+{"url_path": "maverick-kitchen", "path": "/maverick-kitchen/eink-kitchen", "title": "Kitchen",
+ "created": true, "replaced": false, "applied": true,
+ "open_url": "http://homeassistant.local:8123/maverick-kitchen/eink-kitchen",
+ "edit_url": "http://homeassistant.local:8123/maverick-kitchen/eink-kitchen?edit=1"}
+```
+
+**409** when a dashboard already exists at that path and `overwrite` is
+false: it is the user's, and may have been edited. With `overwrite: true` the
+contents are replaced and no dashboard is created (`replaced: true`).
+`applied` is false for a display with `pages`, which keeps them — `dashboard`
+and `pages` are exclusive — and gets the path to use by hand. **503** when not
+connected to Home Assistant, or when Home Assistant refuses either command
+(both are administrator-only), with its message; the create runs before the
+save, so a refused create leaves nothing behind.
 
 ### `GET /api/setup`
 

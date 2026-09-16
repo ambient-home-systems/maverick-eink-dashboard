@@ -425,22 +425,43 @@ it alongside `settle` rather than leaving it at its 45-second default.
 short version of [the design guide](../design-guide.md), and the command that
 saves you doing it by hand.
 
-### Start from a generated one
+### Create it with one click
+
+Open a display's card in the setup UI, expand **Dashboard starter** and press
+**Create in Home Assistant**. Maverick creates a storage-mode dashboard called
+`maverick-<display id>` in Home Assistant, saves the starter into it and points
+the display at its view; **Open it** and **Edit it** then go straight to it.
+This is `POST /api/displays/{id}/dashboard/create`
+([HTTP API reference](../reference/http-api.md)), which runs Home Assistant's
+own `lovelace/dashboards/create` and `lovelace/config/save` commands through
+`HomeAssistantClient` (`src/maverick/ha/client.py`). Both are administrator
+commands in Home Assistant, so the linked account or the token has to be an
+administrator's. A dashboard already at that path is yours — you may have
+edited it — and is replaced only when you confirm; a display with pages gets
+the dashboard but keeps its pages.
+
+From there the loop is two clicks: **Edit in Home Assistant** on the card
+opens the page in Home Assistant's own editor (the page's URL with `?edit=1`,
+`_frontend_url` in `src/maverick/server/api.py`), and **Refresh** shows the
+result on the panel. Each lint finding under the card leads with what to
+change, in plain words (`LINT_ADVICE`, `src/maverick/server/copy.py`), with
+the measurement and the mechanism under it; **Designing for ink** in the
+header is the five rules on one screen.
+
+### Or take the YAML
 
 ```bash
 maverick dashboard kitchen              # prints it
 maverick dashboard kitchen -o view.yaml # writes it
 ```
 
-Or open a display's card in the setup UI and expand **Dashboard starter**,
-which is the same thing through `GET /api/displays/{id}/dashboard.yaml`
-([HTTP API reference](../reference/http-api.md)), with a Copy button.
-
-What comes back is a complete Lovelace configuration — a top-level `views:`
-list, which is what Home Assistant's **Raw configuration editor** takes. Paste
-it into a new dashboard (**Settings → Dashboards → Add dashboard**, then
-**Edit → ⋮ → Raw configuration editor**) and point the display's `dashboard`
-at the view path in it.
+The same starter is in the card's panel as YAML, with Copy and Download, and
+through `GET /api/displays/{id}/dashboard.yaml`. What comes back is a complete
+Lovelace configuration — a top-level `views:` list, which is what Home
+Assistant's **Raw configuration editor** takes. Paste it into a new dashboard
+(**Settings → Dashboards → Add dashboard**, then **Edit → ⋮ → Raw
+configuration editor**) and point the display's `dashboard` at the view path
+in it. This is the route for a credential without administrator rights.
 
 Two things make it a starting point rather than a template:
 
@@ -1082,6 +1103,12 @@ and none of them exists today:
   reachable — the entities above, and
   [Rotating between pages](#rotating-between-pages) — but the tile feature and
   the card that would gather them into one place on a dashboard are not built.
+* **No dashboard strategy.** The one-click starter creates a dashboard once;
+  a Lovelace *strategy* would generate it live inside Home Assistant's own
+  editor from a panel and a set of areas, and re-generate it when they
+  change. It needs a frontend module, a HACS listing and testing on a real
+  installation, and is the stated future goal in
+  [roadmap.md](../roadmap.md#layer-1--a-dashboard-strategy).
 
 ## Where to go next
 

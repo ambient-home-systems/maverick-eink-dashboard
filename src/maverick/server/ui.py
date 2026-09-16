@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any
 # so this is not the cycle it looks like — `api.py` imports both this module
 # and `..app` the same way.
 from ..app import VERSION
+from ..lovelace import CARD_ADVICE, RULES
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..app import Application
@@ -74,8 +75,8 @@ _TROUBLESHOOTING_URL = f"{_REPO}/blob/main/docs/troubleshooting.md"
 # 1,100-line answer in the repository that the tool never pointed at, so it is
 # named here, first.
 _DOC_LINKS = f"""<span class="sub spacer doclinks">
-    <a href="{_DESIGN_GUIDE_URL}" target="_blank" rel="noopener"
-       title="How to build a dashboard that stays legible on e-ink">Design guide</a>
+    <a href="#rules" class="rules-open"
+       title="The five rules for a dashboard on ink, on one screen">Designing for ink</a>
     <a href="{_DOCS_URL}" target="_blank" rel="noopener"
        title="Every page: guides, recipes per device, and the generated reference">Docs</a>
     <a href="{_TROUBLESHOOTING_URL}" target="_blank" rel="noopener"
@@ -319,6 +320,52 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
   </form>
 </dialog>"""
 
+def _rules_dialog() -> str:
+    """The five rules and the card list, as one screen.
+
+    Rendered from `RULES` (`src/maverick/lovelace/rules.py`) and `CARD_ADVICE`
+    (`src/maverick/lovelace/generator.py`) rather than written here, so the
+    dialog, the starter's comments and the design guide's own summary cannot
+    say three different things. The long guide is linked at the bottom for
+    the mechanism behind each rule.
+    """
+    rules = "\n".join(
+        f"<li><b>{html.escape(title)}</b><span>{html.escape(what)}</span>"
+        f"<span class=\"why\">{html.escape(why)}</span></li>"
+        for title, what, why in RULES
+    )
+    good = [
+        (name, advice) for name, advice in CARD_ADVICE.items() if not advice.startswith("NOT USED")
+    ]
+    bad = [
+        (name, advice.removeprefix("NOT USED: "))
+        for name, advice in CARD_ADVICE.items()
+        if advice.startswith("NOT USED")
+    ]
+    cards = lambda rows: "\n".join(  # noqa: E731 - a two-line template helper
+        f"<li><code>{html.escape(name)}</code> {html.escape(advice)}</li>" for name, advice in rows
+    )
+    return f"""<dialog id="rules" aria-labelledby="rules-title">
+  <div class="rules-head">
+    <h2 id="rules-title">Designing for ink</h2>
+    <button type="button" class="drawer-close rules-close" aria-label="Close">&times;</button>
+  </div>
+  <div class="rules-body">
+    <p class="meta">Five rules cover almost everything. The starter dashboard follows
+      them for you; the checks under each card say which one a page broke.</p>
+    <ol class="rules">
+{rules}
+    </ol>
+    <div class="rules-cards">
+      <div><h3>Cards that work</h3><ul>{cards(good)}</ul></div>
+      <div><h3>Cards to avoid</h3><ul>{cards(bad)}</ul></div>
+    </div>
+    <p class="meta">The long version, with the numbers behind every rule:
+      <a href="{_DESIGN_GUIDE_URL}" target="_blank" rel="noopener">the design guide</a>.</p>
+  </div>
+</dialog>"""
+
+
 # The tags Home Assistant's OpenDisplay integration has already found, offered
 # as displays to add. Server-rendered shell, filled by app.js from
 # `GET /api/ha/opendisplay/devices`; hidden until that answers with a tag, so a
@@ -403,6 +450,7 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
 {_DISCOVERY}
 <main id="displays"></main>
 {_ADD_DIALOG}
+{_rules_dialog()}
 <script type="application/json" id="initial-displays">{embedded}</script>
 <script type="module" src="static/app.js"></script>
 </body></html>"""

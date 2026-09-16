@@ -1083,6 +1083,58 @@
         }
       }
     },
+    "/api/displays/{display_id}/dashboard/create": {
+      "post": {
+        "summary": "Create Starter Dashboard",
+        "description": "Create the starter dashboard in Home Assistant and point the display at it.\n\nThe copy-and-paste loop, done by the server: the same starter\n`GET .../dashboard.yaml` hands back is created as a storage-mode\ndashboard called `maverick-<id>` through `lovelace/dashboards/create`\nand filled through `lovelace/config/save`\n(`HomeAssistantClient.create_dashboard` and `.save_dashboard_config`,\n`src/maverick/ha/client.py`), and the display's `dashboard` is set to\nits view. A dashboard already at that `url_path` is the user's \u2014 they\nmay have edited it \u2014 so it is replaced only with `overwrite: true`\nand the route answers **409** otherwise. A display with `pages` gets\nthe dashboard but keeps its pages: `dashboard` and `pages` are\nexclusive (`DisplayConfig`, `src/maverick/config.py`), and the\nresponse says `applied: false`.\n\nBoth commands are admin-only in Home Assistant, so a credential\nwithout that right fails here with Home Assistant's own message as a\n**503**, and nothing is half done: the create runs before the save,\nand a failed create leaves no dashboard to fill.",
+        "operationId": "create_starter_dashboard_api_displays__display_id__dashboard_create_post",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Starter Dashboard Api Displays  Display Id  Dashboard Create Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/setup": {
       "get": {
         "summary": "Trmnl Setup",
@@ -1249,6 +1301,18 @@
         ],
         "title": "ColorScheme",
         "description": "The color capability of a panel."
+      },
+      "DashboardCreate": {
+        "properties": {
+          "overwrite": {
+            "type": "boolean",
+            "title": "Overwrite",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "DashboardCreate",
+        "description": "Body of `POST /api/displays/{id}/dashboard/create`."
       },
       "DisplayConfig": {
         "properties": {

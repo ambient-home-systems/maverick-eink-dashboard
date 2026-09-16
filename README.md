@@ -82,8 +82,9 @@ repository to the app store; the app itself lives in [`app/`](app/DOCS.md).
    what each panel rendered and what the linter found, an **Edit** action on
    each card opens the settings people actually change (and every other one
    behind an *Expert settings* switch), including a preview of a change
-   before it is saved, and **Dashboard starter** hands you a Lovelace
-   dashboard already sized for that panel.
+   before it is saved, and **Dashboard starter** creates a Lovelace
+   dashboard already sized for that panel in Home Assistant with one click
+   and points the display at it.
 
 [app/DOCS.md](app/DOCS.md) is the full page: every option, what the app maps
 and exposes, and what to check when it does not start.

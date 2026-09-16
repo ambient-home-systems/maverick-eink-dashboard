@@ -324,6 +324,8 @@ const CARD = `
   <button type="button" class="act-edit">Edit</button>
   <button type="button" class="act-schedule"></button>
   <button type="button" class="act-enable" hidden>Enable</button>
+  <a class="card-edit-ha" target="_top" rel="noopener" hidden
+     title="Open this page in Home Assistant's dashboard editor">Edit in Home Assistant</a>
 </div>
 <div class="meta err card-error" hidden></div>
 <ul class="issues"></ul>
@@ -340,17 +342,24 @@ const CARD = `
 <details class="starter">
   <summary>Dashboard starter</summary>
   <div class="starter-body">
-    <p class="meta starter-intro">A Lovelace dashboard sized for this panel:
-      the column count and how much text fits come from its own pixels and dpi,
-      and every card in it is one that survives dithering. Paste it into Home
-      Assistant under Settings &rarr; Dashboards &rarr; Add dashboard, then
-      Edit &rarr; &#8942; &rarr; Raw configuration editor.</p>
+    <p class="meta starter-intro">A dashboard built for this panel: sized to
+      its glass, using only cards that stay readable on ink, filled with your
+      own entities.</p>
+    <div class="starter-create">
+      <div class="row">
+        <button type="button" class="starter-create-btn add-btn">Create in Home Assistant</button>
+        <span class="starter-links">
+          <a class="starter-open" target="_top" rel="noopener" hidden>Open it</a>
+          <a class="starter-edit" target="_top" rel="noopener" hidden>Edit it</a>
+        </span>
+      </div>
+      <p class="meta starter-status">Creates the dashboard in Home Assistant and
+        points this display at it. Nothing to paste.</p>
+    </div>
     <div class="row">
-      <button type="button" class="starter-copy">Copy</button>
+      <button type="button" class="starter-copy">Copy YAML</button>
       <a class="starter-download" download>Download</a>
-      <a class="starter-guide" target="_blank" rel="noopener"
-         href="https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/design-guide.md"
-      >Designing for e-ink</a>
+      <a class="starter-guide rules-open" href="#rules">Which cards work?</a>
     </div>
     <p class="meta err starter-error" hidden></p>
     <pre class="starter-yaml" tabindex="0"></pre>
@@ -411,6 +420,9 @@ function cardFor(id) {
   });
   card.querySelector('.starter-copy').addEventListener('click', (e) => {
     copyText(card.querySelector('.starter-yaml'), e.currentTarget);
+  });
+  card.querySelector('.starter-create-btn').addEventListener('click', (e) => {
+    createStarter(id, card, e.currentTarget, false);
   });
   // The guided ESPHome hand-off, fetched on first open like the starter. It
   // is re-fetched on every open rather than kept: `secrets.yaml` and the
@@ -651,6 +663,12 @@ function paint(card, display) {
   // Kindle or a BLE tag gets no firmware config to install.
   card.querySelector('.install').hidden = !display.esphome_applicable;
 
+  // Straight to Home Assistant's own editor for this page, out of the ingress
+  // frame: the loop is edit there, Refresh here.
+  const editLink = card.querySelector('.card-edit-ha');
+  editLink.hidden = !display.edit_url;
+  attribute(card, '.card-edit-ha', 'href', display.edit_url || '');
+
   const error = card.querySelector('.card-error');
   // 300 characters: a Playwright failure runs to pages, and the whole of it
   // is in the log and in `state.last_error` either way.
@@ -768,6 +786,20 @@ function issues(card, found) {
     const severity = document.createElement('span');
     severity.className = severityClass(issue.severity);
     severity.textContent = issue.severity;
+    // What to change, first and in full ink; the measurement and the
+    // mechanism under it for whoever wants them
+    // (`LINT_ADVICE`, `src/maverick/server/copy.py`).
+    if (issue.advice) {
+      const advice = document.createElement('span');
+      advice.className = 'advice';
+      advice.textContent = issue.advice;
+      item.append(severity, ' ', advice);
+      const detail = document.createElement('div');
+      detail.className = 'hint';
+      detail.textContent = issue.message + (issue.hint ? ' ' + issue.hint : '');
+      item.append(detail);
+      return item;
+    }
     item.append(severity, ' ' + issue.message);
     if (issue.hint) {
       const hint = document.createElement('div');
@@ -1612,6 +1644,21 @@ if (main) {
   });
 }
 
+// The five rules, from the header and from every starter panel. A <dialog>
+// for the same reasons the editor is one: Escape, the backdrop and focus
+// return come for free. The links keep `href="#rules"` so a page whose
+// script never loaded still jumps to the (then visible) markup.
+const rulesDialog = document.getElementById('rules');
+if (rulesDialog) {
+  document.addEventListener('click', (e) => {
+    const opener = e.target.closest('.rules-open');
+    if (!opener) return;
+    e.preventDefault();
+    if (!rulesDialog.open) rulesDialog.showModal();
+  });
+  rulesDialog.querySelector('.rules-close').addEventListener('click', () => rulesDialog.close());
+}
+
 const addDialog = document.getElementById('add-dialog');
 if (addDialog) {
   document.getElementById('add-display-btn')?.addEventListener(
@@ -1747,6 +1794,8 @@ const PREVIEW = `
     <button type="button" class="view-source" aria-pressed="false">Source</button>
     <button type="button" class="view-frame" aria-pressed="true">Frame</button>
   </span>
+  <a class="preview-edit-ha" target="_top" rel="noopener" hidden
+     title="Open this page in Home Assistant's dashboard editor">Edit in Home Assistant</a>
   <span class="spacer"></span>
   <span class="compare-modes" role="group" aria-label="Compare the two frames" hidden>
     <button type="button" class="mode-side" aria-pressed="true">Side by side</button>
@@ -2730,6 +2779,9 @@ function previewSection(summary) {
   node.className = 'editor-preview';
   node.innerHTML = PREVIEW;
 
+  const editLink = node.querySelector('.preview-edit-ha');
+  editLink.hidden = !summary.edit_url;
+  if (summary.edit_url) editLink.href = summary.edit_url;
   const now = node.querySelector('.compare-now img');
   if (summary.checksum) {
     now.dataset.framesrc = withToken(
@@ -3790,4 +3842,47 @@ function tagCard(device) {
     card.appendChild(add);
   }
   return card;
+}
+
+
+// --------------------------------------------------------- one-click starter --
+
+/* `POST /api/displays/{id}/dashboard/create` (`src/maverick/server/api.py`):
+ * the starter is created as a dashboard in Home Assistant and this display
+ * is pointed at it, in one click. A dashboard that already exists at the same
+ * path is the user's, so the route answers 409 until told to replace it, and
+ * the button becomes a question rather than an accident. */
+
+async function createStarter(id, card, button, overwrite) {
+  const status = card.querySelector('.starter-status');
+  const open = card.querySelector('.starter-open');
+  const edit = card.querySelector('.starter-edit');
+  setBusy(button, true);
+  status.textContent = 'Creating\u2026';
+  try {
+    const result = await sendJSON(
+      `api/displays/${encodeURIComponent(id)}/dashboard/create`, 'POST',
+      { overwrite: overwrite }, 'The dashboard could not be created.'
+    );
+    const what = result.replaced ? 'Replaced' : 'Created';
+    status.textContent = result.applied
+      ? `${what} "${result.title}" in Home Assistant. This display now shows it; press ` +
+        'Refresh to see it on the panel.'
+      : `${what} "${result.title}" in Home Assistant. This display has pages, so it was ` +
+        `not switched to it: its path is ${result.path}.`;
+    open.href = result.open_url;
+    open.hidden = false;
+    edit.href = result.edit_url;
+    edit.hidden = false;
+    await poll();
+  } catch (error) {
+    if (error.status === 409) {
+      status.textContent = error.message + ' ';
+      status.appendChild(actionButton('Replace it', () => createStarter(id, card, button, true)));
+    } else if (!error.unauthorised) {
+      status.textContent = error.message;
+    }
+  } finally {
+    setBusy(button, false);
+  }
 }

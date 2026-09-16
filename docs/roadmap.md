@@ -78,6 +78,12 @@ adequate — and you keep every custom card ever written.
 
 ### Layer 1 — a dashboard strategy
 
+**Status: a future goal.** What exists today is the one-click starter — the
+setup UI creates a generated dashboard in Home Assistant and points the
+display at it (`POST /api/displays/{id}/dashboard/create`), with *Edit in Home
+Assistant* and the five rules beside it. That covers the first dashboard; the
+strategy below is what would keep it generated as the home changes.
+
 The strongest HA-native answer, and it improved when strategies became
 registerable and UI-discoverable like custom cards, with a config element. The
 user would pick a panel model and some areas; the strategy would emit an
