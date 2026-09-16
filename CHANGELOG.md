@@ -8,6 +8,20 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A Dashboard picker, fed from Home Assistant.** `HomeAssistantClient` gains
+  `list_dashboards()` (`src/maverick/ha/client.py`), built on a new private
+  `_ws_call`, factored out of `watch_states`, for a one-shot WebSocket command
+  request/response. It lists every Lovelace dashboard and its views — always
+  including the default dashboard at `url_path: "lovelace"` — via the
+  `lovelace/dashboards/list` and `lovelace/config` commands, so a dashboard
+  whose configuration cannot be read (a YAML-mode dashboard) still appears,
+  with an empty `views` list. `GET /api/ha/dashboards` (behind the API token)
+  serves that list and answers `503` when there is no working Home Assistant
+  connection. The Add display form and the per-display editor's Dashboard
+  field now offer a `<datalist>` built from it, labelled with each dashboard
+  and view's title; free text — an absolute URL or a `file://` page — is
+  still accepted, and the picker fails quietly to a plain text field when the
+  endpoint is unavailable.
 - **A display can now be added, changed or removed while the service runs.**
   Every per-display resource was built in a start-up loop — the engine's
   transport, lock and state entry (`Engine.start`), the scheduler's job and the

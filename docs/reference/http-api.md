@@ -21,7 +21,7 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Twenty-two routes and one static mount, plus the two FastAPI adds for its
+Twenty-three routes and one static mount, plus the two FastAPI adds for its
 own documentation.
 
 | Method | Path | Token | Purpose |
@@ -30,6 +30,7 @@ own documentation.
 | `GET` | `/api/panels` | no | The built-in panel catalogue |
 | `GET` | `/api/transports` | no | The registered transports |
 | `GET` | `/api/schema/display` | **yes** | The display config JSON Schema, for a form to render |
+| `GET` | `/api/ha/dashboards` | **yes** | Every Lovelace dashboard and its views, for the Dashboard field's picker |
 | `GET` | `/api/displays` | **yes** | Full summary of every configured display |
 | `GET` | `/api/displays/{display_id}` | **yes** | The same summary for one display |
 | `POST` | `/api/displays` | **yes** | Create a display and start rendering it |
@@ -54,7 +55,7 @@ own documentation.
 
 ## Authentication
 
-Authentication is off until `server.api_token` is set. Set it, and the fifteen
+Authentication is off until `server.api_token` is set. Set it, and the sixteen
 routes marked **yes** above require it; `_authenticated` decides for all of
 them, and it returns true immediately when the configured token is empty, so an
 unset token means every route is open.
@@ -236,6 +237,43 @@ attributes shown by `maverick transports`, and `options` is that transport's
 `TransportConfig` validates none of them. This is what a form needs to draw
 every field of a display, including the transport-specific ones, without
 hard-coding any of it.
+
+### `GET /api/ha/dashboards`
+
+**Requires the token.** Every Lovelace dashboard Home Assistant knows about,
+and its views, for the Dashboard field's `<datalist>` picker in the Add
+display form and the per-display editor
+(`src/maverick/server/static/app.js`). Built by
+`HomeAssistantClient.list_dashboards()` (`src/maverick/ha/client.py`) from two
+WebSocket commands:
+
+```json
+[
+  {
+    "url_path": "lovelace",
+    "title": "Overview",
+    "views": [{"path": "/lovelace/default_view", "title": "Home"}]
+  },
+  {
+    "url_path": "admin-dash",
+    "title": "Admin",
+    "views": []
+  }
+]
+```
+
+Always includes the default dashboard, `url_path: "lovelace"`. A dashboard
+whose own configuration cannot be read — a YAML-mode dashboard, or one with no
+saved configuration yet — still appears, with an empty `views` array, rather
+than dropping it from the list. Each view's `path` is
+`/<url_path>/<view path or its index>`, which is the form the Dashboard field
+takes.
+
+**503** when `engine.ha_ok` is false (no working Home Assistant connection —
+the same flag `/health`'s `home_assistant` key reports), or when the
+WebSocket call itself fails; the `detail` names what Home Assistant said. The
+Dashboard field falls back to a plain text input either way, so this failing
+never blocks adding or editing a display.
 
 ### `GET /api/displays`
 
@@ -845,7 +883,7 @@ as the page described above.
 | Code | Meaning |
 | --- | --- |
 | **400** | `PUT /api/displays/{display_id}` where the body's `id` does not match the path. |
-| **401** | `server.api_token` is set and the request presented no token or the wrong one. Only the fifteen routes marked **yes** in [Routes at a glance](#routes-at-a-glance) can return this. |
+| **401** | `server.api_token` is set and the request presented no token or the wrong one. Only the sixteen routes marked **yes** in [Routes at a glance](#routes-at-a-glance) can return this. |
 | **404** | Unknown display id, or no frame rendered yet. The detail says which. |
 | **409** | `POST /api/displays` where the `id` already names a configured display. |
 | **422** | A parameter or a request body failed validation — a `force` query value that is not a boolean, or a `DisplayConfig` body with a bad or misspelt field. The detail is FastAPI's validation-error array, which names the field (`loc`) for a body error. |

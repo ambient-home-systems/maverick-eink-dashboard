@@ -356,6 +356,23 @@ integration or its `device_id` is wrong (it reaches you wrapped inside the
 **Fix:** check the domain/service exists and its `device_id` is correct.
 
 ```text
+Home Assistant WebSocket command '{message_type}' failed: {error.get('message', result)}
+```
+
+**Cause:** `list_dashboards()` — the Dashboard field's picker, behind
+`GET /api/ha/dashboards` — sent `lovelace/dashboards/list` or `lovelace/config`
+over the websocket and Home Assistant answered `success: false`. A single
+dashboard's own `lovelace/config` failing is caught and that dashboard still
+appears with an empty `views` list (a YAML-mode dashboard, most often); this
+message is what reaches you when `lovelace/dashboards/list` itself fails,
+since then there is nothing to list at all.
+**Surfaces:** as a 503 from `GET /api/ha/dashboards`, whose detail is this
+message; the Dashboard field falls back to a plain text input rather than
+showing an error (`src/maverick/server/static/app.js`).
+**Fix:** read `error.message` in the 503 body; most often the linked account
+lacks the access dashboard management needs.
+
+```text
 unexpected WebSocket greeting: {greeting}
 ```
 

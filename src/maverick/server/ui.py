@@ -127,7 +127,12 @@ _ADD_DIALOG = """<dialog id="add-dialog" aria-labelledby="add-dialog-title">
     <div class="field">
       <label for="add-dashboard">Dashboard</label>
       <input id="add-dashboard" name="dashboard" type="text" value="/lovelace/0"
-             autocomplete="off">
+             autocomplete="off" list="add-dashboard-list">
+      <!-- Populated from GET /api/ha/dashboards when the dialog opens
+           (src/maverick/server/static/app.js); free text stays valid, since an
+           absolute URL or a file:// page is a valid dashboard too
+           (`resolve_url`, src/maverick/render/dashboard.py). -->
+      <datalist id="add-dashboard-list"></datalist>
       <div class="help" data-help="dashboard"></div>
       <div class="field-error" data-error="dashboard"></div>
     </div>
