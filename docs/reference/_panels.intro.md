@@ -15,7 +15,7 @@ way `maverick panels` prints them.
 | Partial refresh | Whether the controller can update part of the panel without a full flash. | `Engine._needs_full_refresh` forces a full refresh on every render when this is `no`. |
 | Full-refresh cadence | How often a full (flashing) refresh is forced to clear ghosting, from `full_refresh_every`. | Same method; a display's `schedule.full_refresh_every` overrides it. |
 | Default transport | The transport a display uses if it sets none of its own. | `DisplayConfig.resolved()`, via `default_transport`. |
-| ESPHome model | The `online_image`/display component model string for `maverick esphome`. | `esphome/generator.py`. Panels with no ESPHome path (BLE tags, e-readers) leave this blank. |
+| ESPHome model | The display component `model:` for `maverick esphome`, with the platform in brackets when it is not `waveshare_epaper`. | `esphome/generator.py`. Every value is validated against ESPHome's own schema by `scripts/check_esphome.py`. Panels with no ESPHome path (BLE tags, e-readers) and panels ESPHome has no driver for leave this blank. |
 | Notes | Free text: caveats, refresh speed, what the entry has actually been checked against. | Datasheet-only entries say nothing here; an entry that has been run on real hardware says so. |
 
 `native_rotation` and `default_format` are not shown as their own columns —
@@ -61,8 +61,9 @@ Add an entry to `src/maverick/devices/panels.yaml` with the fields
   than the transport's own default.
 - `measured_palette` — a note of which measured-ink constant applies, if you
   have one.
-- `esphome_model`, `supports_partial`, `full_refresh_every` — as described
-  above.
+- `esphome_model`, `esphome_platform`, `supports_partial`, `full_refresh_every`
+  — as described above. Set `esphome_model` only to a name ESPHome accepts,
+  and run `python scripts/check_esphome.py <id>` to prove it.
 - `notes` — say what you actually verified.
 
 No code change is required: `all_panels()` reads the YAML at import time, so

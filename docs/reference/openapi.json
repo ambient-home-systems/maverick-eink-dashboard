@@ -118,6 +118,96 @@
         }
       }
     },
+    "/api/environment": {
+      "get": {
+        "summary": "Environment",
+        "description": "What this host can and cannot do, for the forms to draw themselves by.\n\n`addon` says Maverick runs under the Supervisor, where no Bluetooth\nadapter is ever visible (`app/config.yaml` asks for none), so the\ntransport forms leave `mode: ble` out. `bluetooth_scan` says a scan\nfrom this host could work at all: not in the app, and only with the\n`opendisplay` extra installed. `esphome_dashboard` is the ESPHome\nDevice Builder add-on when it is installed, with the page its\n*Install* button is on; `esphome_destinations` is where a generated\nconfiguration can be written so it appears there\n(`src/maverick/esphome/install.py`).",
+        "operationId": "environment_api_environment_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Environment Api Environment Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ha/opendisplay/devices": {
+      "get": {
+        "summary": "Ha Opendisplay Devices",
+        "description": "Every tag Home Assistant's OpenDisplay integration knows, for a picker.\n\nThe device registry id is what `opendisplay.upload_image` wants, and\ncopying it out of a device page URL was the single most common\nmistake in `mode: ha` (`src/maverick/transports/opendisplay.py`).\nEach entry carries a `panel_guess` from its model string\n(`guess_panel`, `src/maverick/devices/guess.py`) and, when a\nconfigured display already delivers to it, that display's id.",
+        "operationId": "ha_opendisplay_devices_api_ha_opendisplay_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Ha Opendisplay Devices Api Ha Opendisplay Devices Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/opendisplay/scan": {
+      "post": {
+        "summary": "Opendisplay Scan",
+        "description": "Scan for OpenDisplay tags from this host's own Bluetooth adapter.\n\nThe route `maverick scan` always had and the setup UI never did. It\ncannot work in the app (no adapter; `409`) and needs the `opendisplay`\nextra (`501`); a scan that raises is the adapter's problem and comes\nback as `502` with the library's message.",
+        "operationId": "opendisplay_scan_api_opendisplay_scan_post",
+        "parameters": [
+          {
+            "name": "timeout",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 10.0,
+              "title": "Timeout"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Opendisplay Scan Api Opendisplay Scan Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/displays": {
       "get": {
         "summary": "List Displays",
@@ -519,6 +609,89 @@
         }
       }
     },
+    "/api/displays/probe": {
+      "post": {
+        "summary": "Probe Candidate",
+        "description": "Ask a candidate config's transport whether a delivery would arrive.\n\nThe *Test delivery* button: for an OpenDisplay tag in `ha` mode that\nis \"does Home Assistant know this device id\", in `ble` mode \"is the\ntag in range\", for `http_pull` \"is `server.base_url` set\"\n(`Transport.probe`, `src/maverick/transports/`). Nothing is saved and\nno frame is sent; a display of the same id may or may not exist.",
+        "operationId": "probe_candidate_api_displays_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisplayConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Probe Candidate Api Displays Probe Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/displays/{display_id}/probe": {
+      "post": {
+        "summary": "Probe Display",
+        "description": "The same probe for a configured display, as `maverick check` runs it.",
+        "operationId": "probe_display_api_displays__display_id__probe_post",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Probe Display Api Displays  Display Id  Probe Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/displays/{display_id}/render": {
       "post": {
         "summary": "Render Display",
@@ -739,7 +912,7 @@
     "/api/displays/{display_id}/esphome.yaml": {
       "get": {
         "summary": "Esphome Config",
-        "description": "A ready-to-flash ESPHome config for this display.",
+        "description": "A ready-to-flash ESPHome config for this display.\n\nSecrets are `!secret` references, the token included\n(`src/maverick/esphome/generator.py`); the JSON route below carries\nthe values Maverick knows.",
         "operationId": "esphome_config_api_displays__display_id__esphome_yaml_get",
         "parameters": [
           {
@@ -759,6 +932,100 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/displays/{display_id}/esphome": {
+      "get": {
+        "summary": "Esphome Describe",
+        "description": "The generated config plus everything the *Install on device* step shows.\n\nThe YAML, the node name (the file name ESPHome expects), the secrets\nthe file references \u2014 with the value of Maverick's own token, which\nis why this route sits behind the token \u2014 whether the panel has a\ndriver ESPHome knows by name, whether the frame needs PSRAM, where\nthe file can be written so the ESPHome Device Builder sees it, and\nthe Device Builder's own page when the add-on is installed\n(`describe_esphome`, `src/maverick/esphome/generator.py`;\n`src/maverick/esphome/install.py`).",
+        "operationId": "esphome_describe_api_displays__display_id__esphome_get",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Esphome Describe Api Displays  Display Id  Esphome Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/displays/{display_id}/esphome/install": {
+      "post": {
+        "summary": "Esphome Install Route",
+        "description": "Write the generated config where the ESPHome Device Builder reads it.\n\n`destination` is one of the ids `GET .../esphome` listed. A file that\nalready exists there with different content is the user's \u2014 the\ngenerated file is theirs to edit \u2014 so it is replaced only with\n`overwrite: true`, and the route answers **409** otherwise.\n`secrets.yaml` beside it is read to say which names are still\nmissing, and never written: it holds the Wi-Fi password.",
+        "operationId": "esphome_install_route_api_displays__display_id__esphome_install_post",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EsphomeInstall"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Esphome Install Route Api Displays  Display Id  Esphome Install Post"
                 }
               }
             }
@@ -1230,6 +1497,25 @@
         "type": "object",
         "title": "EsphomeConfig",
         "description": "Inputs for the generated ESPHome configuration.\n\nOnly needed if you want Maverick to write the device firmware config for\nyou. Pin defaults match the most common wiring for an ESP32 devkit driving\na Waveshare panel via the vendor's HAT."
+      },
+      "EsphomeInstall": {
+        "properties": {
+          "destination": {
+            "type": "string",
+            "title": "Destination"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "title": "Overwrite",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "destination"
+        ],
+        "title": "EsphomeInstall",
+        "description": "Body of `POST /api/displays/{id}/esphome/install`."
       },
       "FitMode": {
         "type": "string",

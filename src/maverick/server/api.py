@@ -40,7 +40,10 @@ from pydantic import BaseModel, model_validator
 from ..app import VERSION, Application
 from ..config import DisplayConfig
 from ..devices import all_panels
+from ..devices.guess import guess_panel
 from ..engine import HISTORY_LIMIT
+from ..esphome import describe_esphome, esphome_applicable
+from ..esphome import install as esphome_install
 from ..ha import auth as ha_auth
 from ..ha import client as ha_client
 from ..ha import supervisor
@@ -89,6 +92,15 @@ class PageSelect(BaseModel):
                 + (f", not {', '.join(given)}" if given else "")
             )
         return self
+
+
+class EsphomeInstall(BaseModel):
+    """Body of `POST /api/displays/{id}/esphome/install`."""
+
+    destination: str
+    #: Replace a file that exists there with different content. Off, such a
+    #: file is the user's and the route answers 409 instead.
+    overwrite: bool = False
 
 
 #: TRMNL firmware carries its API key in its own header rather than in
@@ -246,10 +258,141 @@ def create_app(application: Application) -> FastAPI:
                 "description": cls.description,
                 "pushes": cls.pushes,
                 "options": dict(cls.options_doc),
+                # How to ask for each option — which mode it belongs to,
+                # whether it is required, what control to draw
+                # (`OptionField`, `src/maverick/transports/base.py`). Keys
+                # absent here are plain text boxes.
+                "fields": {key: field.to_json() for key, field in cls.option_fields.items()},
+                "mode_option": cls.mode_option,
             }
             for name, cls in sorted(available_transports().items())
         }
         return schema
+
+    #: `dashboard_url` asks the Supervisor for the ESPHome add-on; once a
+    #: minute is plenty for a fact that changes when someone installs an app.
+    esphome_dashboard_cache: dict[str, Any] = {"at": 0.0, "value": None}
+
+    async def _esphome_dashboard() -> dict[str, Any] | None:
+        import time
+
+        now = time.monotonic()
+        if now - esphome_dashboard_cache["at"] > 60:
+            esphome_dashboard_cache["value"] = await esphome_install.dashboard_url(
+                application.config.home_assistant.render_url
+            )
+            esphome_dashboard_cache["at"] = now
+        return esphome_dashboard_cache["value"]
+
+    @api.get("/api/environment", dependencies=[auth])
+    async def environment() -> dict[str, Any]:
+        """What this host can and cannot do, for the forms to draw themselves by.
+
+        `addon` says Maverick runs under the Supervisor, where no Bluetooth
+        adapter is ever visible (`app/config.yaml` asks for none), so the
+        transport forms leave `mode: ble` out. `bluetooth_scan` says a scan
+        from this host could work at all: not in the app, and only with the
+        `opendisplay` extra installed. `esphome_dashboard` is the ESPHome
+        Device Builder add-on when it is installed, with the page its
+        *Install* button is on; `esphome_destinations` is where a generated
+        configuration can be written so it appears there
+        (`src/maverick/esphome/install.py`).
+        """
+        addon = supervisor.running_under_supervisor()
+        try:
+            import opendisplay  # noqa: F401
+
+            extra = True
+        except ImportError:
+            extra = False
+        return {
+            "addon": addon,
+            "opendisplay_extra": extra,
+            "bluetooth_scan": extra and not addon,
+            "home_assistant": application.engine.ha_ok,
+            "esphome_dashboard": await _esphome_dashboard(),
+            "esphome_destinations": [
+                d.to_json()
+                for d in esphome_install.destinations(application.config.server.esphome_dir)
+            ],
+        }
+
+    @api.get("/api/ha/opendisplay/devices", dependencies=[auth])
+    async def ha_opendisplay_devices() -> list[dict[str, Any]]:
+        """Every tag Home Assistant's OpenDisplay integration knows, for a picker.
+
+        The device registry id is what `opendisplay.upload_image` wants, and
+        copying it out of a device page URL was the single most common
+        mistake in `mode: ha` (`src/maverick/transports/opendisplay.py`).
+        Each entry carries a `panel_guess` from its model string
+        (`guess_panel`, `src/maverick/devices/guess.py`) and, when a
+        configured display already delivers to it, that display's id.
+        """
+        if not application.engine.ha_ok or application.engine.ha is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Not connected to Home Assistant, so its OpenDisplay tags cannot be listed.",
+            )
+        try:
+            devices = await application.engine.ha.list_devices("opendisplay")
+        except ha_client.HomeAssistantError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        in_use = {
+            str(getattr(d.transport, "device_id", "") or ""): d.id
+            for d in application.config.displays
+        }
+        for device in devices:
+            device["panel_guess"] = guess_panel(
+                device.get("model"), device.get("name"), device.get("manufacturer"),
+                prefer_transport="opendisplay",
+            )
+            device["display_id"] = in_use.get(str(device["id"]))
+        return devices
+
+    @api.post("/api/opendisplay/scan", dependencies=[auth])
+    async def opendisplay_scan(timeout: float = Query(default=10.0, ge=1, le=60)) -> dict[str, Any]:
+        """Scan for OpenDisplay tags from this host's own Bluetooth adapter.
+
+        The route `maverick scan` always had and the setup UI never did. It
+        cannot work in the app (no adapter; `409`) and needs the `opendisplay`
+        extra (`501`); a scan that raises is the adapter's problem and comes
+        back as `502` with the library's message.
+        """
+        if supervisor.running_under_supervisor():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The Home Assistant app has no Bluetooth of its own, so it cannot scan. "
+                    "Tags Home Assistant's OpenDisplay integration has found are listed "
+                    "instead; use mode: ha."
+                ),
+            )
+        try:
+            from ..transports.opendisplay import scan
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=501,
+                detail="py-opendisplay is not installed. Install the 'opendisplay' extra.",
+            ) from exc
+        try:
+            found = await scan(timeout=timeout)
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=501,
+                detail="py-opendisplay is not installed. Install the 'opendisplay' extra.",
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 - the adapter's message is the answer
+            raise HTTPException(status_code=502, detail=f"BLE scan failed: {exc}") from exc
+        return {
+            "tags": [
+                {
+                    "name": name,
+                    "mac": mac,
+                    "panel_guess": guess_panel(name, prefer_transport="opendisplay"),
+                }
+                for name, mac in sorted(found.items())
+            ]
+        }
 
     def _next_run_at(display_id: str) -> str | None:
         job = next(
@@ -285,6 +428,10 @@ def create_app(application: Application) -> FastAPI:
             "rotation": resolved.rotation,
             "frame_format": resolved.frame_format.value,
             "transport": display.transport_type,
+            # Whether the card should offer the ESPHome install step at all:
+            # a pull display on a panel that is plausibly an ESP32
+            # (`esphome_applicable`, `src/maverick/esphome/generator.py`).
+            "esphome_applicable": esphome_applicable(resolved),
             # Always present, `pages` or not: a display with none has exactly
             # one page — its `dashboard` — so a client counts pages rather than
             # asking which form the display was written in
@@ -485,6 +632,32 @@ def create_app(application: Application) -> FastAPI:
             "process_s": round(outcome.process_s, 3),
         }
 
+    @api.post("/api/displays/probe", dependencies=[auth])
+    async def probe_candidate(display: DisplayConfig) -> dict[str, Any]:
+        """Ask a candidate config's transport whether a delivery would arrive.
+
+        The *Test delivery* button: for an OpenDisplay tag in `ha` mode that
+        is "does Home Assistant know this device id", in `ble` mode "is the
+        tag in range", for `http_pull` "is `server.base_url` set"
+        (`Transport.probe`, `src/maverick/transports/`). Nothing is saved and
+        no frame is sent; a display of the same id may or may not exist.
+        """
+        try:
+            result = await application.engine.probe_candidate(display)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"ok": result.ok, "detail": result.detail, "pending": result.pending}
+
+    @api.post("/api/displays/{display_id}/probe", dependencies=[auth])
+    async def probe_display(display_id: str) -> dict[str, Any]:
+        """The same probe for a configured display, as `maverick check` runs it."""
+        _lookup(application, display_id)
+        try:
+            result = await application.engine.probe(display_id)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"ok": result.ok, "detail": result.detail, "pending": result.pending}
+
     @api.post("/api/displays/{display_id}/render", dependencies=[auth])
     async def render_display(
         display_id: str, force: bool = False, wait: bool = True
@@ -620,11 +793,74 @@ def create_app(application: Application) -> FastAPI:
         dependencies=[auth],
     )
     async def esphome_config(display_id: str) -> str:
-        """A ready-to-flash ESPHome config for this display."""
-        from ..esphome import generate_esphome_config
+        """A ready-to-flash ESPHome config for this display.
 
+        Secrets are `!secret` references, the token included
+        (`src/maverick/esphome/generator.py`); the JSON route below carries
+        the values Maverick knows.
+        """
         display = _lookup(application, display_id)
-        return generate_esphome_config(display.resolved(), application.config)
+        return describe_esphome(display.resolved(), application.config)["yaml"]
+
+    @api.get("/api/displays/{display_id}/esphome", dependencies=[auth])
+    async def esphome_describe(display_id: str) -> dict[str, Any]:
+        """The generated config plus everything the *Install on device* step shows.
+
+        The YAML, the node name (the file name ESPHome expects), the secrets
+        the file references — with the value of Maverick's own token, which
+        is why this route sits behind the token — whether the panel has a
+        driver ESPHome knows by name, whether the frame needs PSRAM, where
+        the file can be written so the ESPHome Device Builder sees it, and
+        the Device Builder's own page when the add-on is installed
+        (`describe_esphome`, `src/maverick/esphome/generator.py`;
+        `src/maverick/esphome/install.py`).
+        """
+        display = _lookup(application, display_id)
+        resolved = display.resolved()
+        described = describe_esphome(resolved, application.config)
+        names = [entry["name"] for entry in described["secrets"]]
+        targets = []
+        for target in esphome_install.destinations(application.config.server.esphome_dir):
+            entry = target.to_json()
+            entry["missing_secrets"] = esphome_install.missing_secrets(target.path, names)
+            entry["installed"] = (target.path / described["filename"]).is_file()
+            targets.append(entry)
+        described["applicable"] = esphome_applicable(resolved)
+        described["destinations"] = targets
+        described["dashboard"] = await _esphome_dashboard()
+        return described
+
+    @api.post("/api/displays/{display_id}/esphome/install", dependencies=[auth])
+    async def esphome_install_route(display_id: str, body: EsphomeInstall) -> dict[str, Any]:
+        """Write the generated config where the ESPHome Device Builder reads it.
+
+        `destination` is one of the ids `GET .../esphome` listed. A file that
+        already exists there with different content is the user's — the
+        generated file is theirs to edit — so it is replaced only with
+        `overwrite: true`, and the route answers **409** otherwise.
+        `secrets.yaml` beside it is read to say which names are still
+        missing, and never written: it holds the Wi-Fi password.
+        """
+        display = _lookup(application, display_id)
+        described = describe_esphome(display.resolved(), application.config)
+        try:
+            target = esphome_install.destination(
+                body.destination, application.config.server.esphome_dir
+            )
+            path = esphome_install.install(
+                target, described["filename"], described["yaml"], overwrite=body.overwrite
+            )
+        except esphome_install.ExistsError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except esphome_install.InstallError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        names = [entry["name"] for entry in described["secrets"]]
+        return {
+            "path": str(path),
+            "destination": target.to_json(),
+            "missing_secrets": esphome_install.missing_secrets(target.path, names),
+            "dashboard": await _esphome_dashboard(),
+        }
 
     @api.get(
         "/api/displays/{display_id}/dashboard.yaml",

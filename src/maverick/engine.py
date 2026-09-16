@@ -1009,12 +1009,27 @@ class Engine:
         )
 
     async def probe(self, display_id: str) -> DeliveryResult:
+        """Ask a configured display's transport whether a delivery would reach the panel."""
         display = self.config.display(display_id).resolved()
         transport = self._transports.get(display_id) or get_transport(
             display.config.transport_type, _transport_options(display.config)
         )
         return await transport.probe(
             DeliveryContext(display=display, config=self.config, services=self.services())
+        )
+
+    async def probe_candidate(self, display: DisplayConfig) -> DeliveryResult:
+        """`probe` for a display that is not configured, and is not made so.
+
+        The setup UI's *Test delivery* runs before Save: the transport is
+        built from the candidate's own options, probed once, and dropped —
+        nothing is registered, started or written. A transport whose `start`
+        opens resources is not started here, since a probe never needs them.
+        """
+        resolved = display.resolved()
+        transport = get_transport(display.transport_type, _transport_options(display))
+        return await transport.probe(
+            DeliveryContext(display=resolved, config=self.config, services=self.services())
         )
 
     # -------------------------------------------------------------- helpers --

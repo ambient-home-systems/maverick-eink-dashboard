@@ -144,3 +144,21 @@ def test_every_route_is_documented() -> None:
         "docs/reference/http-api.md does not mention these routes: "
         f"{missing}. Document them, then run `python scripts/gen_docs.py`."
     )
+
+
+def test_ci_runs_the_esphome_validation() -> None:
+    """`scripts/check_esphome.py` is only worth anything if CI runs it.
+
+    The recipe's claim that ESPHome accepts every generated configuration
+    (`docs/recipes/esphome-waveshare.md`, *Flash it*) rests on the `esphome`
+    job in `.github/workflows/ci.yml`; a job removed or renamed would leave
+    the claim standing on nothing.
+    """
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text())
+    job = workflow["jobs"].get("esphome")
+    assert job, "ci.yml has no `esphome` job"
+    commands = " ".join(step.get("run", "") for step in job["steps"])
+    assert "pip install -e . esphome" in commands
+    assert "python scripts/check_esphome.py" in commands
+    assert (ROOT / "scripts" / "check_esphome.py").is_file()
+

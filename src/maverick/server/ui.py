@@ -197,6 +197,19 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
       <div class="field-error" data-error="schedule"></div>
     </div>
 
+    <!-- What the chosen transport cannot do without: the tag to deliver to for
+         an OpenDisplay panel, the endpoint for a webhook. Drawn by app.js from
+         each transport's `option_fields` (src/maverick/transports/base.py) —
+         only the required options and the mode that decides them; everything
+         optional stays under Advanced. Hidden for a transport that needs
+         nothing, which is most of them. -->
+    <div class="field" id="add-delivery" hidden>
+      <label id="add-delivery-label">Delivery</label>
+      <div class="help" id="add-delivery-help"></div>
+      <div id="add-delivery-options"></div>
+      <div class="field-error" data-error="delivery"></div>
+    </div>
+
     <details class="field-group" id="add-advanced">
       <summary>Advanced</summary>
 
@@ -296,12 +309,33 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
 
     <p class="dialog-error" id="add-network-error" role="alert" hidden></p>
 
+    <!-- Asks the transport whether a delivery would arrive, before anything
+         is saved: `POST /api/displays/probe` (src/maverick/server/api.py). -->
+    <div class="probe-row">
+      <button type="button" id="add-test">Test delivery</button>
+      <span class="probe-result" id="add-test-result" role="status"></span>
+    </div>
+
     <div class="dialog-actions">
       <button type="button" id="add-cancel">Cancel</button>
       <button type="submit" id="add-submit">Add display</button>
     </div>
   </form>
 </dialog>"""
+
+# The tags Home Assistant's OpenDisplay integration has already found, offered
+# as displays to add. Server-rendered shell, filled by app.js from
+# `GET /api/ha/opendisplay/devices`; hidden until that answers with a tag, so a
+# page with none — or no connection — looks exactly as it did.
+_DISCOVERY = """<section class="discovery" id="discovery" hidden>
+  <div class="discovery-head">
+    <h2>Tags Home Assistant can see</h2>
+    <span class="sub">Found by the OpenDisplay integration. Add one and the
+      panel, the transport and the device id are filled in for you.</span>
+    <button type="button" class="discovery-refresh" id="discovery-refresh">Refresh</button>
+  </div>
+  <div class="discovery-list" id="discovery-list"></div>
+</section>"""
 
 
 def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
@@ -361,6 +395,7 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
 </header>
 <p class="notice" id="notice" role="status" hidden></p>
 {lede}
+{_DISCOVERY}
 <main id="displays"></main>
 {_ADD_DIALOG}
 <script type="application/json" id="initial-displays">{embedded}</script>

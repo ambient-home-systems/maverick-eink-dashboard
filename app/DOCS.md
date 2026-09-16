@@ -142,6 +142,14 @@ handshake), so it has to be an address the panel can reach: set it if the
 derived one is wrong, for instance when Home Assistant has more than one
 network.
 
+For an ESP32 board, each display's card in the Web UI has an **Install on
+device** step: the secrets the generated ESPHome configuration expects, the
+configuration itself, and **Send to ESPHome**, which writes it into the
+ESPHome Device Builder add-on's own folder so the device appears there ready
+to install. That needs the ESPHome add-on installed, and is why this app maps
+`/addon_configs` read-write. The Device Builder does the compiling and the
+flashing; this app never does.
+
 ## MQTT and devices
 
 With a broker, every display becomes a Home Assistant device through MQTT
@@ -157,7 +165,15 @@ Home Assistant's Bluetooth instead (`transport: {type: opendisplay, mode: ha,
 device_id: ...}`), including ESPHome Bluetooth proxies. That path writes the
 frame to `/media/maverick/<id>.png` and calls the `opendisplay.upload_image`
 action with it, which is why the app maps `/media` read-write. `mode: ble`
-needs an adapter the process can see and is not supported inside the app.
+needs an adapter the process can see; inside the app it is refused with a
+message saying so, and the Web UI does not offer it.
+
+Set up the OpenDisplay integration first and the Web UI does the rest: every
+tag it has found is listed above the display cards with a guessed panel, and
+**Add as display** fills in the panel, the transport and the device id. The
+Add and Edit dialogs pick the tag from a list rather than asking for its
+registry id, and **Test delivery** checks the id against Home Assistant
+before anything is saved.
 
 ## Files and folders
 
@@ -168,6 +184,7 @@ needs an adapter the process can see and is not supported inside the app.
 | `/config/data/` | the same folder, `data/` | The frame store — the current frame, its preview PNG and the pre-quantisation screenshot per display — plus `state.json` and `debug/<id>/` when a display sets `render.debug_artifacts: true`. |
 | `/config/data/history/` | `data/history/` | Up to the last 50 render outcomes per display, `<id>.json`, behind each card's History disclosure and `GET /api/displays/{id}/history`. |
 | `/media/maverick/` | Home Assistant's media folder | Frames for OpenDisplay tags. |
+| `/addon_configs/5c53de3b_esphome/` | the ESPHome add-on's configuration folder | Where **Send to ESPHome** writes a display's generated firmware configuration. Its `secrets.yaml` is read to say which names are still missing, and never written. |
 | `/share/` | the Samba share, other apps | Available to the file transport (`transport: {type: file, path: /share/maverick}`). |
 
 ## Troubleshooting

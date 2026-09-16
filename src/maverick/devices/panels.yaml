@@ -180,7 +180,7 @@ panels:
     height: 480
     color_scheme: bwr
     dpi: 124
-    esphome_model: 7.50in-bv2-bwr
+    esphome_model: 7.50in-bv2
     supports_partial: false
 
   - id: waveshare-5in65-acep
@@ -190,7 +190,7 @@ panels:
     height: 448
     color_scheme: acep7
     dpi: 132
-    esphome_model: 5.65in-acep7
+    esphome_model: 5.65in-f
     supports_partial: false
     notes: Seven-color ACeP. Refresh takes ~30s and is visually noisy.
 
@@ -201,7 +201,10 @@ panels:
     height: 480
     color_scheme: spectra6
     dpi: 128
+    esphome_platform: epaper_spi
+    esphome_model: 7.3in-Spectra-E6
     supports_partial: false
+    notes: Six-color Spectra E6. Refreshes take ~30s; ESPHome drives it through epaper_spi, not waveshare_epaper.
 
   - id: waveshare-10in3-gray16
     name: Waveshare 10.3" 16-level grayscale
@@ -212,7 +215,7 @@ panels:
     dpi: 227
     supports_partial: true
     full_refresh_every: 10
-    notes: IT8951 controller. Grayscale depth makes it the best panel for dense dashboards.
+    notes: IT8951 controller. Grayscale depth makes it the best panel for dense dashboards. ESPHome ships no driver for it, so the generated firmware config needs a model of your own.
 
   - id: waveshare-13in3-gray16
     name: Waveshare 13.3" 16-level grayscale
@@ -223,6 +226,7 @@ panels:
     dpi: 150
     supports_partial: true
     full_refresh_every: 10
+    notes: IT8951 controller. ESPHome ships no driver for it, so the generated firmware config needs a model of your own.
 
   - id: lilygo-t5-4in7
     name: LilyGO T5 4.7" (16-level grayscale)
@@ -233,6 +237,7 @@ panels:
     dpi: 234
     supports_partial: true
     full_refresh_every: 10
+    notes: Parallel EPD on the T5's own driver; ESPHome's waveshare_epaper component does not cover it, so the generated firmware config needs a display block of your own.
 
   # ---------------------------------------------------------- Pimoroni Inky --
   - id: inky-phat-bwr

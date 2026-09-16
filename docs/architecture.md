@@ -609,7 +609,15 @@ assume works.
   Playwright ships no aarch64 Linux build, so a Raspberry Pi needs the distro
   package and the same variable.
 - **`maverick scan` needs a local Bluetooth adapter.** Tag discovery does not go
-  through Home Assistant's Bluetooth proxies, even though delivery can.
+  through Home Assistant's Bluetooth proxies, even though delivery can. What
+  does go through Home Assistant is its *device registry*: the setup UI lists
+  the tags the OpenDisplay integration has already found
+  (`GET /api/ha/opendisplay/devices`) and picks their ids, which is the
+  discovery path in the app, where no adapter exists.
+- **Maverick does not compile or flash ESPHome firmware.** It generates the
+  configuration, validates it against ESPHome's schema in CI
+  (`scripts/check_esphome.py`) and hands it to the ESPHome Device Builder
+  (`src/maverick/esphome/install.py`), which does both.
 
 ## References
 

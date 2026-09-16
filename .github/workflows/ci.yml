@@ -83,6 +83,35 @@ jobs:
       - name: Test
         run: pytest -m browser
 
+  esphome:
+    name: ESPHome accepts the generated configs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # ESPHome itself, so the check is against the real schema rather than
+      # this project's idea of it. `esphome config` validates every component
+      # in the document without a toolchain and without a device; it is not a
+      # compile and not a flash, and the recipe's untested banner stays.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . esphome
+
+      # One generated configuration per catalogued panel that names an
+      # `esphome_model` (src/maverick/devices/panels.yaml), in both shapes the
+      # generator produces (scripts/check_esphome.py). A model ESPHome does not
+      # know, or a key it renamed, fails here instead of at a user's desk.
+      - name: Validate
+        run: python scripts/check_esphome.py
+
   links:
     name: Markdown links
     runs-on: ubuntu-latest

@@ -68,6 +68,53 @@ class DeliveryResult:
         return cls(ok=False, detail=detail, **kwargs)
 
 
+@dataclass(frozen=True)
+class OptionField:
+    """How a form should offer one transport option.
+
+    ``options_doc`` says what an option *means*; this says how to ask for it.
+    Every key here is optional, and a transport that declares nothing gets a
+    plain text box per documented option, which is what the setup UI drew for
+    every transport before this existed. The reason it exists is the
+    ``opendisplay`` transport: twelve options of which a user in the normal
+    case needs exactly one, and which one depends on ``mode``.
+
+    * ``modes``: the values of the transport's ``mode_option`` this option
+      applies under; empty means always. The form hides the rest.
+    * ``required``: the option must be set for delivery to work in those
+      modes. The form marks it and the transport's ``probe`` reports it.
+    * ``advanced``: right far more often than not; the form folds it away.
+    * ``kind``: what control to draw. ``text`` (the default), ``select`` with
+      ``choices``, ``number``, ``secret`` (masked), ``mac``, ``path``, or
+      ``ha_device`` — a picker fed by Home Assistant's device registry, for an
+      id nobody should have to copy out of a URL.
+    * ``default``: shown as the placeholder, so an empty box says what it means.
+    * ``label``: a human title; the key itself when empty.
+    """
+
+    modes: tuple[str, ...] = ()
+    required: bool = False
+    advanced: bool = False
+    kind: str = "text"
+    choices: tuple[str, ...] = ()
+    default: Any = None
+    label: str = ""
+    #: For ``ha_device``: the integration domain whose devices to offer.
+    integration: str = ""
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "modes": list(self.modes),
+            "required": self.required,
+            "advanced": self.advanced,
+            "kind": self.kind,
+            "choices": list(self.choices),
+            "default": self.default,
+            "label": self.label,
+            "integration": self.integration,
+        }
+
+
 class Transport(ABC):
     """Base class for everything that can put a frame on a panel."""
 
@@ -83,6 +130,13 @@ class Transport(ABC):
     #: the reference page and fails if a ``self.option("x")`` call is missing
     #: from it.
     options_doc: ClassVar[dict[str, str]] = {}
+    #: How a form asks for each option: see :class:`OptionField`. Keys not
+    #: listed here are offered as plain text boxes. ``GET /api/schema/display``
+    #: serves it beside ``options_doc`` (`src/maverick/server/api.py`).
+    option_fields: ClassVar[dict[str, OptionField]] = {}
+    #: The option whose value gates the others through ``OptionField.modes``,
+    #: or empty when every option always applies.
+    mode_option: ClassVar[str] = ""
 
     def __init__(self, options: dict[str, Any]) -> None:
         self.options = options
@@ -136,6 +190,6 @@ def available_transports() -> dict[str, type[Transport]]:
 
 
 __all__ = [
-    "Transport", "DeliveryContext", "DeliveryResult",
+    "Transport", "DeliveryContext", "DeliveryResult", "OptionField",
     "register", "get_transport", "available_transports",
 ]

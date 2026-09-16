@@ -18,7 +18,7 @@ import time
 from typing import Any, ClassVar
 
 from ..eink import Frame
-from .base import DeliveryContext, DeliveryResult, Transport, register
+from .base import DeliveryContext, DeliveryResult, OptionField, Transport, register
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +138,9 @@ class MqttTransport(Transport):
             "id>`. The frame is published retained to `<topic>/frame` and its metadata to "
             "`<topic>/meta`."
         ),
+    }
+    option_fields: ClassVar[dict[str, OptionField]] = {
+        "topic": OptionField(advanced=True, label="Base topic"),
     }
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:

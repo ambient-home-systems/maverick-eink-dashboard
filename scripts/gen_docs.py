@@ -655,7 +655,12 @@ def render_panels() -> str:
         )
         out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         for panel in panels:
-            esphome = f"`{panel.esphome_model}`" if panel.esphome_model else "—"
+            if panel.esphome_model and panel.esphome_platform:
+                esphome = f"`{panel.esphome_model}` (`{panel.esphome_platform}`)"
+            elif panel.esphome_model:
+                esphome = f"`{panel.esphome_model}`"
+            else:
+                esphome = "—"
             out.append(
                 f"| `{panel.id}` | {cell(panel.name)} | {panel.width}×{panel.height} "
                 f"| `{panel.color_scheme.value}` | {panel.dpi} "

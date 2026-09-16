@@ -534,6 +534,19 @@ def test_the_manifest_can_reach_the_api_base_url_is_derived_from() -> None:
     )
 
 
+def test_the_manifest_can_reach_the_esphome_addons_folder() -> None:
+    """*Send to ESPHome* writes into the ESPHome Device Builder's own folder.
+
+    The Supervisor mounts every app's config folder at ``/addon_configs`` only
+    for an app that asks for the ``all_addon_configs`` mapping; without it
+    ``destinations`` (``src/maverick/esphome/install.py``) finds no add-on
+    folder and the setup UI's button falls back to ``/share/esphome``, which
+    the Device Builder does not read. ``rw`` because the write is the point.
+    """
+    assert "all_addon_configs:rw" in _manifest()["map"]
+    assert "media:rw" in _manifest()["map"], "the OpenDisplay `ha` path writes frames there"
+
+
 def test_the_manifest_declares_the_service_the_broker_hand_off_needs() -> None:
     """``/services/mqtt`` is granted by the declaration, not by ``hassio_api``.
 

@@ -307,3 +307,96 @@ dialog.drawer::backdrop{background:rgba(0,0,0,.45)}
   /* Side by side at 360px is two 160px frames; stacked, each is legible. */
   .compare.is-side{grid-template-columns:1fr}
 }
+
+/* ------------------------------------------------------- transport controls */
+
+/* A required option is marked as one, next to its label, rather than left for
+   the first delivery to report. */
+.field label .req{margin-left:8px;font-size:10.5px;font-weight:600;letter-spacing:.04em;
+      text-transform:uppercase;color:var(--warn);vertical-align:middle}
+.field label .option-key{font-weight:400;opacity:.8}
+/* The mode picker: a row of joined buttons, one pressed. */
+.segmented{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;
+      overflow:hidden;max-width:100%}
+.segmented button{border:0;border-radius:0;border-right:1px solid var(--line);padding:6px 12px;
+      font-size:13px;background:var(--card);white-space:nowrap;flex:1 1 auto}
+.segmented button:last-child{border-right:0}
+.segmented button[aria-checked=true]{background:var(--fg);color:var(--bg)}
+.segmented button:hover{border-color:var(--line)}
+/* The device and scan helpers: a picker with a small button beside it. */
+.device-row{display:flex;gap:6px;align-items:center;margin:2px 0 6px}
+.field .device-row select{font:inherit;font-size:13px;padding:6px 8px;flex:1;min-width:0;
+      border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+.device-refresh{padding:5px 9px;font-size:14px;line-height:1}
+.device-note:empty{display:none}
+.field input.device-id{font:12px ui-monospace,monospace}
+/* Advanced transport options fold inside the transport section. */
+.field-group.nested{margin:4px 0 10px;padding:10px 12px;background:var(--bg)}
+.field-group.nested>summary{font-weight:500;color:var(--muted)}
+.field-group.nested .field:last-child{margin-bottom:0}
+/* The Test delivery row: a button and its verdict on one line. */
+.probe-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:4px 0 14px}
+.probe-result{font-size:12.5px;color:var(--muted)}
+.probe-result:empty{display:none}
+.probe-result.ok{color:var(--ok)} .probe-result.err{color:var(--err)}
+.probe-result .pill{margin-right:2px}
+/* Clear of the sticky action bar below it, so the verdict is never under it. */
+dialog#add-dialog .probe-row{margin:0 0 18px}
+
+/* ------------------------------------------------------- install on device */
+
+.card details.install{border-top:1px solid var(--line)}
+.card details.install>summary{padding:10px 16px;font-size:12.5px;font-weight:600;
+      cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+.card details.install>summary::-webkit-details-marker{display:none}
+.card details.install[open]>summary{border-bottom:1px solid var(--line)}
+.badge{font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+      padding:1px 7px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.install-body{padding:10px 16px 14px}
+.install-warn{margin:0 0 10px;padding:8px 10px;border-radius:6px;font-size:12.5px;
+      background:rgba(168,99,26,.12);color:var(--warn)}
+/* Numbered steps, the number in a ring so the three read as a sequence. */
+ol.steps{list-style:none;margin:0;padding:0;counter-reset:step}
+ol.steps>li{position:relative;padding:0 0 14px 34px;counter-increment:step;
+      border-left:1px solid var(--line);margin-left:11px}
+ol.steps>li:last-child{border-left-color:transparent;padding-bottom:0}
+ol.steps>li::before{content:counter(step);position:absolute;left:-12px;top:-2px;
+      width:23px;height:23px;border-radius:50%;background:var(--card);
+      border:1px solid var(--fg);color:var(--fg);font-size:12px;font-weight:600;
+      display:flex;align-items:center;justify-content:center}
+.step-title{font-size:13.5px;font-weight:600;line-height:1.4}
+ol.steps .meta{padding:2px 0 8px;margin:0}
+ol.steps .row{padding:0 0 8px}
+.install-pre{margin:0 0 4px;padding:10px 12px;overflow:auto;background:var(--bg);
+      border:1px solid var(--line);border-radius:6px;font:11.5px/1.5 ui-monospace,monospace;
+      white-space:pre;tab-size:2}
+.install-yaml{max-height:18em}
+.install-secrets{max-height:12em;white-space:pre-wrap}
+.install-download,.install-open{font-size:12.5px;align-self:center}
+.install-open{font-weight:600}
+.install-send{margin-bottom:8px}
+.install-send select{font:inherit;font-size:12.5px;padding:5px 8px;max-width:100%;
+      border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+.install-status{padding:0}
+.install-status button{font-size:12px;padding:3px 9px;margin-left:4px}
+
+/* --------------------------------------------------------- discovered tags */
+
+.discovery{padding:24px 24px 0;max-width:1500px}
+.discovery-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.discovery-head h2{margin:0;font-size:15px}
+.discovery-head .sub{flex:1;min-width:16em}
+.discovery-refresh{font-size:12px;padding:4px 10px}
+.discovery-list{display:grid;gap:12px;
+      grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),1fr))}
+.tag-card{background:var(--card);border:1px dashed var(--line);border-radius:10px;
+      padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.tag-card.is-added{border-style:solid;opacity:.85}
+.tag-name{font-weight:600;font-size:14px}
+.tag-meta,.tag-guess{font-size:12px;color:var(--muted)}
+.tag-card .add-btn,.tag-card .tag-added{align-self:flex-start;margin-top:6px;font-size:12.5px;
+      padding:5px 11px}
+.tag-added{background:transparent}
+@media (max-width:480px){
+  .discovery{padding:16px 16px 0}
+}

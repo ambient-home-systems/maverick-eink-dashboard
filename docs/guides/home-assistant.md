@@ -50,10 +50,24 @@ The rest is filled in from what the running service already knows. `GET
 /api/panels` fills the panel picker, grouped by vendor, and shows the
 profile's own notes and the geometry, palette and transport it settles once
 one is chosen; `GET /api/transports` fills the transport picker under
-Advanced, with each transport's own option fields drawn underneath from its
-`options_doc`; and the Dashboard field's suggestions come from
-[the dashboard picker](#a-dashboard-path) below. Submitting posts to `POST
-/api/displays` — no config file, and nothing to restart.
+Advanced; and the Dashboard field's suggestions come from
+[the dashboard picker](#a-dashboard-path) below. What the chosen transport
+cannot deliver without is asked for above the fold, under **Delivery**: each
+transport declares in `option_fields` (`src/maverick/transports/base.py`)
+which of its options are required, which belong to which mode and what
+control to draw, and the dialog draws only those there — for an OpenDisplay
+tag, a mode picker and a **tag picker** fed by Home Assistant's device
+registry (`GET /api/ha/opendisplay/devices`), so the device id is chosen
+rather than copied out of a URL; for a webhook, the endpoint. The rest of
+each transport's options sit under Advanced, folded. **Test delivery** asks
+the transport whether a delivery would arrive before anything is saved
+(`POST /api/displays/probe`). Submitting posts to `POST /api/displays` — no
+config file, and nothing to restart.
+
+Above the cards, **Tags Home Assistant can see** lists every tag the
+OpenDisplay integration has found, with the catalogue panel its model looks
+like, and **Add as display** opens the same dialog with the name, the panel
+and the device id filled in.
 
 **Edit**, on each card, opens a drawer with every field of that display: the
 schedule, the theme, the image and render settings, the lint thresholds, the
@@ -71,7 +85,12 @@ and
 Each card also carries a **Dashboard starter** disclosure — a Lovelace
 dashboard generated for that panel, with a Copy button, a Download and a link
 to the design guide; see [Building a dashboard for
-e-ink](#building-a-dashboard-for-e-ink) — and a **History** disclosure — the last render outcomes,
+e-ink](#building-a-dashboard-for-e-ink) — an **Install on device** disclosure
+on a panel an ESP32 drives, which walks the generated ESPHome configuration
+through its secrets, sends it to the ESPHome Device Builder add-on's folder
+and links to the Device Builder's page to install it
+([the ESPHome recipe](../recipes/esphome-waveshare.md#the-setup-uis-install-on-device-step))
+— and a **History** disclosure — the last render outcomes,
 newest first, with a failed or lint-blocked one highlighted and its reason
 on expand — and a **Source/Frame** toggle over the image, so you can compare
 what Chromium actually captured against what the panel will show after
@@ -906,9 +925,12 @@ Bluetooth adapter that is not there.
 It is what provides the `opendisplay.upload_image` action; without it every
 delivery fails with the action name in the message.
 
-**`device_id` is the device registry id.** Not the entity id, not the MAC. Find
-it under **Settings → Devices & services → Devices**, open the tag, and read
-the id out of the browser's address bar — the URL ends
+**`device_id` is the device registry id.** Not the entity id, not the MAC. The
+setup UI's tag picker writes it for you, from the same registry
+(`HomeAssistantClient.list_devices`, `src/maverick/ha/client.py`), and its
+*Test delivery* checks a typed one against it before a frame is sent. By
+hand: find it under **Settings → Devices & services → Devices**, open the tag,
+and read the id out of the browser's address bar — the URL ends
 `/config/devices/device/<id>`, and that trailing value is what goes in the
 config. Get it wrong and the upload fails with:
 
@@ -990,6 +1012,9 @@ This uses `py-opendisplay` to drive the tag over GATT directly. It needs:
 The trade is coverage against independence: `ble` works with no Home Assistant
 at all and is the right mode for setup and diagnostics, but it only reaches
 what one adapter can hear. `ha` reaches anything any of your proxies can hear.
+In the Home Assistant app there is no trade: the app has no Bluetooth of its
+own (`app/config.yaml` asks for none), so `ble` is refused there with a
+message that says so, and the setup UI does not offer it.
 
 Either way, Maverick sends the frame it has already quantised to the panel's
 palette, with the library's own dithering switched off — re-dithering an

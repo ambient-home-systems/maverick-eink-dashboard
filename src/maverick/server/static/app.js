@@ -322,7 +322,6 @@ const CARD = `
   <button type="button" class="act-edit">Edit</button>
   <button type="button" class="act-schedule"></button>
   <button type="button" class="act-enable" hidden>Enable</button>
-  <a class="esphome-link">ESPHome config</a>
 </div>
 <div class="meta err card-error" hidden></div>
 <ul class="issues"></ul>
@@ -353,6 +352,13 @@ const CARD = `
     </div>
     <p class="meta err starter-error" hidden></p>
     <pre class="starter-yaml" tabindex="0"></pre>
+  </div>
+</details>
+<details class="install" hidden>
+  <summary>Install on device <span class="badge">ESPHome</span></summary>
+  <div class="install-body">
+    <p class="meta err install-error" hidden></p>
+    <div class="install-steps"></div>
   </div>
 </details>`;
 
@@ -390,7 +396,14 @@ function cardFor(id) {
     if (e.currentTarget.open) loadStarter(id, card);
   });
   card.querySelector('.starter-copy').addEventListener('click', (e) => {
-    copyStarter(card, e.currentTarget);
+    copyText(card.querySelector('.starter-yaml'), e.currentTarget);
+  });
+  // The guided ESPHome hand-off, fetched on first open like the starter. It
+  // is re-fetched on every open rather than kept: `secrets.yaml` and the
+  // Device Builder's folder change while the page is open, and that is
+  // exactly what the step reports on.
+  card.querySelector('.install').addEventListener('toggle', (e) => {
+    if (e.currentTarget.open) loadInstall(id, card);
   });
   cards.set(id, card);
   return card;
@@ -429,14 +442,13 @@ async function loadStarter(id, card) {
   }
 }
 
-/** Copy, with the selection as the fallback.
+/** Copy a box's text, with the selection as the fallback.
  *
  *  `navigator.clipboard` is unavailable on a plain-HTTP origin, which is
  *  exactly how Maverick is reached on a LAN, so the button selects the text
  *  instead and says so rather than appearing to do nothing. */
-async function copyStarter(card, button) {
-  const box = card.querySelector('.starter-yaml');
-  if (!box.textContent) return;
+async function copyText(box, button) {
+  if (!box || !box.textContent) return;
   const done = (message) => {
     const was = button.textContent;
     button.textContent = message;
@@ -533,8 +545,10 @@ function paint(card, display) {
     : 'Render this display on its schedule again';
   card.querySelector('.act-enable').hidden = display.enabled;
 
-  attribute(card, '.esphome-link', 'href',
-    withToken(`api/displays/${encodeURIComponent(display.id)}/esphome.yaml`));
+  // The ESPHome step is for a panel an ESP32 plausibly drives over a pull
+  // transport (`esphome_applicable`, `src/maverick/esphome/generator.py`); a
+  // Kindle or a BLE tag gets no firmware config to install.
+  card.querySelector('.install').hidden = !display.esphome_applicable;
 
   const error = card.querySelector('.card-error');
   // 300 characters: a Playwright failure runs to pages, and the whole of it
@@ -800,6 +814,9 @@ let addDialogOpener = null;
 let addDialogJustAdded = '';
 /** Whether the user has typed in the id field directly, so name no longer drives it. */
 let addIdEdited = false;
+/** Whether the user has chosen a panel themselves, so a picked tag's guess
+ *  no longer moves the picker. */
+let addPanelEdited = false;
 
 function slugify(value) {
   return (value || '')
@@ -809,7 +826,13 @@ function slugify(value) {
     .replace(/^[^a-z0-9]+/, '');
 }
 
-async function openAddDialog(opener) {
+/** Open the dialog, optionally with a display already sketched in.
+ *
+ *  `prefill` is what a discovered tag knows about itself
+ *  (`GET /api/ha/opendisplay/devices`): a name, a guessed panel and the
+ *  transport options — the device registry id above all — so the user's job
+ *  is to confirm rather than to find. Every prefilled field stays editable. */
+async function openAddDialog(opener, prefill) {
   const dialog = document.getElementById('add-dialog');
   if (!dialog) return;
   addDialogOpener = opener || document.activeElement;
@@ -817,13 +840,38 @@ async function openAddDialog(opener) {
   dialog.showModal();
   document.getElementById('add-name').focus();
   await ensureAddDialogData();
+  if (prefill) applyPrefill(prefill);
   populateDashboardList(document.getElementById('add-dashboard-list'));
+}
+
+function applyPrefill(prefill) {
+  if (prefill.name) {
+    document.getElementById('add-name').value = prefill.name;
+    document.getElementById('add-id').value = slugify(prefill.name);
+  }
+  const panel = document.getElementById('add-panel');
+  if (prefill.panel && [...panel.options].some((o) => o.value === prefill.panel)) {
+    panel.value = prefill.panel;
+    addPanelEdited = true;
+  }
+  const transport = Object.assign({}, prefill.transport || {});
+  const type = transport.type || '';
+  delete transport.type;
+  const picker = document.getElementById('add-transport');
+  // Only when the panel would not pick the same transport by itself: an
+  // absent `type` is what keeps the display following its panel.
+  const chosen = currentPanel();
+  picker.value = chosen && chosen.default_transport === type ? '' : type;
+  addTransportValues = transport;
+  onPanelChange();
+  document.getElementById('add-dashboard').focus();
 }
 
 function resetAddForm() {
   const form = document.getElementById('add-form');
   if (form) form.reset();
   addIdEdited = false;
+  addPanelEdited = false;
   dialogError('add-dialog-error', '');
   dialogError('add-network-error', '');
   for (const el of document.querySelectorAll('#add-dialog .field-error')) {
@@ -837,6 +885,8 @@ function resetAddForm() {
   // last time's transport fields under this time's selection.
   const advanced = document.getElementById('add-advanced');
   if (advanced) advanced.open = false;
+  addTransportValues = {};
+  probeResult(document.getElementById('add-test-result'), null);
   if (addDialogPopulated) {
     onPanelChange();
   } else {
@@ -854,8 +904,22 @@ async function ensureFormData() {
     panels: await panelsRes.json(),
     transports: await transportsRes.json(),
     schema: await schemaRes.json(),
+    environment: await loadEnvironment(),
   };
   return formData;
+}
+
+/** `GET /api/environment`: what this host can do — scan for tags, reach the
+ *  ESPHome Device Builder — and whether it is the Home Assistant app, where
+ *  `mode: ble` is never available. A failure leaves the conservative answer,
+ *  which draws the forms as they were before the route existed. */
+async function loadEnvironment() {
+  try {
+    const response = await authFetch('api/environment');
+    return await response.json();
+  } catch (error) {
+    return { addon: false, bluetooth_scan: false, esphome_dashboard: null, esphome_destinations: [] };
+  }
 }
 
 /** Cached once per page load: `GET /api/ha/dashboards`, or `[]` when it is
@@ -863,6 +927,12 @@ async function ensureFormData() {
  *  route). Either way the Dashboard field stays a plain text input — this
  *  only ever adds suggestions to it, never replaces it. */
 let dashboardsCache = null;
+/** The tags Home Assistant's OpenDisplay integration knows, cached per page
+ *  load and refreshed on demand (`GET /api/ha/opendisplay/devices`). `null`
+ *  until asked; `[]` when Home Assistant is not connected. Declared up here
+ *  with the other caches: `loadDiscovery` runs at start-up, before the
+ *  module's later declarations would have been reached. */
+let devicesCache = null;
 
 async function ensureDashboards() {
   if (dashboardsCache) return dashboardsCache;
@@ -1076,15 +1146,36 @@ function effectiveTransport() {
   return panel ? panel.default_transport : '';
 }
 
+/** The transport options typed so far, kept across redraws: a change of
+ *  mode or of panel rebuilds the controls, and should not cost what was in
+ *  them. Prefilled by a discovered tag (`applyPrefill`). */
+let addTransportValues = {};
+
+/** Draw the effective transport's options in two places.
+ *
+ *  What the transport cannot deliver without — its mode and its required
+ *  options — goes above the Advanced fold, into `#add-delivery`, because a
+ *  BLE tag with no device id is a display that fails on its first schedule
+ *  and the fold is where that used to hide. Everything optional goes under
+ *  Advanced as before. Both are drawn by `transportControls`, from the
+ *  transport's own `option_fields` (`src/maverick/transports/base.py`). */
 function onTransportChange() {
   const container = document.getElementById('add-transport-options');
+  const delivery = document.getElementById('add-delivery');
+  const deliveryBox = document.getElementById('add-delivery-options');
   const help = document.getElementById('add-transport-help');
-  container.replaceChildren();
   if (!formData) return;
+  // Keep what is on screen before it is replaced.
+  Object.assign(addTransportValues, readTransportInputs(document.getElementById('add-dialog')));
+  container.replaceChildren();
+  deliveryBox.replaceChildren();
   const type = effectiveTransport();
   const info = formData.schema.transports[type];
   help.textContent = (info && info.description) || '';
-  if (!info) return;
+  if (!info) {
+    delivery.hidden = true;
+    return;
+  }
   if (type === 'mqtt') {
     const note = document.createElement('div');
     note.className = 'help warn';
@@ -1092,21 +1183,44 @@ function onTransportChange() {
       'Mosquitto broker app under the Supervisor.';
     container.appendChild(note);
   }
-  for (const [key, description] of Object.entries(info.options)) {
-    const field = document.createElement('div');
-    field.className = 'field';
-    const id = `add-opt-${key}`;
-    field.innerHTML = `<label for="${id}"></label><input type="text" autocomplete="off">` +
-      `<div class="help"></div>`;
-    const label = field.querySelector('label');
-    label.setAttribute('for', id);
-    label.textContent = key;
-    const input = field.querySelector('input');
-    input.id = id;
-    input.dataset.transportKey = key;
-    field.querySelector('.help').textContent = description;
-    container.appendChild(field);
+  const built = transportControls(info, addTransportValues, {
+    idPrefix: 'add-opt',
+    environment: formData.environment,
+    extras: [],
+    onModeChange: onTransportChange,
+    // A picked tag names its size; move the panel picker to the guess unless
+    // the user has already chosen one themselves.
+    onPanelGuess: (guess) => {
+      const panel = document.getElementById('add-panel');
+      if (addPanelEdited || panel.value === guess) return;
+      if (![...panel.options].some((o) => o.value === guess)) return;
+      panel.value = guess;
+      onPanelChange();
+    },
+  });
+  delivery.hidden = !built.primary.length;
+  document.getElementById('add-delivery-help').textContent = built.primary.length
+    ? `How the frame reaches a ${type} panel.`
+    : '';
+  deliveryBox.append(...built.primary);
+  if (built.advanced) container.appendChild(built.advanced);
+  if (!built.primary.length && !built.advanced) {
+    const note = document.createElement('div');
+    note.className = 'help';
+    note.textContent = 'This transport takes no options of its own.';
+    container.appendChild(note);
   }
+}
+
+/** Every `[data-transport-key]` control under `root`, as text, empty ones left out. */
+function readTransportInputs(root) {
+  const values = {};
+  if (!root) return values;
+  for (const input of root.querySelectorAll('[data-transport-key]')) {
+    const value = input.value.trim();
+    if (value) values[input.dataset.transportKey] = value;
+  }
+  return values;
 }
 
 function dialogError(id, message) {
@@ -1153,7 +1267,9 @@ function buildAddBody() {
   // pin the display to today's catalogue entry.
   const transport = {};
   if (value('add-transport')) transport.type = value('add-transport');
-  for (const input of document.querySelectorAll('#add-transport-options [data-transport-key]')) {
+  // Both containers: the required options above the fold and the rest under
+  // it (`onTransportChange`).
+  for (const input of document.querySelectorAll('#add-dialog [data-transport-key]')) {
     if (input.value.trim()) transport[input.dataset.transportKey] = input.value.trim();
   }
 
@@ -1253,6 +1369,7 @@ async function submitAddDisplay(event) {
     await poll();
     addDialogJustAdded = created.id;
     document.getElementById('add-dialog').close();
+    loadDiscovery();
   } catch (error) {
     if (error.unauthorised) {
       // The token field is already showing; the dialog stays open with
@@ -1375,8 +1492,8 @@ for (const form of document.querySelectorAll('form.tokenbox')) {
 const main = document.getElementById('displays');
 if (main) {
   // A token arriving in the query is remembered for the rest of the tab, so
-  // the preview images and the ESPHome link — neither of which can send a
-  // header — get it appended to their URLs.
+  // the preview images — which cannot send a header — get it appended to
+  // their URLs.
   const supplied = new URLSearchParams(location.search).get('token');
   if (supplied) storeToken(supplied);
 
@@ -1386,6 +1503,10 @@ if (main) {
   }
   paintAll();
   schedulePoll();
+  loadDiscovery();
+  document.getElementById('discovery-refresh')?.addEventListener('click', (e) => {
+    act(e.currentTarget, loadDiscovery);
+  });
 
   // A background tab is showing nobody anything, so it asks for nothing; the
   // first thing a tab does on coming back is find out what it missed.
@@ -1406,12 +1527,21 @@ if (addDialog) {
   );
   document.getElementById('add-cancel').addEventListener('click', () => addDialog.close());
   document.getElementById('add-form').addEventListener('submit', submitAddDisplay);
-  document.getElementById('add-panel').addEventListener('change', onPanelChange);
+  document.getElementById('add-panel').addEventListener('change', () => {
+    addPanelEdited = true;
+    onPanelChange();
+  });
   document.getElementById('add-transport').addEventListener('change', onTransportChange);
   document.getElementById('add-name').addEventListener('input', (e) => {
     if (!addIdEdited) document.getElementById('add-id').value = slugify(e.target.value);
   });
   document.getElementById('add-id').addEventListener('input', () => { addIdEdited = true; });
+  document.getElementById('add-test').addEventListener('click', (e) => {
+    probeCandidate(buildAddBody(), document.getElementById('add-test-result'), e.currentTarget)
+      .then((error) => {
+        if (error && error.fields) applyFieldErrors(error.fields);
+      });
+  });
   // A native <dialog> already returns focus to whatever was focused before
   // `showModal()`, but only when that element is still in the document — the
   // empty-state's Add display button is recreated on every poll, so it can be
@@ -2288,7 +2418,7 @@ function editorEffectiveTransport() {
 }
 
 function redrawTransportOptions(data, box, type) {
-  const info = (data.schema.transports || {})[type] || { options: {} };
+  const info = (data.schema.transports || {})[type] || { options: {}, fields: {} };
   const nodes = [];
   if (info.description) {
     const note = document.createElement('div');
@@ -2311,36 +2441,36 @@ function redrawTransportOptions(data, box, type) {
   // these: it stays in the working copy for a look back, and is neither shown
   // nor sent under this one.
   const extras = storedTransportKeys.filter((key) => !documented.includes(key));
-  for (const key of documented) nodes.push(transportOption(key, info.options[key], false));
-  for (const key of extras) nodes.push(transportOption(key, '', true));
+  const built = transportControls(info, editorTransport, {
+    idPrefix: 'editor-transport',
+    environment: (data.environment || {}),
+    extras,
+    pathPrefix: 'transport.',
+    onModeChange: () => {
+      editorTransport = Object.assign(withoutShownKeys(), collectTransport());
+      redrawTransportOptions(data, box, editorEffectiveTransport());
+      markDirty();
+    },
+  });
+  nodes.push(...built.primary);
+  if (built.advanced) nodes.push(built.advanced);
+  // The same probe the Add dialog offers, on the drawer's unsaved state.
+  const row = document.createElement('div');
+  row.className = 'probe-row';
+  const test = document.createElement('button');
+  test.type = 'button';
+  test.textContent = 'Test delivery';
+  const result = document.createElement('span');
+  result.className = 'probe-result';
+  result.setAttribute('role', 'status');
+  test.addEventListener('click', () => {
+    probeCandidate(collectBody(), result, test).then((error) => {
+      if (error && error.fields) applyEditorErrors(error.fields, 'The configuration is not valid yet.');
+    });
+  });
+  row.append(test, result);
+  nodes.push(row);
   box.replaceChildren(...nodes);
-}
-
-function transportOption(key, description, extra) {
-  const field = document.createElement('div');
-  field.className = 'field';
-  field.dataset.path = `transport.${key}`;
-  const id = 'editor-transport-' + key;
-  const label = document.createElement('label');
-  label.setAttribute('for', id);
-  label.textContent = key;
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.id = id;
-  input.autocomplete = 'off';
-  input.dataset.transportKey = key;
-  const value = editorTransport[key];
-  input.value = value === undefined || value === null
-    ? ''
-    : (typeof value === 'object' ? JSON.stringify(value) : String(value));
-  const help = document.createElement('div');
-  help.className = 'help' + (extra ? ' warn' : '');
-  help.textContent = extra
-    ? 'Not an option this transport documents. It is kept as it is; clear the ' +
-      'box to drop it.'
-    : description;
-  field.append(label, input, help);
-  return field;
 }
 
 /** The working copy minus every key the transport section is showing, which
@@ -2729,4 +2859,771 @@ function editorError(message) {
   const box = editorDialog.querySelector('.editor-error');
   box.textContent = message || '';
   box.hidden = !message;
+}
+
+// ------------------------------------------------------ transport controls --
+
+/* One builder for both forms. A transport describes how to ask for each of
+ * its options in `option_fields` (`src/maverick/transports/base.py`), served
+ * under `fields` by `GET /api/schema/display`: which mode an option belongs
+ * to, whether it is required, whether it is advanced, and what control to
+ * draw. Before this every option was a text box and every transport showed
+ * every one — twelve for an OpenDisplay tag, of which the normal case needs
+ * one — and `device_id`, the one it needs, was a value copied out of a URL.
+ *
+ * Every control carries `data-transport-key` and a string `.value`, which is
+ * the contract `buildAddBody` and `collectTransport` read by, so the two forms
+ * need to know nothing about what was drawn. */
+
+/** The value a mode option is on, given what has been typed and its default. */
+function currentMode(info, values) {
+  const key = info.mode_option;
+  if (!key) return '';
+  const field = (info.fields || {})[key] || {};
+  return String(values[key] || field.default || '');
+}
+
+/** Build the controls for `info`'s options with `values` filled in.
+ *
+ *  Returns `{primary, advanced}`: the mode picker and every required or
+ *  plain option, and one folded `<details>` holding the advanced ones and
+ *  `ctx.extras` (stored keys the transport does not document). `ctx.idPrefix`
+ *  keeps element ids unique per form, `ctx.environment` decides which modes
+ *  and helpers to offer, `ctx.onModeChange` is called when the picker moves
+ *  and is expected to redraw. */
+function transportControls(info, values, ctx) {
+  const fields = info.fields || {};
+  const options = info.options || {};
+  const mode = currentMode(info, values);
+  const visible = (key) => {
+    const field = fields[key] || {};
+    return !(field.modes && field.modes.length) || field.modes.includes(mode);
+  };
+  const primary = [];
+  const advanced = [];
+
+  if (info.mode_option && options[info.mode_option] !== undefined) {
+    primary.push(modeControl(info, values, ctx));
+  }
+  const ordered = Object.keys(options).filter((key) => key !== info.mode_option && visible(key));
+  const required = ordered.filter((key) => (fields[key] || {}).required);
+  const plain = ordered.filter((key) => !(fields[key] || {}).required && !(fields[key] || {}).advanced);
+  const folded = ordered.filter((key) => !(fields[key] || {}).required && (fields[key] || {}).advanced);
+  for (const key of [...required, ...plain]) {
+    primary.push(optionControl(key, options[key], fields[key] || {}, values[key], ctx, mode));
+  }
+  for (const key of folded) {
+    advanced.push(optionControl(key, options[key], fields[key] || {}, values[key], ctx, mode));
+  }
+  for (const key of ctx.extras || []) {
+    advanced.push(optionControl(key, '', { extra: true }, values[key], ctx, mode));
+  }
+
+  let fold = null;
+  if (advanced.length) {
+    fold = document.createElement('details');
+    fold.className = 'field-group nested';
+    const summary = document.createElement('summary');
+    summary.textContent = info.mode_option
+      ? `More options for ${MODE_LABELS[mode] || mode}`
+      : 'More options';
+    fold.append(summary, ...advanced);
+    // A stored value under an advanced key is worth seeing without a click.
+    if (advanced.some((node) => node.querySelector('[data-transport-key]')?.value)) fold.open = true;
+  }
+  return { primary, advanced: fold };
+}
+
+/** The mode picker: a row of buttons rather than a select, because there are
+ *  two or three answers and the choice redraws everything under it. In the
+ *  Home Assistant app `ble` is left out — the app has no Bluetooth
+ *  (`src/maverick/transports/opendisplay.py`) — unless a stored display is
+ *  already on it, in which case it is shown with the refusal spelled out. */
+function modeControl(info, values, ctx) {
+  const key = info.mode_option;
+  const field = info.fields[key] || {};
+  const mode = currentMode(info, values);
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  wrap.dataset.path = `${ctx.pathPrefix || ''}${key}`;
+  const label = document.createElement('label');
+  label.textContent = field.label || key;
+  const group = document.createElement('div');
+  group.className = 'segmented';
+  group.setAttribute('role', 'radiogroup');
+  group.setAttribute('aria-label', field.label || key);
+  const hidden = document.createElement('input');
+  hidden.type = 'hidden';
+  hidden.dataset.transportKey = key;
+  hidden.id = `${ctx.idPrefix}-${key}`;
+  // The default is sent as an absent key, so a saved display reads as it
+  // was meant: "auto", not "mode: auto" on every line.
+  hidden.value = mode === String(field.default || '') ? '' : mode;
+  const addon = Boolean(ctx.environment && ctx.environment.addon);
+  for (const choice of field.choices || []) {
+    if (choice === 'ble' && addon && mode !== 'ble') continue;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', String(choice === mode));
+    button.textContent = MODE_LABELS[choice] || choice;
+    button.title = MODE_TITLES[choice] || '';
+    button.addEventListener('click', () => {
+      hidden.value = choice === String(field.default || '') ? '' : choice;
+      values[key] = choice;
+      ctx.onModeChange();
+    });
+    group.appendChild(button);
+  }
+  const help = document.createElement('div');
+  help.className = 'help';
+  help.textContent = info.options[key] || '';
+  wrap.append(label, group, hidden, help);
+  if (mode === 'ble' && addon) {
+    const warn = document.createElement('div');
+    warn.className = 'help warn';
+    warn.textContent = 'The Home Assistant app has no Bluetooth of its own, so this mode ' +
+      'fails on every delivery here. Switch to Home Assistant, which reaches the tag ' +
+      'through its own adapters and ESPHome Bluetooth proxies.';
+    wrap.appendChild(warn);
+  }
+  return wrap;
+}
+
+const MODE_LABELS = { auto: 'Automatic', ha: 'Home Assistant', ble: 'This host’s Bluetooth' };
+const MODE_TITLES = {
+  auto: 'Home Assistant when it is connected, this host’s Bluetooth otherwise',
+  ha: 'Through Home Assistant’s Bluetooth and its ESPHome proxies; needs the OpenDisplay integration',
+  ble: 'Directly from an adapter on this machine; the tag must be in its range',
+};
+
+/** One labelled control for a transport option, drawn by its `kind`. */
+function optionControl(key, description, field, value, ctx, mode) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  wrap.dataset.path = `${ctx.pathPrefix || ''}${key}`;
+  const id = `${ctx.idPrefix}-${key}`;
+  const label = document.createElement('label');
+  label.setAttribute('for', id);
+  label.textContent = field.label || key;
+  if (field.label && field.label !== key) {
+    const code = document.createElement('code');
+    code.className = 'option-key';
+    code.textContent = key;
+    label.append(' ', code);
+  }
+  if (field.required) {
+    const req = document.createElement('span');
+    req.className = 'req';
+    req.textContent = 'required';
+    label.appendChild(req);
+  }
+  const text = value === undefined || value === null
+    ? ''
+    : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+  let control;
+  let extra = null;
+  // The device picker sits above its text box, which reads as the fallback
+  // it is; every other helper sits below its control.
+  let extraFirst = false;
+  if (field.kind === 'select') {
+    control = document.createElement('select');
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = field.default !== null && field.default !== undefined
+      ? `default (${field.default})` : 'unset';
+    control.appendChild(blank);
+    for (const choice of field.choices || []) {
+      const option = document.createElement('option');
+      option.value = choice;
+      option.textContent = choice;
+      control.appendChild(option);
+    }
+    control.value = text;
+    if (text && control.value !== text) {
+      const kept = document.createElement('option');
+      kept.value = text;
+      kept.textContent = text;
+      control.appendChild(kept);
+      control.value = text;
+    }
+  } else if (field.kind === 'ha_device') {
+    ({ control, extra } = deviceControl(id, text, field, ctx));
+    extraFirst = true;
+  } else if (field.kind === 'mac') {
+    ({ control, extra } = macControl(id, text, ctx, mode));
+  } else {
+    control = document.createElement('input');
+    control.type = field.kind === 'number' ? 'number' : field.kind === 'secret' ? 'password' : 'text';
+    if (field.kind === 'number') control.step = 'any';
+    control.autocomplete = 'off';
+    control.value = text;
+    if (field.default !== null && field.default !== undefined) control.placeholder = String(field.default);
+  }
+  control.id = id;
+  control.dataset.transportKey = key;
+  const help = document.createElement('div');
+  help.className = 'help' + (field.extra ? ' warn' : '');
+  help.textContent = field.extra
+    ? 'Not an option this transport documents. It is kept as it is; clear the box to drop it.'
+    : description;
+  const error = document.createElement('div');
+  error.className = 'field-error';
+  wrap.appendChild(label);
+  if (extra && extraFirst) wrap.appendChild(extra);
+  wrap.appendChild(control);
+  if (extra && !extraFirst) wrap.appendChild(extra);
+  wrap.append(help, error);
+  return wrap;
+}
+
+async function ensureDevices(refresh) {
+  if (devicesCache && !refresh) return devicesCache;
+  try {
+    const response = await authFetch('api/ha/opendisplay/devices');
+    devicesCache = await response.json();
+  } catch (error) {
+    devicesCache = [];
+    devicesCache.unavailable = error.message;
+  }
+  return devicesCache;
+}
+
+/** A picker over the device registry, writing the registry id into the text
+ *  box beside it. The box stays: an id can still be pasted, and a stored one
+ *  the registry no longer lists is shown rather than dropped. */
+function deviceControl(id, value, field, ctx) {
+  const control = document.createElement('input');
+  control.type = 'text';
+  control.autocomplete = 'off';
+  control.spellcheck = false;
+  control.value = value;
+  control.placeholder = 'device registry id';
+  control.className = 'device-id';
+
+  const row = document.createElement('div');
+  row.className = 'device-row';
+  const select = document.createElement('select');
+  select.className = 'device-select';
+  select.setAttribute('aria-label', 'Tag known to Home Assistant');
+  const refresh = document.createElement('button');
+  refresh.type = 'button';
+  refresh.className = 'device-refresh';
+  refresh.textContent = '↻';
+  refresh.title = 'Ask Home Assistant again';
+  refresh.setAttribute('aria-label', 'Refresh the list of tags');
+  row.append(select, refresh);
+  const note = document.createElement('div');
+  note.className = 'help device-note';
+
+  const fill = (devices) => {
+    select.replaceChildren();
+    const head = document.createElement('option');
+    head.value = '';
+    if (devices.unavailable) {
+      head.textContent = 'Home Assistant is not connected — paste the id below';
+      select.disabled = true;
+    } else if (!devices.length) {
+      head.textContent = 'No OpenDisplay tags in Home Assistant yet';
+      select.disabled = true;
+    } else {
+      head.textContent = 'Pick a tag…';
+      select.disabled = false;
+    }
+    select.appendChild(head);
+    for (const device of devices) {
+      const option = document.createElement('option');
+      option.value = device.id;
+      const bits = [device.name];
+      if (device.model) bits.push(device.model);
+      if (device.display_id) bits.push(`already ${device.display_id}`);
+      option.textContent = bits.join(' · ');
+      option.dataset.panel = device.panel_guess || '';
+      select.appendChild(option);
+    }
+    select.value = control.value;
+    if (control.value && select.value !== control.value) select.value = '';
+    note.textContent = devices.unavailable
+      ? 'The picker needs Home Assistant; the id is on the tag’s device page, at the ' +
+        'end of its URL.'
+      : (devices.length ? '' : 'Set up the OpenDisplay integration and the tag appears here.');
+  };
+  select.addEventListener('change', () => {
+    if (!select.value) return;
+    control.value = select.value;
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+    // A tag names its size; a panel picker still on the first entry is
+    // almost certainly not the right one, so offer the guess.
+    const guess = select.selectedOptions[0]?.dataset.panel;
+    if (guess && ctx.onPanelGuess) ctx.onPanelGuess(guess);
+  });
+  control.addEventListener('input', () => {
+    select.value = control.value;
+    if (select.value !== control.value) select.value = '';
+  });
+  refresh.addEventListener('click', () => act(refresh, async () => fill(await ensureDevices(true))));
+  const placeholder = document.createElement('option');
+  placeholder.textContent = 'Loading tags…';
+  select.appendChild(placeholder);
+  ensureDevices(false).then(fill);
+
+  const extra = document.createElement('div');
+  extra.append(row, note);
+  return { control, extra };
+}
+
+/** A MAC box with a scan button when this host can scan
+ *  (`environment.bluetooth_scan`): a scan lists the tags the adapter hears,
+ *  and picking one fills the MAC. In the app there is no adapter and no
+ *  button, and the help says so. */
+function macControl(id, value, ctx, mode) {
+  const control = document.createElement('input');
+  control.type = 'text';
+  control.autocomplete = 'off';
+  control.spellcheck = false;
+  control.value = value;
+  control.placeholder = 'AA:BB:CC:DD:EE:FF';
+  const extra = document.createElement('div');
+  const environment = ctx.environment || {};
+  if (environment.bluetooth_scan) {
+    const row = document.createElement('div');
+    row.className = 'device-row';
+    const scan = document.createElement('button');
+    scan.type = 'button';
+    scan.textContent = 'Scan for tags';
+    const select = document.createElement('select');
+    select.className = 'device-select';
+    select.hidden = true;
+    select.setAttribute('aria-label', 'Tags in range');
+    const status = document.createElement('span');
+    status.className = 'probe-result';
+    row.append(scan, select, status);
+    scan.addEventListener('click', async () => {
+      setBusy(scan, true);
+      status.textContent = 'scanning… 10 s';
+      status.className = 'probe-result';
+      try {
+        const response = await authFetch('api/opendisplay/scan?timeout=10', { method: 'POST' });
+        const body = await response.json();
+        const tags = body.tags || [];
+        select.replaceChildren();
+        const head = document.createElement('option');
+        head.value = '';
+        head.textContent = tags.length ? 'Pick a tag…' : 'No tags heard';
+        select.appendChild(head);
+        for (const tag of tags) {
+          const option = document.createElement('option');
+          option.value = tag.mac;
+          option.textContent = `${tag.name} · ${tag.mac}`;
+          option.dataset.name = tag.name;
+          option.dataset.panel = tag.panel_guess || '';
+          select.appendChild(option);
+        }
+        select.hidden = false;
+        status.textContent = `${tags.length} tag${tags.length === 1 ? '' : 's'} in range`;
+      } catch (error) {
+        status.textContent = error.message;
+        status.className = 'probe-result err';
+      } finally {
+        setBusy(scan, false);
+      }
+    });
+    select.addEventListener('change', () => {
+      if (!select.value) return;
+      control.value = select.value;
+      control.dispatchEvent(new Event('input', { bubbles: true }));
+      control.dispatchEvent(new Event('change', { bubbles: true }));
+      const guess = select.selectedOptions[0]?.dataset.panel;
+      if (guess && ctx.onPanelGuess) ctx.onPanelGuess(guess);
+    });
+    extra.appendChild(row);
+  } else if (environment.addon) {
+    const note = document.createElement('div');
+    note.className = 'help';
+    note.textContent = 'No scan here: the app has no Bluetooth. Home Assistant’s own ' +
+      'OpenDisplay integration finds tags; pick Home Assistant as the mode.';
+    extra.appendChild(note);
+  } else if (mode === 'ble' || mode === 'auto') {
+    const note = document.createElement('div');
+    note.className = 'help';
+    note.textContent = 'Install the opendisplay extra to scan from here, or run ' +
+      '`maverick scan` on a machine with an adapter.';
+    extra.appendChild(note);
+  }
+  return { control, extra: extra.childNodes.length ? extra : null };
+}
+
+// ---------------------------------------------------------- test delivery --
+
+/** `POST /api/displays/probe` with a candidate body; paint the verdict into
+ *  `target`. Resolves to the error for the caller to put under fields, or
+ *  null. Nothing is saved and no frame is sent (`Engine.probe_candidate`). */
+async function probeCandidate(body, target, button) {
+  probeResult(target, { busy: true });
+  setBusy(button, true);
+  try {
+    const result = await sendJSON('api/displays/probe', 'POST', body, 'The probe failed.');
+    probeResult(target, result);
+    return null;
+  } catch (error) {
+    if (error.unauthorised) {
+      probeResult(target, null);
+      return error;
+    }
+    probeResult(target, { ok: false, detail: error.message });
+    return error;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function probeResult(target, result) {
+  if (!target) return;
+  target.replaceChildren();
+  target.className = 'probe-result';
+  if (!result) return;
+  if (result.busy) {
+    target.textContent = 'asking…';
+    return;
+  }
+  const pill = document.createElement('span');
+  pill.className = 'pill ' + (result.ok ? 'ok' : 'err');
+  pill.textContent = result.ok ? (result.pending ? 'ready' : 'reachable') : 'not reachable';
+  target.append(pill, ' ' + (result.detail || ''));
+  target.classList.add(result.ok ? 'ok' : 'err');
+  // The row sits just above the dialog's sticky action bar, which would
+  // otherwise cover the verdict the click was for.
+  target.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+}
+
+// --------------------------------------------------------- install on device --
+
+/* The ESPHome hand-off, as steps rather than a link to a YAML document.
+ * `GET /api/displays/{id}/esphome` (`src/maverick/server/api.py`) carries the
+ * document, the node name, the secrets it references — with the value of
+ * Maverick's own token — where it can be written so the ESPHome Device
+ * Builder sees it, and the Device Builder's own page. Maverick does not
+ * compile or flash: the Device Builder does both, and this gets the file and
+ * its secrets in front of it with nothing to retype. */
+
+async function loadInstall(id, card) {
+  const steps = card.querySelector('.install-steps');
+  const error = card.querySelector('.install-error');
+  error.hidden = true;
+  steps.replaceChildren(muted('Generating…'));
+  try {
+    const response = await authFetch(`api/displays/${encodeURIComponent(id)}/esphome`);
+    renderInstall(card, id, await response.json());
+  } catch (e) {
+    steps.replaceChildren();
+    if (!e.unauthorised) {
+      error.textContent = 'Could not generate the configuration: ' + e.message;
+      error.hidden = false;
+    }
+  }
+}
+
+function muted(text) {
+  const node = document.createElement('p');
+  node.className = 'meta';
+  node.textContent = text;
+  return node;
+}
+
+function renderInstall(card, id, info) {
+  const steps = card.querySelector('.install-steps');
+  const nodes = [];
+
+  if (!info.model_known) {
+    nodes.push(warnBox(
+      'ESPHome has no driver for this panel in Maverick’s catalogue. The file names ' +
+      'a placeholder model; set `model:` (and `platform:`, if the panel is not a ' +
+      'waveshare_epaper one) before installing, or the screen stays blank.'
+    ));
+  }
+  if (info.needs_psram) {
+    nodes.push(warnBox(
+      `This frame needs about ${Math.round(info.decoded_bytes / 1024)} KB of RAM to decode, ` +
+      'more than a plain ESP32 has. The file asks for PSRAM; use a board that has it ' +
+      `(the config is for “${info.board}”) or set esphome.board under Edit.`
+    ));
+  }
+
+  const list = document.createElement('ol');
+  list.className = 'steps';
+
+  // 1. secrets
+  const secretsText = secretsSnippet(info.secrets);
+  const secretsPre = pre(secretsText, 'install-pre install-secrets');
+  const copySecrets = actionButton('Copy', () => copyText(secretsPre, copySecrets));
+  list.appendChild(step(
+    'Secrets',
+    'ESPHome resolves every !secret from the secrets.yaml beside the configuration. ' +
+    'Add these names there; Maverick fills in the one it knows.',
+    [row(copySecrets), secretsPre]
+  ));
+
+  // 2. the file
+  const yamlPre = pre(info.yaml, 'install-pre install-yaml');
+  const copyYaml = actionButton('Copy', () => copyText(yamlPre, copyYaml));
+  const download = document.createElement('a');
+  download.textContent = 'Download';
+  download.className = 'install-download';
+  download.setAttribute('download', info.filename);
+  // A blob rather than the route: an <a download> cannot send the token.
+  download.href = URL.createObjectURL(new Blob([info.yaml], { type: 'text/yaml' }));
+  const fileRow = row(copyYaml, download);
+  const sendRow = sendToEsphome(id, info);
+  list.appendChild(step(
+    `The configuration, ${info.filename}`,
+    sendRow
+      ? 'Send it straight to the ESPHome Device Builder’s folder, or copy it into a new ' +
+        'device there yourself.'
+      : 'Copy it into a new device in the ESPHome Device Builder, or save it beside your ' +
+        'other ESPHome configurations.',
+    sendRow ? [fileRow, sendRow, yamlPre] : [fileRow, yamlPre]
+  ));
+
+  // 3. install
+  const installNodes = [];
+  if (info.dashboard) {
+    const open = document.createElement('a');
+    open.className = 'install-open';
+    open.textContent = `Open ${info.dashboard.name}`;
+    open.href = info.dashboard.url;
+    // Out of the ingress iframe: the Device Builder is another add-on's page.
+    open.target = '_top';
+    open.rel = 'noopener';
+    installNodes.push(row(open));
+  }
+  const method = document.createElement('p');
+  method.className = 'meta';
+  method.textContent = info.dashboard
+    ? `In the Device Builder, ${info.node} appears as a device. Choose Install, then either ` +
+      'plug the board into this computer or install wirelessly once it is on the network.'
+    : `With the ESPHome CLI: esphome run ${info.filename}. The ESPHome Device Builder add-on ` +
+      'does the same from a browser, and this step links to it once it is installed.';
+  installNodes.push(method);
+  if (info.deep_sleep) {
+    installNodes.push(muted(
+      'Battery mode: the node sleeps between fetches and is unreachable while it does, so a ' +
+      'later update over the air needs the reset button pressed first.'
+    ));
+  }
+  list.appendChild(step('Install', '', installNodes));
+
+  nodes.push(list);
+  steps.replaceChildren(...nodes);
+}
+
+/** `secrets.yaml` as the file expects it, values filled in where Maverick has them. */
+function secretsSnippet(secrets) {
+  const lines = ['# secrets.yaml, next to the ESPHome configuration'];
+  for (const entry of secrets) {
+    if (entry.value) lines.push(`${entry.name}: ${JSON.stringify(entry.value)}`);
+    else lines.push(`${entry.name}: ""   # ${entry.description}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+/** The "Send to ESPHome" row, or null when nowhere on this host qualifies
+ *  (`destinations` in `src/maverick/esphome/install.py`). One writable
+ *  destination is a button; several are a picker and a button. */
+function sendToEsphome(id, info) {
+  const targets = (info.destinations || []).filter((d) => d.writable || d.kind === 'share');
+  if (!targets.length) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'install-send';
+  const line = document.createElement('div');
+  line.className = 'row';
+  let picker = null;
+  if (targets.length > 1) {
+    picker = document.createElement('select');
+    picker.setAttribute('aria-label', 'Where to write the configuration');
+    for (const target of targets) {
+      const option = document.createElement('option');
+      option.value = target.id;
+      option.textContent = `${target.label} (${target.path})`;
+      picker.appendChild(option);
+    }
+    line.appendChild(picker);
+  }
+  const send = actionButton('Send to ESPHome', () => submit(false));
+  send.classList.add('add-btn');
+  line.appendChild(send);
+  const status = document.createElement('div');
+  status.className = 'meta install-status';
+  wrap.append(line, status);
+
+  const current = () => targets.find((t) => t.id === (picker ? picker.value : targets[0].id));
+  const describe = () => {
+    const target = current();
+    if (!target) return;
+    if (target.installed) {
+      status.textContent = `${info.filename} is already in ${target.label}. Sending again ` +
+        'replaces it with this version.';
+    } else {
+      status.textContent = `Writes ${info.filename} into ${target.path}.`;
+    }
+    status.append(secretsNote(target.missing_secrets, info.secrets));
+  };
+  if (picker) picker.addEventListener('change', describe);
+  describe();
+
+  async function submit(overwrite) {
+    const target = current();
+    setBusy(send, true);
+    status.textContent = 'Writing…';
+    try {
+      const result = await sendJSON(
+        `api/displays/${encodeURIComponent(id)}/esphome/install`, 'POST',
+        { destination: target.id, overwrite: overwrite }, 'The configuration could not be written.'
+      );
+      status.textContent = `Written to ${result.path}. `;
+      status.append(secretsNote(result.missing_secrets, info.secrets));
+      if (result.dashboard) {
+        status.append(' Open ', link(result.dashboard.name, result.dashboard.url), ' and install it.');
+      }
+      target.installed = true;
+    } catch (error) {
+      if (error.status === 409) {
+        status.textContent = error.message + ' ';
+        const replace = actionButton('Replace it', () => submit(true));
+        status.appendChild(replace);
+      } else if (!error.unauthorised) {
+        status.textContent = error.message;
+      }
+    } finally {
+      setBusy(send, false);
+    }
+  }
+  return wrap;
+}
+
+/** What the destination's secrets.yaml still lacks, as a fragment. */
+function secretsNote(missing, secrets) {
+  const fragment = document.createDocumentFragment();
+  if (missing === null || missing === undefined) {
+    fragment.append(' There is no secrets.yaml there yet; step 1 is its contents.');
+  } else if (missing.length) {
+    fragment.append(` Its secrets.yaml is missing ${missing.join(', ')}; add ${
+      missing.length === 1 ? 'it' : 'them'} from step 1.`);
+  } else {
+    fragment.append(' Its secrets.yaml already has every name the file needs.');
+  }
+  return fragment;
+}
+
+function step(title, lead, children) {
+  const item = document.createElement('li');
+  const head = document.createElement('div');
+  head.className = 'step-title';
+  head.textContent = title;
+  item.appendChild(head);
+  if (lead) {
+    const text = document.createElement('p');
+    text.className = 'meta';
+    text.textContent = lead;
+    item.appendChild(text);
+  }
+  item.append(...children);
+  return item;
+}
+
+function warnBox(text) {
+  const node = document.createElement('div');
+  node.className = 'install-warn';
+  node.textContent = text;
+  return node;
+}
+
+function pre(text, className) {
+  const node = document.createElement('pre');
+  node.className = className;
+  node.tabIndex = 0;
+  node.textContent = text;
+  return node;
+}
+
+function row(...children) {
+  const node = document.createElement('div');
+  node.className = 'row';
+  node.append(...children);
+  return node;
+}
+
+function link(text, href) {
+  const node = document.createElement('a');
+  node.textContent = text;
+  node.href = href;
+  node.target = '_top';
+  node.rel = 'noopener';
+  return node;
+}
+
+function actionButton(label, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+// ----------------------------------------------------------- discovered tags --
+
+/* The tags Home Assistant's OpenDisplay integration has found, offered as
+ * displays to add with the panel, the transport and the device id filled in.
+ * This is the TRMNL shape of onboarding — the device is known before the
+ * display exists — applied to BLE tags, where the device registry is what
+ * knows them. The section stays hidden until there is something to show. */
+
+async function loadDiscovery() {
+  const section = document.getElementById('discovery');
+  if (!section) return;
+  const devices = await ensureDevices(true);
+  const list = document.getElementById('discovery-list');
+  if (!devices.length) {
+    section.hidden = true;
+    return;
+  }
+  // The catalogue, so a guessed panel can be named rather than shown as an id.
+  try { await ensureFormData(); } catch (error) { /* the id will do */ }
+  list.replaceChildren(...devices.map(tagCard));
+  section.hidden = false;
+}
+
+function tagCard(device) {
+  const card = document.createElement('div');
+  card.className = 'tag-card' + (device.display_id ? ' is-added' : '');
+  const name = document.createElement('div');
+  name.className = 'tag-name';
+  name.textContent = device.name;
+  const meta = document.createElement('div');
+  meta.className = 'tag-meta';
+  meta.textContent = [device.manufacturer, device.model].filter(Boolean).join(' · ') || 'OpenDisplay tag';
+  const guess = document.createElement('div');
+  guess.className = 'tag-guess';
+  const panel = ((formData && formData.panels) || []).find((p) => p.id === device.panel_guess);
+  guess.textContent = device.panel_guess
+    ? `Looks like ${panel ? panel.name : device.panel_guess}`
+    : 'Panel not recognised from the model — pick it when adding';
+  card.append(name, meta, guess);
+  if (device.display_id) {
+    const added = actionButton(`Added as ${device.display_id}`, () => {
+      const target = cards.get(device.display_id);
+      if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    added.className = 'tag-added';
+    card.appendChild(added);
+  } else {
+    const add = actionButton('Add as display', (e) => openAddDialog(e.currentTarget, {
+      name: device.name,
+      panel: device.panel_guess,
+      transport: { type: 'opendisplay', mode: 'ha', device_id: device.id },
+    }));
+    add.className = 'add-btn';
+    card.appendChild(add);
+  }
+  return card;
 }

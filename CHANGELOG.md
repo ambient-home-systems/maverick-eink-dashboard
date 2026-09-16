@@ -6,6 +6,70 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A guided ESPHome hand-off instead of a link.** Each card for a panel an
+  ESP32 drives now carries an **Install on device** step: the `secrets.yaml`
+  entries the generated configuration expects (with Maverick's own token
+  filled in), the configuration with Copy and Download, **Send to ESPHome**,
+  which writes it into the ESPHome Device Builder add-on's folder so the device
+  appears there ready to install (`src/maverick/esphome/install.py`, the new
+  `all_addon_configs:rw` mapping in `app/config.yaml`, and
+  `server.esphome_dir` standalone), and a link to the Device Builder's page
+  when the add-on is installed. `GET /api/displays/{id}/esphome` and
+  `POST /api/displays/{id}/esphome/install` serve it. Maverick still never
+  compiles or flashes; the Device Builder does.
+- **ESPHome validates the generated configuration in CI.**
+  `scripts/check_esphome.py` runs `esphome config` over a generated document
+  for every catalogued panel with a model, in both generator shapes, and the
+  new `esphome` job runs it on every push. The first run found the file was
+  not one ESPHome accepted (below).
+- **Tags Home Assistant can see.** The setup UI lists every tag the
+  OpenDisplay integration has found, with the catalogue panel its model looks
+  like, and **Add as display** opens the Add dialog with the name, the panel
+  and the device registry id filled in (`GET /api/ha/opendisplay/devices`,
+  `HomeAssistantClient.list_devices`, `guess_panel` in
+  `src/maverick/devices/guess.py`).
+- **Transport options drawn from what each option is.** `Transport.option_fields`
+  (`src/maverick/transports/base.py`) says which mode an option belongs to,
+  whether it is required and what control to draw; `GET /api/schema/display`
+  serves it. The Add dialog asks for a transport's required options above the
+  Advanced fold, as a mode picker and — for an OpenDisplay tag — a tag picker
+  over Home Assistant's device registry, so the registry id is never copied
+  out of a URL; everything optional folds away with its default as the
+  placeholder. The Edit drawer draws the same controls.
+- **Test delivery.** `POST /api/displays/probe` runs a candidate's transport
+  `probe` without saving; the Add dialog and the Edit drawer offer it as a
+  button, `POST /api/displays/{id}/probe` runs it for a configured display,
+  and `maverick check` now probes every enabled display (`--no-probe` skips
+  it). The OpenDisplay probe checks a `device_id` against the device registry
+  in `ha` mode — the entity-id-or-MAC mistake, caught before a frame is sent
+  — and honours `device_name` in `ble` mode.
+- **Scan from the setup UI.** `POST /api/opendisplay/scan` and a **Scan for
+  tags** button on a host with an adapter and the `opendisplay` extra;
+  `maverick scan` names the panel a tag looks like. `GET /api/environment`
+  tells the forms what the host can do.
+
+### Changed
+
+- **The generated ESPHome configuration carries no secret.** `server.api_token`
+  is referenced as `!secret maverick_authorization` rather than written in,
+  so a copy of the file is not a copy of the token.
+- **The generated ESPHome configuration is one ESPHome accepts.** `online_image`
+  takes `request_headers`, not `headers`; its `buffer_size` is the download
+  buffer, which ESPHome caps at 64 KiB, so it is written capped and the PSRAM
+  decision is made on the decoded estimate; `http_request.buffer_size_rx` is a
+  fixed 8 KiB rather than a mirror of the image that overran its 16-bit range
+  on every colour panel; a `psram:` block asks for octal mode only on an S3
+  board. The catalogue's `waveshare-5in65-acep` model is `5.65in-f` and
+  `waveshare-7in5-bwr` is `7.50in-bv2`, the names ESPHome has;
+  `waveshare-7in3-spectra` gains a driver through the new
+  `PanelProfile.esphome_platform` (`epaper_spi`, `7.3in-Spectra-E6`). The
+  IT8951 and LilyGO panels say in their notes that ESPHome ships no driver.
+- **`mode: ble` is refused in the Home Assistant app**, up front and in words:
+  the app asks for no Bluetooth access, so an adapter is never visible to it.
+  `auto` resolves to `ha` there, and the setup UI leaves the mode out.
+
 ## [0.4.0] - 2026-09-16
 
 ### Added
