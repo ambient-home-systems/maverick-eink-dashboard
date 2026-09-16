@@ -1,0 +1,106 @@
+/* The setup UI's stylesheet, served from `/static` by the mount in
+   `src/maverick/server/api.py`.
+
+   A separate file rather than a string in Python, but still no build step, no
+   imports and nothing from a CDN: Maverick runs on a LAN that may have no
+   internet, on hardware as small as a Pi 3. The token prompt page loads this
+   too, which is why `/static` is not behind `server.api_token`. */
+
+:root{--bg:#f6f6f4;--fg:#16161a;--muted:#6b6b76;--line:#d8d8d2;--card:#fff;
+      --warn:#a8631a;--err:#a3271f;--ok:#2c6e3f}
+@media (prefers-color-scheme:dark){:root{--bg:#16161a;--fg:#ececf0;--muted:#9a9aa6;
+      --line:#2e2e36;--card:#1e1e24;--warn:#e0a458;--err:#e0685e;--ok:#6fbf87}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+
+/* ------------------------------------------------------------------ header */
+
+header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;
+       align-items:baseline;gap:14px;flex-wrap:wrap}
+h1{margin:0;font-size:20px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px}
+.spacer{margin-left:auto}
+.chip{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);
+      background:var(--card);white-space:nowrap}
+/* A chip that explains itself: <details> gives the disclosure behaviour with
+   no script, so the MQTT explanation opens on a page whose JavaScript never
+   loaded. Open, it takes a row of its own rather than stretching the header. */
+details.chip{padding:0;border:0;background:none;white-space:normal}
+details.chip>summary{display:inline-block;font-size:12px;padding:3px 10px;
+      border-radius:99px;border:1px dashed var(--line);background:var(--card);
+      cursor:pointer;list-style:none;white-space:nowrap}
+details.chip>summary::-webkit-details-marker{display:none}
+details.chip[open]{flex-basis:100%}
+.chip-body{margin-top:10px;max-width:44em;padding:12px 14px;background:var(--card);
+      border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:13px;
+      white-space:normal}
+.chip-body p{margin:0 0 8px}
+.chip-body p:last-child{margin-bottom:0}
+
+/* -------------------------------------------------------------------- body */
+
+/* minmax(min(340px,100%),1fr) rather than minmax(340px,1fr): a fixed minimum
+   is wider than a 360px phone once the page padding is taken off, and the
+   whole page then scrolls sideways. */
+main{padding:24px;display:grid;gap:20px;
+     grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));max-width:1500px}
+.lede{padding:24px 24px 0;max-width:1500px}
+.lede .card{max-width:44em}
+.notice{margin:0;padding:12px 24px 0;color:var(--err);font-size:13px}
+@media (max-width:480px){
+  header{padding:16px;gap:10px}
+  main{padding:16px;gap:16px}
+  .lede{padding:16px 16px 0}
+  .notice{padding:12px 16px 0}
+}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+      overflow:hidden;display:flex;flex-direction:column}
+.card.is-disabled{opacity:.6}
+.card h2{margin:0;padding:14px 16px 10px;font-size:16px;display:flex;
+         justify-content:space-between;align-items:center;gap:8px}
+.meta{padding:0 16px 12px;color:var(--muted);font-size:12.5px}
+.meta:empty{display:none}
+.shot{background:#e9e7e0;border-top:1px solid var(--line);
+      border-bottom:1px solid var(--line);display:block;width:100%;height:auto}
+/* [hidden] loses to display:block, so it has to be restated — the card ships
+   with both the image and the placeholder and hides one of them. */
+.shot[hidden]{display:none}
+.shot-empty{padding:40px;text-align:center;color:#888}
+.row{padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:6px;
+       background:var(--bg);color:var(--fg);cursor:pointer;transition:border-color .15s}
+button:hover{border-color:var(--muted)} button:disabled{opacity:.5;cursor:wait}
+button[aria-busy=true]{cursor:progress}
+/* Keyboard focus has to be visible: every action on a card is a button, and
+   the previous stylesheet left them with the browser default the reset above
+   was quietly removing on some platforms. */
+:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.pill{font-size:11.5px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);
+      white-space:nowrap}
+.pill.busy{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+.muted{color:var(--muted)}
+.issues{padding:0 16px 14px;margin:0;font-size:12.5px;list-style:none}
+.issues:empty{display:none}
+.issues li{padding:6px 0;border-top:1px dotted var(--line)}
+.issues .hint{color:var(--muted)}
+code{font:12px ui-monospace,monospace;background:var(--bg);padding:1px 5px;
+     border-radius:4px;border:1px solid var(--line)}
+a{color:inherit}
+.tokenbox{display:flex;gap:6px;align-items:center;font-size:13px}
+/* [hidden] loses to display:flex, so it has to be restated. */
+.tokenbox[hidden]{display:none}
+.tokenbox input{font:inherit;padding:5px 8px;border:1px solid var(--line);
+      border-radius:6px;background:var(--card);color:var(--fg);width:15em}
+.prompt{max-width:34em;margin:12vh auto;padding:0 24px}
+.prompt p{color:var(--muted)}
+
+/* Someone who has asked for less motion gets none: the only animation here is
+   the "rendering" pill, and its colour says the same thing on its own. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
+        transition-duration:.01ms!important}
+}

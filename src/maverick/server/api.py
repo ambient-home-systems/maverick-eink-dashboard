@@ -28,10 +28,12 @@ import logging
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..app import VERSION, Application
@@ -39,10 +41,18 @@ from ..config import DisplayConfig
 from ..devices import all_panels
 from ..ha import auth as ha_auth
 from ..ha import supervisor
+from ..store import dump_display
 from ..transports import available_transports
 from .ui import render_token_prompt, render_ui
 
 log = logging.getLogger(__name__)
+
+#: The setup UI's stylesheet and script, served at `/static`. They ship with
+#: the package (`[tool.setuptools.package-data]` in `pyproject.toml`);
+#: `StaticFiles` checks the directory when `create_app` builds the mount, so a
+#: package assembled without them fails loudly rather than serving a page with
+#: no styling and no script.
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 class ScheduleToggle(BaseModel):
@@ -199,6 +209,11 @@ def create_app(application: Application) -> FastAPI:
             "id": display.id,
             "name": display.name,
             "enabled": display.enabled,
+            # The display's own configuration, in the shortest form that loads
+            # back as it (`dump_display`, `src/maverick/store.py`) — which is
+            # what a `PUT` to this display takes, so the setup UI can change
+            # one key and send the rest back untouched.
+            "config": dump_display(display),
             "panel": display.panel,
             "panel_name": resolved.profile.name,
             "dashboard": display.dashboard,
@@ -649,6 +664,12 @@ def create_app(application: Application) -> FastAPI:
 
     # ----------------------------------------------------------------- UI --
 
+    # Not behind `auth`: these two files are the same for everyone and carry
+    # no state, and the token prompt — served precisely when the browser has
+    # no accepted token — loads them too. Starlette serves them; nothing here
+    # generates them.
+    api.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
     @api.get("/", response_class=HTMLResponse)
     async def index(request: Request, response: Response) -> str:
         if not _authenticated(application, request):
@@ -662,7 +683,12 @@ def create_app(application: Application) -> FastAPI:
                 "<h1>Maverick</h1>"
                 "<p>The UI is disabled. See <a href='api/docs'>/api/docs</a>.</p>"
             )
-        return render_ui(application)
+        # The same payload `GET /api/displays` answers with, embedded in the
+        # page so the first paint has content; `static/app.js` polls that route
+        # for every one after it.
+        return render_ui(
+            application, [_display_summary(d.id) for d in application.config.displays]
+        )
 
     return api
 

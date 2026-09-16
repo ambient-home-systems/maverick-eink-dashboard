@@ -448,6 +448,7 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | GET | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | GET | `/api/display` | no | TRMNL frame pointer |
 | GET | `/` | yes | The setup UI |
+| GET | `/static/{file}` | no | The setup UI's stylesheet and script |
 
 The token column applies only when `server.api_token` is set; leave it empty
 and nothing is gated. Clients may present it as `Authorization: Bearer`, as an
