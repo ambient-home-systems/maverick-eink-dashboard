@@ -143,3 +143,99 @@ details.field-group[open]>summary{margin-bottom:10px}
   dialog#add-dialog{width:calc(100vw - 32px);border-radius:8px}
   dialog#add-dialog form{padding:16px}
 }
+
+/* ------------------------------------------------------- the display editor */
+
+/* A <dialog> rather than a hand-built panel: Escape, the backdrop, the focus
+   trap and returning focus on close are all behaviour the element already has,
+   and the drawer only has to be where a drawer is. `margin:0 0 0 auto` puts it
+   against the right edge at full height; at phone width it takes the screen,
+   because 110 fields in a 340px column beside nothing is not a side panel. */
+dialog.drawer{border:0;border-left:1px solid var(--line);border-radius:10px 0 0 10px;
+      padding:0;margin:0 0 0 auto;width:min(560px,100vw);max-width:100vw;
+      /* vh first: a browser without dvh drops that pair and keeps these, and a
+         browser with it keeps the drawer clear of a phone's address bar. */
+      height:100vh;max-height:100vh;height:100dvh;max-height:100dvh;
+      background:var(--card);color:var(--fg)}
+dialog.drawer[open]{display:flex;flex-direction:column}
+dialog.drawer::backdrop{background:rgba(0,0,0,.45)}
+
+.drawer-head{display:flex;align-items:flex-start;gap:10px;padding:16px 20px 12px;
+      border-bottom:1px solid var(--line)}
+.drawer-head h2{margin:0;font-size:17px}
+.drawer-head .meta{padding:4px 0 0}
+/* The title takes the slack, so the pill and the close button stay at the
+   right edge whether or not the pill is showing. */
+.drawer-head>div:first-child{flex:1;min-width:0}
+.drawer-head .editor-dirty{align-self:center}
+.drawer-close{font-size:20px;line-height:1;padding:2px 10px}
+.drawer-body{flex:1;overflow-y:auto;padding:16px 20px;
+      /* Bottomed-out momentum scrolling in the drawer must not start scrolling
+         the page behind it. */
+      overscroll-behavior:contain}
+.editor-error{margin:12px 20px 0}
+.drawer-actions{border-top:1px solid var(--line);padding:12px 20px;
+      background:var(--card)}
+.editor-buttons{display:flex;gap:8px;align-items:center}
+.editor-confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+      margin-bottom:10px;padding:10px;border-radius:6px;font-size:13px;
+      background:rgba(163,39,31,.12);color:var(--err)}
+.editor-confirm[hidden]{display:none}
+.editor-confirm-text{flex:1;min-width:14em}
+
+/* A section per nested model. <details> again: the disclosure is free, and an
+   error in a closed one only has to set `open`. */
+.section{border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+.section>summary{font-size:13px;font-weight:600;padding:10px 12px;cursor:pointer}
+.section[open]>summary{border-bottom:1px solid var(--line)}
+.section-body{padding:12px}
+.section-body>.help{margin-bottom:10px}
+.field textarea{font:12px ui-monospace,monospace;padding:6px 8px;border:1px solid var(--line);
+      border-radius:6px;background:var(--bg);color:var(--fg);width:100%;resize:vertical}
+.section .field:last-child{margin-bottom:0}
+.transport-options{margin-top:4px}
+
+/* The measured inks, each row showing the colour it names. */
+.palette-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.field input.palette-name{flex:1;width:auto;min-width:6em}
+.field input.palette-channel{width:5em}
+.palette .swatch{width:20px;height:20px;border-radius:4px;border:1px solid var(--line);
+      flex:none}
+.palette-remove{padding:2px 8px;line-height:1.2}
+.palette-add{font-size:12px;padding:4px 10px}
+
+/* ------------------------------------------------------------ the preview */
+
+.editor-preview{margin-bottom:16px}
+.editor-preview .row{padding:0 0 8px}
+.preview-status{font-size:12.5px;color:var(--muted)}
+.compare-modes button{font-size:12px;padding:4px 10px}
+.compare-modes button[aria-pressed=true]{border-color:var(--fg)}
+.compare{margin-top:10px;gap:10px}
+.compare[hidden]{display:none}
+.compare figure{margin:0;min-width:0}
+.compare figcaption{font-size:12px;color:var(--muted);padding-top:4px}
+.compare .shot{border:1px solid var(--line)}
+.compare .shot-empty{padding:24px;font-size:12.5px}
+.compare.is-side{display:grid;grid-template-columns:1fr 1fr}
+/* Overlay: the two frames in one cell, with the slider cross-fading the
+   candidate over what the panel is showing now — which is how a change of a
+   threshold or a level shows itself at all. */
+.compare.is-overlay{display:grid;grid-template-columns:1fr}
+.compare.is-overlay figure{grid-area:1/1}
+.compare.is-overlay figcaption{display:none}
+.compare.is-overlay .compare-new img{opacity:var(--mix,1)}
+.compare-mix{display:flex;gap:8px;align-items:center;font-size:12.5px;
+      color:var(--muted);margin-top:8px}
+.compare-mix[hidden]{display:none}
+.compare-mix input{flex:1}
+.preview-issues{padding:0}
+
+@media (max-width:480px){
+  dialog.drawer{width:100vw;border-left:0;border-radius:0}
+  .drawer-head,.drawer-actions{padding:12px 16px}
+  .drawer-body{padding:12px 16px}
+  .editor-error{margin:12px 16px 0}
+  /* Side by side at 360px is two 160px frames; stacked, each is legible. */
+  .compare.is-side{grid-template-columns:1fr}
+}

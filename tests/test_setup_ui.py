@@ -1,6 +1,6 @@
 """The setup UI behind Home Assistant's ingress, and when the credential is bad.
 
-Three things this page has to get right; the first two it got wrong once, and
+Four things this page has to get right; the first two it got wrong once, and
 nothing else covers any of them.
 
 *It has to survive a path prefix.* Ingress serves the page at
@@ -19,6 +19,11 @@ for every URL ``static/app.js`` builds, which is where the fetches went.
 whenever a credential is configured, working or not, so asking whether one
 exists would claim "connected" for a credential Home Assistant rejects — and
 hide the link card exactly when it is the one thing on the page that helps.
+
+*It has to reach the endpoints it builds.* The cards, the Add display dialog
+and the per-display editor drawer are all built by ``static/app.js``, so a URL
+it gets wrong fails at a click rather than at import; the sweeps below resolve
+every one of them against the router.
 
 *The page is now a shell.* The cards are drawn by ``static/app.js`` from
 ``GET /api/displays``, so two things have to hold that did not have to before:
@@ -345,6 +350,46 @@ def test_the_add_display_form_only_calls_routes_this_app_serves(app: Application
     for expected in ("api/panels", "api/transports", "api/schema/display", "api/displays"):
         assert expected in targets, f"app.js no longer references {expected}"
         assert _resolves(api, "/" + expected), f"{expected} resolves to no route"
+
+
+# --------------------------------------------------------------------------- #
+# The per-display editor
+# --------------------------------------------------------------------------- #
+
+def test_the_display_editor_only_calls_routes_this_app_serves(app: Application) -> None:
+    """The four endpoints the drawer is opened, previewed and saved through.
+
+    `test_the_script_only_calls_routes_this_app_serves` sweeps the whole of
+    `app.js` generically; this pins the specific targets P2.3 adds, so a typo
+    in one of them fails here by name. `api/displays/{id}` is three of them at
+    once — the GET that fills the drawer, the PUT that saves it and the DELETE
+    behind the confirmation.
+    """
+    api = create_app(app)
+    targets = {"/" + _PLACEHOLDER.sub("kitchen", t).split("?")[0] for t in _script_targets()}
+    for expected in (
+        "/api/schema/display",
+        "/api/displays/kitchen",
+        "/api/displays/kitchen/preview.png",
+        "/api/displays/preview",
+    ):
+        assert expected in targets, f"app.js no longer references {expected}"
+        assert _resolves(api, expected), f"{expected} resolves to no route"
+
+
+def test_every_card_offers_the_editor() -> None:
+    """The Edit action is on the card template, and opens the drawer.
+
+    The cards are built by `app.js`, not by `ui.py`, so what the server ships
+    is the only thing there is to check without a browser: the button exists in
+    the template and is wired to the drawer rather than to nothing.
+    """
+    script = _script()
+    assert "act-edit" in script, "no Edit action on the card template"
+    assert "openEditor(id" in script, "the Edit action opens nothing"
+    # The drawer draws itself from the schema rather than from a field list of
+    # its own, which is the whole reason it stays in step with the models.
+    assert "api/schema/display" in script
 
 
 def test_the_empty_state_no_longer_tells_the_user_to_restart() -> None:
