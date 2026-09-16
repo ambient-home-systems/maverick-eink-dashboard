@@ -6,6 +6,8 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-16
+
 ### Added
 
 - **A browser regression suite.** `tests/conftest.py` stubs the renderer and
