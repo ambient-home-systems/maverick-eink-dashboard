@@ -1,0 +1,20 @@
+# Seed configuration for the `homeassistant` service in docker-compose.dev.yml.
+#
+# `default_config:` pulls in the frontend, the `http` and `lovelace`
+# integrations and the rest of a normal install. `demo:` adds a handful of
+# fake entities (lights, climate, sensors) with nothing to configure, so the
+# dashboard below has something to render without wiring up real devices.
+#
+# This is the only Home Assistant configuration Maverick's own suite or CI
+# reads; it exists to give CONTRIBUTING.md's "Running against a real Home
+# Assistant" loop something to point at, not to be a template for a real
+# install.
+default_config:
+
+demo:
+
+lovelace:
+  mode: yaml
+
+logger:
+  default: warning

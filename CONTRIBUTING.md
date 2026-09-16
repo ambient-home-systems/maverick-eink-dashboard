@@ -8,15 +8,16 @@ here has been checked against hardware, so a report from someone who owns a
 panel is worth more than a patch written from a datasheet.
 
 1. [Development setup](#development-setup)
-2. [Running the checks](#running-the-checks)
-3. [The documentation workflow](#the-documentation-workflow)
-4. [Adding a panel profile](#adding-a-panel-profile)
-5. [Adding a transport](#adding-a-transport)
-6. [The Home Assistant app](#the-home-assistant-app)
-7. [The hardware-untested banner](#the-hardware-untested-banner)
-8. [Spelling](#spelling)
-9. [Releasing](#releasing)
-10. [Pull request checklist](#pull-request-checklist)
+2. [Running against a real Home Assistant](#running-against-a-real-home-assistant)
+3. [Running the checks](#running-the-checks)
+4. [The documentation workflow](#the-documentation-workflow)
+5. [Adding a panel profile](#adding-a-panel-profile)
+6. [Adding a transport](#adding-a-transport)
+7. [The Home Assistant app](#the-home-assistant-app)
+8. [The hardware-untested banner](#the-hardware-untested-banner)
+9. [Spelling](#spelling)
+10. [Releasing](#releasing)
+11. [Pull request checklist](#pull-request-checklist)
 
 ## Development setup
 
@@ -52,6 +53,44 @@ Two environment variables are worth knowing while working:
 - `render.debug_artifacts: true` on a display writes the raw screenshot and the
   quantised frame to `<data_dir>/debug/<id>/`, which is how you find out what
   Chromium actually saw.
+
+## Running against a real Home Assistant
+
+Rendering needs a Home Assistant frontend to point Chromium at, and until now
+getting one on a developer machine meant installing Home Assistant by hand —
+which is why the app's packaging (`app/`) took seven releases, 0.2.0 through
+0.2.6, to settle (`CHANGELOG.md`), without ever exercising a fresh install as
+part of the checks. `docker-compose.dev.yml`
+at the repository root fixes that: three services, `homeassistant`
+(`ghcr.io/home-assistant/home-assistant:stable`, seeded by `dev/homeassistant/`
+with `demo:` entities and a dashboard at `dev/homeassistant/ui-lovelace.yaml`),
+`mosquitto` (`eclipse-mosquitto`, `dev/mosquitto.conf` allowing anonymous
+connections), and `maverick`, built from the root [`Dockerfile`](Dockerfile)
+with the repository bind-mounted and reinstalled in editable mode on start
+(see the `command` in `docker-compose.dev.yml`), so a code change needs only
+`docker compose restart maverick`.
+
+```bash
+scripts/dev.sh up      # build and start all three
+scripts/dev.sh logs    # follow logs
+scripts/dev.sh check   # run `maverick check` inside the container
+scripts/dev.sh render kitchen   # render one display now (omit the id for all)
+scripts/dev.sh down    # stop and remove the stack
+```
+
+The one manual step: open <http://localhost:8123>, finish onboarding (create
+the user — nothing pre-seeds a password) and create a long-lived access token
+under that user's profile, Security tab. Export it as `HA_TOKEN` before
+`scripts/dev.sh up`; `dev/maverick.yaml` reads it through `${HA_TOKEN}`
+(`src/maverick/config.py`'s environment-variable expansion).
+
+**This is not the Supervisor.** There is no ingress — `maverick` publishes on
+`localhost:5000` directly, the way it does outside the app entirely — no
+`/data/options.json`, and no `bashio`; `run.sh` and the option-reading it does
+(see [The Home Assistant app](#the-home-assistant-app) below) are not exercised
+by this loop at all. It reproduces the standalone path: a config file, a real
+Home Assistant instance and a real broker. Testing the app itself still means
+CI's `app` job, or a real Supervisor.
 
 ## Running the checks
 
@@ -224,18 +263,32 @@ add-on — and `repository.yaml` at the root is what makes this repository
 installable from the app store. The app does not vendor the package: its
 `Dockerfile` installs `maverick-eink-dashboard` from this repository at the
 commit named by `MAVERICK_REF`, on a Debian base image with the distro
-`chromium` package, and `run.sh` turns the app's options into the environment
-variables that the starter `maverick.yaml` substitutes.
+`chromium` package.
 
-Five things keep it honest, all in `tests/test_app.py`: every option `run.sh`
-reads is declared in `config.yaml`'s schema, every `${VAR}` in the starter
-config is exported by `run.sh`, the starter config loads with no credential set
-— the state a freshly installed app is in — the app's `version` equals the
-package version, and the package at `MAVERICK_REF` accepts the starter config
-this commit ships. CI (`.github/workflows/ci.yml`, job `app`) lints the
-manifest, builds the image on amd64, launches Chromium inside it and loads the
-starter config with the package the image installed — the one place the image
-is built, since nothing else in the suite touches Docker.
+`run.sh` does not translate the options. The service reads them itself, from
+`/data/options.json`, and sets the environment variables that the starter
+`maverick.yaml` substitutes — `load_app_options` in
+`src/maverick/ha/options.py`, called by `_load` in `src/maverick/cli.py`
+whenever `SUPERVISOR_TOKEN` is in the environment. That module is also where
+the two derived values live (`base_url` from the host's address, MQTT from the
+Mosquitto app) and where the Supervisor permissions each of them needs are
+written down. The script keeps the two jobs that are the container's: copy the
+starter config to `/config/maverick.yaml` if it is not there, and `exec
+maverick ... serve`.
+
+Five things keep it honest, all in `tests/test_app.py`: the options the module
+reads are exactly `config.yaml`'s schema keys, every `${VAR}` in the starter
+config is a variable the module sets, the starter config loads with no
+credential set — the state a freshly installed app is in — the app's `version`
+equals the package version, and the package at `MAVERICK_REF` accepts the
+starter config this commit ships. The derivations are tested with the
+Supervisor's two endpoints stubbed, so nothing in the suite reaches for one.
+CI (`.github/workflows/ci.yml`, job `app`) lints the manifest, builds the image
+on amd64, launches Chromium inside it, loads the starter config with the
+package the image installed, and runs that image once more with an
+`options.json` and no environment variables at all — the local reproduction the
+0.2.x fixes were made without. It is the one place the image is built, since
+nothing else in the suite touches Docker.
 
 The last two exist because the starter config and the package reach a user's
 machine by different routes. `app/rootfs/usr/share/maverick/maverick.yaml` is
@@ -256,8 +309,8 @@ user's first start actually asks. It skips in a shallow clone, where the pinned
 commit is not present; CI's `app` job then covers it from inside the image.
 
 To change the app: `app/config.yaml` for options (add a translation in
-`app/translations/en.yaml` and read the key in `run.sh`), `app/run.sh` for
-start-up behaviour, `app/rootfs/usr/share/maverick/maverick.yaml` for the
+`app/translations/en.yaml` and read the key in `src/maverick/ha/options.py`),
+`app/run.sh` for start-up behaviour, `app/rootfs/usr/share/maverick/maverick.yaml` for the
 starter config, and `app/DOCS.md` for what users see on the app's Documentation
 tab. `app/CHANGELOG.md` is the app's own changelog tab; keep it to the app.
 

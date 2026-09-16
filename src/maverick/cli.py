@@ -20,7 +20,6 @@ from .config import Config, ConfigError, load_config
 DEFAULT_CONFIG_PATHS = [
     Path("config.yaml"),
     Path("/config/maverick.yaml"),
-    Path("/data/options.json"),
     Path.home() / ".config" / "maverick" / "config.yaml",
 ]
 
@@ -41,16 +40,37 @@ def _find_config(explicit: str | None) -> Path:
     )
 
 
+def _apply_app_options(args: argparse.Namespace) -> None:
+    """Under the Home Assistant app, read the options the app was given.
+
+    The app's Configuration tab is where its connection settings live, and the
+    config file reads them back as ``${VAR}`` (``load_app_options`` in
+    ``src/maverick/ha/options.py``), so they have to be in the environment
+    before ``load_config`` runs. Outside the Supervisor there is no options
+    file to read and nothing happens.
+
+    Logging is set up here rather than being left to the subcommand, which does
+    it from the *loaded* config one step later: reading the options is itself
+    the first thing worth reporting — the derived base URL, which broker was
+    found, a missing credential — and those lines would otherwise be written to
+    a root logger with no handler on it. ``log_level`` is an option too, so the
+    subcommand's own call a moment later re-applies whatever it says.
+    """
+    from .ha.options import DEFAULT_OPTIONS_PATH, apply_app_options
+    from .ha.supervisor import running_under_supervisor
+
+    if not running_under_supervisor() or not DEFAULT_OPTIONS_PATH.exists():
+        return
+
+    from .logging_setup import setup_logging
+
+    setup_logging(getattr(args, "log_level", None) or "info")
+    apply_app_options(DEFAULT_OPTIONS_PATH)
+
+
 def _load(args: argparse.Namespace) -> Config:
+    _apply_app_options(args)
     path = _find_config(getattr(args, "config", None))
-    if path.name == "options.json":
-        # Home Assistant add-on: options.json is the add-on's own schema, which
-        # the add-on's run script has already translated. Reaching here means
-        # that translation did not happen.
-        raise ConfigError(
-            "Found /data/options.json but no maverick.yaml. The add-on should "
-            "have generated one; check the add-on log."
-        )
     config = load_config(path)
     if getattr(args, "log_level", None):
         config.log_level = args.log_level
@@ -151,11 +171,19 @@ def cmd_check(args: argparse.Namespace) -> int:
     for display in config.displays:
         resolved = display.resolved()
         flag = " " if display.enabled else "-"
+        # A display with pages has no single `dashboard` worth printing: the
+        # attribute still holds its default, which would read as the thing the
+        # panel shows (`DisplayConfig.pages`, `src/maverick/config.py`).
+        if display.pages:
+            pages = ", ".join(f"{p.name} ({p.dashboard})" for p in display.pages)
+            what = f"      pages: {pages}" + (" [rotating]" if display.rotate else "")
+        else:
+            what = f"      dashboard: {display.dashboard}"
         print(
             f"  {flag} {display.id:16s} {resolved.profile.name}\n"
             f"      {resolved.width}x{resolved.height} {resolved.color_scheme.value} "
             f"{resolved.dpi}dpi rot{resolved.rotation} -> {display.transport.type}\n"
-            f"      dashboard: {display.dashboard}"
+            f"{what}"
         )
         try:
             get_transport(display.transport.type, {})

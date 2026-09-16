@@ -400,7 +400,12 @@ async def test_remove_display_retracts_its_discovery(make_app, fake_clients) -> 
         topic for topic, payload, retain in client.published
         if "maverick_study" in topic and payload == "" and retain
     }
-    assert retracted == announced, (
+    # A subset rather than equality: the Page select is announced only for a
+    # display that has `pages` but retracted for every display, so that one
+    # whose pages were taken away does not keep a stale entity
+    # (`MqttDiscovery.announce_display`, `src/maverick/ha/discovery.py`). What
+    # matters is that nothing announced is left behind.
+    assert announced <= retracted, (
         "every discovery topic must be retracted with an empty retained payload, "
         "or the entities linger in Home Assistant forever"
     )

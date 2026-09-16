@@ -47,6 +47,16 @@ displays:
   - id: kitchen
     panel: waveshare-7in5-mono
     dashboard: /lovelace/0
+    # For several dashboards on one panel, replace `dashboard:` above with a
+    # `pages:` list — a display has one or the other. Each page may carry a
+    # `name` (otherwise taken from its path) and a `dwell`, and `rotate: true`
+    # moves to the next page once that dwell has passed. The Web UI and the
+    # Home Assistant Page select change the page too.
+    # pages:
+    #   - dashboard: /lovelace/0
+    #     dwell: 30m
+    #   - dashboard: /lovelace/1
+    # rotate: true
     schedule:
       every: 5m
       quiet_hours: "23:00-06:30"

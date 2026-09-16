@@ -61,10 +61,14 @@ app; see [The configuration file](#the-configuration-file).
 | `mqtt_username` | no | | Only read when `mqtt_host` is set. |
 | `mqtt_password` | no | | Only read when `mqtt_host` is set. |
 
-The options do not reach the service directly. `run.sh` turns them into
-environment variables, and `maverick.yaml` reads those through `${VAR}`
-substitution, so the connection details come from this tab and everything else
-from the file.
+Maverick reads these options itself, from the file the Supervisor writes them
+to, and turns them into the environment variables `maverick.yaml` substitutes
+through `${VAR}` — so the connection details come from this tab and everything
+else from the file
+([`src/maverick/ha/options.py`](https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/src/maverick/ha/options.py)).
+The app log says what it made of them on every start: which broker it found,
+which address panels will be told to fetch from, and whether a credential is
+missing.
 
 ## The configuration file
 
@@ -206,9 +210,16 @@ lists every message the service can print, with its cause and fix.
   `maverick --version`, `maverick panels` and a Playwright launch of the
   bundled Chromium all succeed inside the container.
 - The starter `maverick.yaml` loads through the real config loader with every
-  variable `run.sh` exports, and the option keys `run.sh` reads are the ones
-  the schema declares (`tests/test_app.py`).
+  variable the service sets, and the options it reads are the ones the schema
+  declares (`tests/test_app.py`).
+- CI runs the built image with an `options.json` of its own and nothing in the
+  environment, and checks that the loaded configuration carries those option
+  values (`.github/workflows/ci.yml`, the `app` job). The Supervisor is not
+  there to answer, so that run also exercises what happens when it will not:
+  no broker, and a `base_url` that has to come from the option.
 - Nothing on this page has been exercised on a Home Assistant OS installation:
   not the Supervisor build, not the aarch64 image, not the MQTT hand-off from
-  the Mosquitto app, not the derived `base_url`. Those are read from the
-  Supervisor's documentation and bashio's source.
+  the Mosquitto app, not the derived `base_url`. What those two calls return,
+  and what grants each of them, is read from the Supervisor's own source — its
+  network and services APIs and the security middleware in front of them — and
+  from Home Assistant's documentation, never from a running system.

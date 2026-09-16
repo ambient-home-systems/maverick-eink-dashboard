@@ -369,9 +369,10 @@ Assistant as a device via MQTT discovery, with no YAML on the Home Assistant
 side. Each device carries a **Refresh** button and a **Full refresh** button
 (press either from an automation, a script, a dashboard or a voice assistant),
 a **Scheduled renders** switch to pause the timeline without editing config, a
-**Screen** image entity showing what the panel is currently displaying, and
-diagnostic sensors for last render, status, render duration, ink coverage,
-frames delivered and a problem flag. Entities are published retained so they
+**Screen** image entity showing what the panel is currently displaying, a
+**Page** select for a display with several
+[pages](docs/architecture.md#pages), and diagnostic sensors for last render,
+status, render duration, ink coverage, frames delivered and a problem flag. Entities are published retained so they
 survive a Home Assistant restart, and a last will marks them unavailable if
 Maverick dies. This is `src/maverick/ha/discovery.py`.
 
@@ -440,6 +441,7 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | PUT | `/api/displays/{id}` | yes | Replace a display's configuration |
 | DELETE | `/api/displays/{id}` | yes | Stop a display and delete its stored frames |
 | POST | `/api/displays/{id}/schedule` | yes | Pause or resume a display's schedule at runtime |
+| POST | `/api/displays/{id}/page` | yes | Put one of a display's pages on the panel: `{"index": n}`, `{"name": "..."}` or `{"step": 1}` |
 | POST | `/api/displays/preview` | yes | Dry-run render of a candidate config; saves nothing |
 | POST | `/api/displays/{id}/render` | yes | Render one display now; `?force=true` ignores the unchanged and lint gates; `?wait=false` returns `202` and renders in the background |
 | POST | `/api/render` | yes | Render every enabled display |
@@ -479,11 +481,41 @@ pull protocol a battery panel needs.
 ## Running as a service
 
 On Home Assistant OS or Supervised, [the app](#install-as-a-home-assistant-app)
-is the packaged way to run it. There is **no standalone Docker image yet**:
-[`app/Dockerfile`](app/Dockerfile) is built by the Supervisor and expects the
-app's options file, so it is not a general-purpose image; a plain one is on the
-roadmap in [docs/roadmap.md](docs/roadmap.md). Everywhere else, run it under
-systemd.
+is the packaged way to run it. Everywhere else, run it as a Docker container or
+under systemd.
+
+### Docker
+
+The root [`Dockerfile`](Dockerfile) builds a standalone image — distinct from
+[`app/Dockerfile`](app/Dockerfile), which the Supervisor builds and which
+expects the Home Assistant app's own options file. This one takes a config file
+by volume instead:
+
+```bash
+docker build -t maverick .
+docker run -d \
+  --name maverick \
+  -p 5000:5000 \
+  -v /path/to/maverick.yaml:/config/maverick.yaml \
+  -v /path/to/media:/media \
+  -v /path/to/share:/share \
+  maverick
+```
+
+`/config/maverick.yaml` is the config file (`config.example.yaml` is a starting
+point); `/media` and `/share` are volumes a display's `dashboard` might
+reference through Home Assistant's own media or local file paths. The image
+installs Debian's `chromium` package and sets `MAVERICK_CHROMIUM_PATH` itself,
+the same way [`app/Dockerfile`](app/Dockerfile) does, so no separate Chromium
+install is needed inside the container.
+
+To develop against a real Home Assistant instead of production, see "Running
+against a real Home Assistant" in
+[CONTRIBUTING.md](CONTRIBUTING.md#running-against-a-real-home-assistant), which
+stands up Home Assistant, Mosquitto and this image together with
+`docker-compose.dev.yml`.
+
+### systemd
 
 ```ini
 # /etc/systemd/system/maverick.service
@@ -613,8 +645,11 @@ From [docs/roadmap.md](docs/roadmap.md):
 - **Ingress for the app, and an integration**: a sidebar entry instead of a
   port, UI setup instead of YAML, one device per panel, and actions that need
   no MQTT broker.
-- **Pages and a control surface**: an ordered list of dashboards per display
-  with rotation and dwell times, plus a tile feature and a card to drive it.
+- **A control surface for Home Assistant**: a tile feature, a card with a live
+  thumbnail and a fleet view. Pages themselves are built — an ordered list of
+  dashboards per display with dwell times and rotation, a Page select on each
+  device and `POST /api/displays/{id}/page` — and the card would be a client
+  over them.
 - **A dashboard strategy and live preview**, so a correct e-ink dashboard is
   generated for you and you can see the real quantised output while editing.
 

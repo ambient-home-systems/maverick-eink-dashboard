@@ -2,10 +2,11 @@
 
 ``expand_env`` (``src/maverick/config.py``) is what keeps secrets out of a file
 that usually lives in a shared ``/config`` folder. The interesting case is a
-variable that is *set but empty*, because that is not a corner: the Home
-Assistant app's ``run.sh`` exports a value for every substitution in the
-starter config, and the options a user has not filled in export as the empty
-string. A default written next to the reference has to survive that.
+variable that is *set but empty*, because that is not a corner: under the Home
+Assistant app a value is set for every substitution in the starter config
+(``load_app_options`` in ``src/maverick/ha/options.py``), and the options a
+user has not filled in are set to the empty string. A default written next to
+the reference has to survive that.
 """
 
 from __future__ import annotations
@@ -23,10 +24,12 @@ def test_default_stands_in_for_an_unset_variable(monkeypatch) -> None:
 def test_default_stands_in_for_an_empty_variable(monkeypatch) -> None:
     """The shell's `:-`, and the reason this is not a cosmetic distinction.
 
-    `run.sh` exports `MQTT_PORT` unconditionally; an app whose broker options
-    are untouched exports it empty. Treating that as "set" would put an empty
-    string where a port belongs and fail validation on a field whose fallback
-    is written right there in the file.
+    Every variable the starter config names is set unconditionally, whether or
+    not the option behind it was filled in — `MAVERICK_API_TOKEN` on a fresh
+    install, or `MQTT_PORT` for anyone launching the service by hand with a
+    partly filled environment. Treating that as "set" would put an empty string
+    where a port belongs and fail validation on a field whose fallback is
+    written right there in the file.
     """
     monkeypatch.setenv("MAVERICK_TEST_VAR", "")
     assert expand_env("${MAVERICK_TEST_VAR:-1883}") == "1883"

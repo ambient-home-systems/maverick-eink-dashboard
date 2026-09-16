@@ -416,6 +416,68 @@
         }
       }
     },
+    "/api/displays/{display_id}/page": {
+      "post": {
+        "summary": "Set Page",
+        "description": "Put one of a display's pages on the panel and render it.\n\nThe page moves before this returns, so the summary it answers with\nalready names the new one; the render it triggers carries the `page`\ntrigger and, by default, runs as a background task \u2014 a page change\ncosts a whole render, and a picker that waits out `render.timeout` is\na picker nobody uses. `wait=true` holds the response until the render\nfinishes, for a caller that wants the outcome.",
+        "operationId": "set_page_api_displays__display_id__page_post",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Wait"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageSelect"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Set Page Api Displays  Display Id  Page Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/displays/preview": {
       "post": {
         "summary": "Preview Display",
@@ -903,8 +965,22 @@
           "dashboard": {
             "type": "string",
             "title": "Dashboard",
-            "description": "What to render: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as absolute, so `file:///...` renders a local page.",
+            "description": "What to render: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as absolute, so `file:///...` renders a local page. The single-page shorthand: set this or `pages`, not both.",
             "default": "/lovelace/0"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageConfig"
+            },
+            "type": "array",
+            "title": "Pages",
+            "description": "Several dashboards for one panel, rendered one at a time. The page is changed by `POST /api/displays/{id}/page`, by the Home Assistant Page select, or on its own with `rotate`. Empty leaves the display on `dashboard`."
+          },
+          "rotate": {
+            "type": "boolean",
+            "title": "Rotate",
+            "description": "Advance to the next page on each scheduled render, once the current page's `dwell` has elapsed. Off leaves the page where it was put.",
+            "default": false
           },
           "enabled": {
             "type": "boolean",
@@ -1341,6 +1417,83 @@
         "type": "object",
         "title": "PackOptionsConfig",
         "description": "Controller quirks for raw-frame transports."
+      },
+      "PageConfig": {
+        "properties": {
+          "dashboard": {
+            "type": "string",
+            "title": "Dashboard",
+            "description": "What to render for this page: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Read exactly as `displays[].dashboard` is."
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Label for this page, shown in the setup UI and offered by the Home Assistant Page select. Empty derives one from the last segment of `dashboard`. Names must be unique within a display, because a page is selected by name.",
+            "default": ""
+          },
+          "dwell": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dwell",
+            "description": "How long this page stays on the panel before `rotate` moves to the next one. Unset advances at every scheduled render; the page never changes faster than the schedule that drives it."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "dashboard"
+        ],
+        "title": "PageConfig",
+        "description": "One dashboard in a display's rotation.\n\nA display with `pages` renders one of them at a time and moves between them\non command or, with `rotate`, on its own timeline. `dwell` is how long this\npage stays up before rotation moves on; unset means it changes at every\nscheduled render."
+      },
+      "PageSelect": {
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          }
+        },
+        "type": "object",
+        "title": "PageSelect",
+        "description": "Body of `POST /api/displays/{id}/page`: which page to put on the panel.\n\nThree ways to say it, exactly one per request. `index` and `name` are\nabsolute and `step` is relative \u2014 `1` for the next page and `-1` for the\nprevious, wrapping at either end. They are separate fields rather than one\npolymorphic value because an index and a name are not interchangeable: a\npage may be called \"2\" (`Engine.select_page`, `src/maverick/engine.py`)."
       },
       "RenderConfig": {
         "properties": {

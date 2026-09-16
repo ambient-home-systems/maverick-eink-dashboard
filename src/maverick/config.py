@@ -53,16 +53,38 @@ def parse_duration(value: str | int | float) -> float:
     return float(match.group(1)) * _UNITS[(match.group(2) or "s").lower()]
 
 
+#: What `displays[].dashboard` renders when nothing says otherwise, and the
+#: value `pages` is checked against: a display sets one or the other, not both.
+DEFAULT_DASHBOARD = "/lovelace/0"
+
+
+def page_name_for(dashboard: str) -> str:
+    """Derive a page name from a dashboard path: its last segment, in words.
+
+    ``/lovelace-eink/kitchen`` becomes "Kitchen" and
+    ``file:///opt/mockups/wall-board.html`` becomes "Wall Board". A path with
+    nothing to take a segment from keeps the whole value, because a page with
+    no name at all could not be selected by one.
+    """
+    trimmed = dashboard.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    segment = trimmed.rsplit("/", 1)[-1]
+    if segment.endswith((".html", ".htm")):
+        segment = segment.rsplit(".", 1)[0]
+    words = segment.replace("-", " ").replace("_", " ").strip()
+    return words.title() if words else dashboard
+
+
 def expand_env(value: Any) -> Any:
     """Recursively expand ``${VAR}`` / ``${VAR:-default}``.
 
     ``:-`` means what it means in a shell: the default stands in when the
     variable is unset *or* set to the empty string. The distinction is not
-    academic here, because the Home Assistant app's ``run.sh`` exports a value
-    for every substitution in the starter config, empty for the options a user
-    has not filled in — so treating empty as "set" would push an empty string
-    past defaults like ``${MQTT_PORT:-1883}`` and fail validation on a field
-    that has a perfectly good fallback written next to it.
+    academic here, because under the Home Assistant app a value is set for
+    every substitution in the starter config, empty for the options a user has
+    not filled in (``load_app_options`` in ``src/maverick/ha/options.py``) — so
+    treating empty as "set" would push an empty string past defaults like
+    ``${MQTT_PORT:-1883}`` and fail validation on a field that has a perfectly
+    good fallback written next to it.
 
     ``${VAR}`` without a default still requires the variable to be set, and
     still yields the empty string when it is set and empty: with no default
@@ -773,6 +795,55 @@ class EsphomeConfig(Base):
     )
 
 
+class PageConfig(Base):
+    """One dashboard in a display's rotation.
+
+    A display with `pages` renders one of them at a time and moves between them
+    on command or, with `rotate`, on its own timeline. `dwell` is how long this
+    page stays up before rotation moves on; unset means it changes at every
+    scheduled render.
+    """
+
+    dashboard: str = Field(
+        description=(
+            "What to render for this page: a Home Assistant dashboard path such as "
+            "`/lovelace-eink/kitchen`, or a fully qualified URL. Read exactly as "
+            "`displays[].dashboard` is."
+        ),
+    )
+    name: str = Field(
+        default="",
+        description=(
+            "Label for this page, shown in the setup UI and offered by the Home "
+            "Assistant Page select. Empty derives one from the last segment of "
+            "`dashboard`. Names must be unique within a display, because a page is "
+            "selected by name."
+        ),
+    )
+    dwell: str | float | None = Field(
+        default=None,
+        description=(
+            "How long this page stays on the panel before `rotate` moves to the next "
+            "one. Unset advances at every scheduled render; the page never changes "
+            "faster than the schedule that drives it."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _defaults(self) -> PageConfig:
+        """An empty `name` is derived from `dashboard`, and `dwell` must be a duration."""
+        if not self.name:
+            object.__setattr__(self, "name", page_name_for(self.dashboard))
+        if self.dwell is not None:
+            parse_duration(self.dwell)
+        return self
+
+    @property
+    def dwell_seconds(self) -> float | None:
+        """`dwell` in seconds, or None for a page that advances on every tick."""
+        return parse_duration(self.dwell) if self.dwell is not None else None
+
+
 class DisplayConfig(Base):
     """One physical panel."""
 
@@ -798,11 +869,28 @@ class DisplayConfig(Base):
         ),
     )
     dashboard: str = Field(
-        default="/lovelace/0",
+        default=DEFAULT_DASHBOARD,
         description=(
             "What to render: a Home Assistant dashboard path such as "
             "`/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as "
-            "absolute, so `file:///...` renders a local page."
+            "absolute, so `file:///...` renders a local page. The single-page "
+            "shorthand: set this or `pages`, not both."
+        ),
+    )
+    pages: list[PageConfig] = Field(
+        default_factory=list,
+        description=(
+            "Several dashboards for one panel, rendered one at a time. The page is "
+            "changed by `POST /api/displays/{id}/page`, by the Home Assistant Page "
+            "select, or on its own with `rotate`. Empty leaves the display on "
+            "`dashboard`."
+        ),
+    )
+    rotate: bool = Field(
+        default=False,
+        description=(
+            "Advance to the next page on each scheduled render, once the current "
+            "page's `dwell` has elapsed. Off leaves the page where it was put."
         ),
     )
     enabled: bool = Field(
@@ -903,9 +991,80 @@ class DisplayConfig(Base):
             raise ConfigError("rotation must be 0, 90, 180 or 270")
         return self
 
+    @model_validator(mode="after")
+    def _pages(self) -> DisplayConfig:
+        """`dashboard` and `pages` are alternatives, and page names are unique.
+
+        Both together would leave two answers to "what does this panel show",
+        and nothing to say which wins — so it is rejected at load rather than
+        resolved by a precedence rule nobody would remember. A page is selected
+        by name over MQTT and in the setup UI, so two pages sharing one is
+        rejected too.
+        """
+        if self.pages and self.dashboard != DEFAULT_DASHBOARD:
+            raise ConfigError(
+                "set either 'dashboard' or 'pages', not both: 'dashboard' is the "
+                "single-page shorthand, and a display with pages renders those"
+            )
+        names = [page.name for page in self.pages]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ConfigError(
+                "page names must be unique within a display, because a page is "
+                f"selected by name; repeated: {', '.join(repr(n) for n in duplicates)}"
+            )
+        return self
+
     @property
     def profile(self) -> PanelProfile:
         return get_panel(self.panel)
+
+    @property
+    def page_entries(self) -> list[PageConfig]:
+        """The pages this display renders, shorthand included.
+
+        A display with no `pages` has exactly one — `dashboard` — so everything
+        downstream can count pages and index into them without asking which
+        form the display was written in.
+        """
+        if self.pages:
+            return list(self.pages)
+        return [PageConfig(dashboard=self.dashboard)]
+
+    def page_at(self, index: int) -> PageConfig:
+        """The page at `index`, wrapping rather than raising.
+
+        The index lives in `DisplayState` and outlives the config it was
+        recorded against, so a display whose page list has since been shortened
+        must still render something.
+        """
+        entries = self.page_entries
+        return entries[index % len(entries)]
+
+    def page_index_for(self, name: str) -> int:
+        """The index of the page called `name`. Raises `ConfigError` if there is none."""
+        for index, page in enumerate(self.page_entries):
+            if page.name == name:
+                return index
+        known = ", ".join(repr(p.name) for p in self.page_entries)
+        raise ConfigError(
+            f"display {self.id!r} has no page named {name!r}; its pages are {known}"
+        )
+
+    def for_page(self, index: int) -> DisplayConfig:
+        """This display in its single-page form, rendering the page at `index`.
+
+        A copy rather than a mutation, and the one place the page list turns
+        back into the single `dashboard` the renderer reads (`resolve_url`,
+        `src/maverick/render/dashboard.py`). The list goes with it: the page
+        has been chosen by the time this is called, and a copy carrying both
+        would be the shape `_pages` refuses — which `ResolvedDisplay` would
+        then reject when it validates the display it wraps.
+        """
+        if not self.pages:
+            return self
+        page = self.page_at(index)
+        return self.model_copy(update={"dashboard": page.dashboard, "pages": []})
 
     def resolved(self) -> ResolvedDisplay:
         """Merge catalog defaults with user overrides."""
@@ -1139,6 +1298,6 @@ DisplayConfig.model_rebuild()
 __all__ = [
     "Config", "DisplayConfig", "ResolvedDisplay", "HomeAssistantConfig", "MqttConfig",
     "ServerConfig", "ThemeConfig", "ImageConfig", "RenderConfig", "ScheduleConfig",
-    "TransportConfig", "PackOptionsConfig", "EsphomeConfig", "load_config", "ConfigError",
-    "parse_duration",
+    "TransportConfig", "PackOptionsConfig", "EsphomeConfig", "PageConfig", "load_config",
+    "ConfigError", "parse_duration", "page_name_for", "DEFAULT_DASHBOARD",
 ]

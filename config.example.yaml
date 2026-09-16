@@ -94,6 +94,22 @@ displays:
     dashboard: /lovelace-eink/kitchen
     enabled: true
 
+    # Several dashboards on one panel, shown one at a time. Uncomment these
+    # and delete `dashboard:` above — a display sets one or the other, and
+    # both together is a load error naming the display.
+    # `dwell` is how long a page stays up before `rotate` moves on; without
+    # one the page changes at every scheduled render. A page with no `name`
+    # takes one from the last segment of its path ("Kitchen", "Calendar"),
+    # and that name is what the Home Assistant Page select offers and what
+    # `POST /api/displays/kitchen/page` takes.
+    # pages:
+    #   - dashboard: /lovelace-eink/kitchen
+    #     dwell: 30m
+    #   - dashboard: /lovelace-eink/calendar
+    #     name: Week ahead
+    #     dwell: 10m
+    # rotate: true
+
     schedule:
       every: 5m
       # Nobody reads the kitchen panel at 3am, and every refresh costs battery.

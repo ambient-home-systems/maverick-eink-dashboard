@@ -1,0 +1,52 @@
+# A local Home Assistant and MQTT broker to develop Maverick against, per
+# "Running against a real Home Assistant" in CONTRIBUTING.md. This is not the
+# Supervisor: there is no ingress, no /data/options.json and no bashio, so it
+# exercises the standalone path (the root Dockerfile), not app/.
+#
+# First run: `scripts/dev.sh up`, then open http://localhost:8123, finish
+# onboarding (create the user — there is no default one to seed) and create a
+# long-lived access token under the user's profile, Security tab. Export it as
+# HA_TOKEN and restart the maverick service: `HA_TOKEN=... scripts/dev.sh up`.
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      - ./dev/homeassistant:/config
+    ports:
+      - "8123:8123"
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto
+    volumes:
+      - ./dev/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "1883:1883"
+    restart: unless-stopped
+
+  maverick:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - homeassistant
+      - mosquitto
+    environment:
+      HA_TOKEN: ${HA_TOKEN}
+    volumes:
+      - ./dev/maverick.yaml:/config/maverick.yaml:ro
+      - .:/src
+    ports:
+      - "5000:5000"
+    # The image's own CMD installs the package once, at build time, from a
+    # copy of the tree it then deletes (see Dockerfile). Here the whole
+    # repository is bind-mounted over that same path instead, so this
+    # reinstalls it in editable mode against the live source before serving:
+    # a code change then needs only `docker compose restart maverick`, no
+    # rebuild.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        pip install -e /src &&
+        exec maverick -c /config/maverick.yaml serve --host 0.0.0.0 --port 5000
+    restart: unless-stopped

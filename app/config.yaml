@@ -11,18 +11,25 @@ arch:
 # The base image runs s6-overlay v3, which is its own init.
 init: false
 # The Mosquitto broker app is picked up automatically when it is installed;
-# nothing breaks when it is not.
+# nothing breaks when it is not. This line is also the permission: `_mqtt` in
+# `src/maverick/ha/options.py` reads the broker's host and credentials from
+# `GET /services/mqtt`, which no role reaches — `/services.*` is on the
+# api_bypass list in `supervisor/api/middleware/security.py`, tested before the
+# role — and `_check_access` in `supervisor/api/services.py` answers
+# `403 No access to mqtt service!` unless the app asking declared the service.
 services:
   - mqtt:want
 # Read-only Supervisor API access, at the default role, which reaches the
 # `/.+/info` endpoints and nothing else
-# (`supervisor/api/middleware/security.py`, ROLE_DEFAULT). run.sh needs exactly
-# one of them: `bashio::network.ipv4_address` calls `GET /network/info` to
-# derive `base_url` when the option is empty, which is what the option's own
-# description promises. Without this the call is refused with 403 — the
-# api_bypass list covers `/addons/self/...`, which is why writing the app's own
-# options needs no permission, but not `/network/...` — and an app left on the
-# default `base_url` never gets one, so the setup UI refuses to start the link.
+# (`supervisor/api/middleware/security.py`, ROLE_DEFAULT). The service needs
+# exactly one of them: `GET /network/info` is where `base_url` comes from when
+# the option is empty, the host's first IPv4 address with its prefix length
+# stripped (`_host_ipv4` in `src/maverick/ha/options.py`), which is what the
+# option's own description promises. Without this the call is refused with 403
+# — the api_bypass list covers `/addons/self/...`, which is why writing the
+# app's own options needs no permission, but not `/network/...` — and an app
+# left on the default `base_url` never gets one, so the setup UI refuses to
+# start the link.
 hassio_api: true
 ports:
   5000/tcp: 5000
@@ -54,7 +61,8 @@ options:
   home_assistant_token: ""
   log_level: info
 # Optional keys carry no default on purpose: an empty string would not pass
-# the url or port types, and run.sh treats an absent key as "not set".
+# the url or port types, and an absent key, a JSON null and an empty string are
+# all "not set" to the service (`_option` in `src/maverick/ha/options.py`).
 schema:
   home_assistant_url: url
   home_assistant_token: password

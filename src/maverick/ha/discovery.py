@@ -12,6 +12,8 @@ With it, each display arrives as a device carrying:
   automations to trigger it".
 * ``switch.<name>_scheduled_renders`` — pause the timeline without editing YAML.
   Useful for "stop refreshing the bedroom panel while we're asleep".
+* ``select.<name>_page`` — which of a display's ``pages`` is on the panel, for
+  a display that has any. Published only when it does.
 * ``image.<name>`` — what the panel is currently showing, visible in the HA UI.
   Invaluable when the panel is in another room.
 * ``sensor.<name>_last_render`` / ``_status`` / ``_render_duration`` — enough to
@@ -132,6 +134,34 @@ class MqttDiscovery:
             },
         )
 
+        # A display with pages gets a Page select whose options are the page
+        # names; one without gets nothing, because a select offering the single
+        # dashboard a display already renders is an entity that does nothing.
+        # The empty retained payload is what retracts it from a display whose
+        # pages have just been taken away — `announce_display` runs again on
+        # every update, and a stale select would otherwise sit in Home
+        # Assistant sending commands for pages that no longer exist.
+        select_topic = config_topic("select", "page")
+        if display.pages:
+            await self._publish_config(
+                select_topic,
+                {
+                    **common,
+                    "name": "Page",
+                    "unique_id": f"maverick_{display.id}_page",
+                    "command_topic": self.command_topic(display.id),
+                    # The command topic carries words, so the chosen option is
+                    # wrapped into one `Application.handle_command` routes.
+                    "command_template": "page:{{ value }}",
+                    "state_topic": self.state_topic(display.id),
+                    "value_template": "{{ value_json.page }}",
+                    "options": [page.name for page in display.pages],
+                    "icon": "mdi:book-open-page-variant",
+                },
+            )
+        else:
+            await self._mqtt.publish(select_topic, "", retain=True)
+
         # An image entity lets you see what a panel in another room is showing.
         # url_topic is preferred: pushing a full frame through the broker on
         # every render is wasteful when an HTTP URL will do.
@@ -251,6 +281,7 @@ class MqttDiscovery:
         for component, suffixes in (
             ("button", ("refresh", "full_refresh")),
             ("switch", ("scheduled",)),
+            ("select", ("page",)),
             ("image", ("screen",)),
             ("sensor", ("last_render", "status", "render_duration", "ink_coverage", "frames")),
             ("binary_sensor", ("problem",)),
