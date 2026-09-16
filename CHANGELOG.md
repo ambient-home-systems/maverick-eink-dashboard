@@ -134,6 +134,42 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is shown in the dialog rather than as an alert. The empty-state card, which
   used to tell the user to edit the config file and restart, now offers the
   same dialog.
+- **Every field of a display is editable in the setup UI.** An *Edit* action on
+  each card opens a drawer — a side panel, full-screen at phone width — with a
+  section for the display itself and one for each nested model of
+  `DisplayConfig`: Schedule, Theme, Image, Render, Lint, Transport, Pack,
+  ESPHome. Nothing in `src/maverick/server/static/app.js` names a field. The
+  controls are generated from `GET /api/schema/display`, and the schema decides
+  each one: a boolean becomes a switch, a number with `ge`/`le` a number input
+  carrying those bounds, an enum a select, `list[str]` a comma-separated box,
+  `image.palette_overrides` a table of ink names and RGB values with a swatch
+  each, and `theme.extra_css` a textarea. Every field's own
+  `Field(description=...)` in `src/maverick/config.py` is the help under it, so
+  a field added to the model turns up in the drawer with nothing here to
+  change. A field something else fills in when it is left empty shows what that
+  would be as its placeholder — the panel profile's value for width, height,
+  colour scheme, dpi, rotation and frame format, taken from the display
+  summary's resolved fields, and for `name` the one `DisplayConfig._defaults`
+  derives from the id. *Preview* posts the drawer's current state to
+  `POST /api/displays/preview` and shows the frame that configuration would
+  produce beside what the panel is showing now, side by side or as a
+  cross-fading overlay, with the lint findings and their hints under it and the
+  fact that it saved nothing said next to the button; the button counts the
+  seconds while the render runs, and the rest of the drawer stays usable
+  meanwhile. *Save* is a `PUT` that closes on success, with a **422** mapped
+  onto the field named in pydantic's `loc` — a model validator such as
+  `ImageConfig._levels` reports against the section instead — and the section
+  holding the first error opened. *Delete* asks first, naming the display, and
+  a drawer with unsaved changes asks before closing, Escape included; both
+  questions are asked in the drawer, since a browser dialog inside Home
+  Assistant's ingress iframe is not guaranteed to appear. The Transport section
+  is the one the schema cannot describe, `TransportConfig` being the single
+  `extra="allow"` model (`src/maverick/config.py`): it draws the selected
+  transport's `options_doc` (`src/maverick/transports/base.py`) and keeps every
+  key the stored configuration already has under `transport` on screen
+  whichever transport is selected, because the file is the only record of
+  those. Every other section sends known keys only, since one stray key fails
+  the whole `PUT`.
 
 ### Changed
 

@@ -285,6 +285,7 @@ const CARD = `
 <div class="row">
   <button type="button" class="act-render">Refresh</button>
   <button type="button" class="act-full">Full refresh</button>
+  <button type="button" class="act-edit">Edit</button>
   <button type="button" class="act-schedule"></button>
   <button type="button" class="act-enable" hidden>Enable</button>
   <a class="esphome-link">ESPHome config</a>
@@ -306,6 +307,7 @@ function cardFor(id) {
     setSchedule(id, !(display && display.schedule.enabled), e.currentTarget);
   });
   button('.act-enable').addEventListener('click', (e) => setEnabled(id, true, e.currentTarget));
+  button('.act-edit').addEventListener('click', (e) => openEditor(id, e.currentTarget));
   cards.set(id, card);
   return card;
 }
@@ -483,16 +485,17 @@ function emptyState(main) {
 // ----------------------------------------------------- the add-display form --
 
 // The dialog's markup is server-rendered (`src/maverick/server/ui.py`) since
-// its fields are fixed, unlike the per-display editor P2.3 builds from the
-// schema. What this module owns is everything the markup cannot know without
+// its fields are fixed, unlike the per-display editor below, which builds
+// every control from the schema. What this module owns is everything the markup cannot know without
 // a fetch: the panel and transport lists, every field's help text (each
 // node's `data-help` names a path into `GET /api/schema/display`, so the copy
 // here and the description in `src/maverick/config.py` cannot drift apart),
 // and turning a 422 or 409 from `POST /api/displays` into a message under the
 // field it is about.
 
-/** Cached once per page load: the three endpoints the form needs. */
-let addDialogData = null;
+/** Cached once per page load: the three endpoints a form is built from, shared
+ *  by this dialog and the per-display editor below. */
+let formData = null;
 /** The element focus should return to when the dialog closes. */
 let addDialogOpener = null;
 /** Set just before closing on a successful add, so `close` offers it instead. */
@@ -533,7 +536,7 @@ function resetAddForm() {
   // either — the panel notes, the advanced placeholders, the transport's own
   // option fields — so a second open of a dialog left mid-edit would show
   // last time's transport fields under this time's selection.
-  if (addDialogData) {
+  if (formData) {
     onPanelChange();
     onTransportChange();
   } else {
@@ -541,20 +544,25 @@ function resetAddForm() {
   }
 }
 
+async function ensureFormData() {
+  if (formData) return formData;
+  const [panelsRes, transportsRes, schemaRes] = await Promise.all([
+    authFetch('api/panels'), authFetch('api/transports'), authFetch('api/schema/display'),
+  ]);
+  formData = {
+    panels: await panelsRes.json(),
+    transports: await transportsRes.json(),
+    schema: await schemaRes.json(),
+  };
+  return formData;
+}
+
 async function ensureAddDialogData() {
   const submit = document.getElementById('add-submit');
-  if (addDialogData) return;
+  if (formData) return;
   setBusy(submit, true);
   try {
-    const [panelsRes, transportsRes, schemaRes] = await Promise.all([
-      authFetch('api/panels'), authFetch('api/transports'), authFetch('api/schema/display'),
-    ]);
-    addDialogData = {
-      panels: await panelsRes.json(),
-      transports: await transportsRes.json(),
-      schema: await schemaRes.json(),
-    };
-    populateAddDialog(addDialogData);
+    populateAddDialog(await ensureFormData());
   } catch (error) {
     if (!error.unauthorised) dialogError('add-dialog-error', 'Could not load the form: ' + error.message);
   } finally {
@@ -564,10 +572,16 @@ async function ensureAddDialogData() {
 
 function populateAddDialog(data) {
   fillHelpTexts(data.schema);
-  populatePanelSelect(data.panels);
-  populateEnumSelect(document.getElementById('add-color-scheme'), data.schema, 'ColorScheme');
-  populateEnumSelect(document.getElementById('add-frame-format'), data.schema, 'FrameFormat');
-  populateTransportSelect(data.transports);
+  populatePanelSelect(document.getElementById('add-panel'), data.panels);
+  populateEnumSelect(
+    document.getElementById('add-color-scheme'), enumValues(data.schema, 'ColorScheme'),
+    'panel default'
+  );
+  populateEnumSelect(
+    document.getElementById('add-frame-format'), enumValues(data.schema, 'FrameFormat'),
+    'panel default'
+  );
+  populateTransportSelect(document.getElementById('add-transport'), data.transports);
   onPanelChange();
   onTransportChange();
 }
@@ -581,8 +595,7 @@ function fillHelpTexts(schema) {
   }
 }
 
-function populatePanelSelect(panels) {
-  const select = document.getElementById('add-panel');
+function populatePanelSelect(select, panels) {
   const groups = new Map();
   for (const p of panels) {
     const label = p.vendor ? p.vendor[0].toUpperCase() + p.vendor.slice(1) : 'Other';
@@ -603,8 +616,7 @@ function populatePanelSelect(panels) {
   }
 }
 
-function populateTransportSelect(transports) {
-  const select = document.getElementById('add-transport');
+function populateTransportSelect(select, transports) {
   select.replaceChildren();
   for (const t of transports) {
     const opt = document.createElement('option');
@@ -615,14 +627,18 @@ function populateTransportSelect(transports) {
   }
 }
 
-/** An enum <select>, `""` meaning "let the panel decide" — its label gets the panel's value. */
-function populateEnumSelect(select, schema, defName) {
+/** An enum <select>. `emptyLabel` adds a `""` option meaning "let the panel
+ *  decide", whose label picks up the panel's own value; null leaves it out,
+ *  for an enum the model always has a value for. */
+function populateEnumSelect(select, values, emptyLabel) {
   select.replaceChildren();
-  const unset = document.createElement('option');
-  unset.value = '';
-  unset.textContent = 'panel default';
-  select.appendChild(unset);
-  for (const value of (schema.$defs[defName] || {}).enum || []) {
+  if (emptyLabel !== null) {
+    const unset = document.createElement('option');
+    unset.value = '';
+    unset.textContent = emptyLabel;
+    select.appendChild(unset);
+  }
+  for (const value of values) {
     const opt = document.createElement('option');
     opt.value = value;
     opt.textContent = value;
@@ -630,10 +646,14 @@ function populateEnumSelect(select, schema, defName) {
   }
 }
 
+function enumValues(schema, defName) {
+  return ((schema.$defs || {})[defName] || {}).enum || [];
+}
+
 function currentPanel() {
-  if (!addDialogData) return null;
+  if (!formData) return null;
   const id = document.getElementById('add-panel').value;
-  return addDialogData.panels.find((p) => p.id === id) || null;
+  return formData.panels.find((p) => p.id === id) || null;
 }
 
 function onPanelChange() {
@@ -669,9 +689,9 @@ function onTransportChange() {
   const container = document.getElementById('add-transport-options');
   const help = document.getElementById('add-transport-help');
   container.replaceChildren();
-  if (!addDialogData) return;
+  if (!formData) return;
   const type = document.getElementById('add-transport').value;
-  const info = addDialogData.schema.transports[type];
+  const info = formData.schema.transports[type];
   help.textContent = (info && info.description) || '';
   if (!info) return;
   if (type === 'mqtt') {
@@ -747,12 +767,23 @@ function buildAddBody() {
   return body;
 }
 
-/** Like `authFetch`, but keeps the structured 422/409 body instead of flattening it. */
-async function postDisplay(body) {
-  const headers = Object.assign({ 'Content-Type': 'application/json' }, authHeaders());
+/**
+ * Like `authFetch`, but keeps the structured 422/409 body instead of
+ * flattening it: a 422 from pydantic is a list of `{loc, msg}` naming the
+ * field that failed, which both the Add display dialog and the per-display
+ * editor put back under the field rather than in a banner.
+ */
+async function sendJSON(url, method, body, fallback) {
+  const headers = Object.assign(
+    body === null ? {} : { 'Content-Type': 'application/json' }, authHeaders()
+  );
   let response;
   try {
-    response = await fetch('api/displays', { method: 'POST', headers, body: JSON.stringify(body) });
+    response = await fetch(url, {
+      method,
+      headers,
+      body: body === null ? undefined : JSON.stringify(body),
+    });
   } catch (e) {
     const error = new Error('Could not reach Maverick. Check the connection and try again.');
     error.network = true;
@@ -764,10 +795,15 @@ async function postDisplay(body) {
     error.unauthorised = true;
     throw error;
   }
-  if (response.status === 201) return response.json();
+  // 204 is what DELETE answers, and it has no body to parse.
+  if (response.ok) return response.status === 204 ? null : response.json();
   let detail = null;
   try { detail = (await response.json()).detail; } catch (e) { /* no body */ }
-  const error = new Error(typeof detail === 'string' ? detail : 'The display could not be added.');
+  const error = new Error(
+    typeof detail === 'string' && detail
+      ? detail
+      : (fallback || `${response.status} ${response.statusText}`)
+  );
   error.status = response.status;
   error.fields = Array.isArray(detail) ? detail : null;
   throw error;
@@ -784,7 +820,9 @@ async function submitAddDisplay(event) {
   }
   setBusy(submit, true);
   try {
-    const created = await postDisplay(buildAddBody());
+    const created = await sendJSON(
+      'api/displays', 'POST', buildAddBody(), 'The display could not be added.'
+    );
     // Poll before closing, not after: the `close` event (queued, not
     // synchronous) is what moves focus onward, and it has to have a finished
     // card to focus rather than racing it.
@@ -965,4 +1003,1061 @@ if (addDialog) {
     }
     addDialogOpener = null;
   });
+}
+
+// ------------------------------------------------------ the display editor --
+
+/* The tuning loop, in the page: change a threshold, preview it, save it.
+ *
+ * Every control below is drawn from `GET /api/schema/display`, which is
+ * `DisplayConfig.model_json_schema()` — so a field added in
+ * `src/maverick/config.py` appears here with its own `Field(description=...)`
+ * as its help text and nothing in this file to change. The schema decides the
+ * control: a boolean is a switch, a bounded number is a number input carrying
+ * those bounds, an enum is a select, `list[str]` is a comma-separated box, and
+ * the two shapes that deserve better than a text field — the measured inks and
+ * the extra stylesheet — are a colour table and a textarea.
+ *
+ * Two rules the models impose (`src/maverick/config.py`). Every section but the
+ * transport is `extra="forbid"`, so each one sends known keys only: one stray
+ * key fails the whole `PUT` rather than being ignored. `TransportConfig` is the
+ * documented exception, `extra="allow"`, and its options are not in the schema
+ * at all — they are each transport's own `options_doc`, which
+ * `GET /api/schema/display` returns under `transports` — so whatever keys a
+ * display already carries there are shown and kept rather than dropped for
+ * being undocumented.
+ */
+
+/** The nested models, in the order the drawer shows them under Display. */
+const SECTION_TITLES = {
+  schedule: 'Schedule', theme: 'Theme', image: 'Image', render: 'Render',
+  lint: 'Lint', transport: 'Transport', pack: 'Pack', esphome: 'ESPHome',
+};
+
+/** Top-level fields that lead the Display section; the rest follow in schema order. */
+const DISPLAY_FIRST = ['name', 'dashboard', 'panel', 'enabled'];
+
+/** Fields left empty because the panel profile supplies the value. */
+const PANEL_RESOLVED = ['width', 'height', 'color_scheme', 'dpi', 'rotation', 'frame_format'];
+
+/** Every field something else fills in when it is left empty: those six, and
+ *  `name`, which an empty one derives from the id (`DisplayConfig._defaults`,
+ *  `src/maverick/config.py`). The summary carries what each one resolved to
+ *  (`_display_summary`, `src/maverick/server/api.py`), and it becomes the
+ *  placeholder — so an empty box says what leaving it empty will mean rather
+ *  than looking like something went missing. */
+const RESOLVED = ['name', ...PANEL_RESOLVED];
+
+/** A stylesheet is not a one-line input. */
+const TEXTAREAS = new Set(['theme.extra_css']);
+
+const EDITOR = `
+<div class="drawer-head">
+  <div>
+    <h2 id="editor-title"></h2>
+    <div class="meta"><code class="editor-id"></code> <span class="editor-panel"></span></div>
+  </div>
+  <span class="pill warn editor-dirty" hidden>unsaved changes</span>
+  <button type="button" class="drawer-close" aria-label="Close the editor">&times;</button>
+</div>
+<p class="dialog-error editor-error" role="alert" hidden></p>
+<div class="drawer-body"></div>
+<div class="drawer-actions">
+  <div class="editor-confirm" role="alert" hidden>
+    <span class="editor-confirm-text"></span>
+    <button type="button" class="editor-confirm-yes"></button>
+    <button type="button" class="editor-confirm-no">Cancel</button>
+  </div>
+  <div class="editor-buttons">
+    <button type="button" class="act-delete">Delete</button>
+    <span class="spacer"></span>
+    <button type="button" class="act-close">Close</button>
+    <button type="button" class="act-save add-btn">Save</button>
+  </div>
+</div>`;
+
+const PREVIEW = `
+<div class="row">
+  <button type="button" class="act-preview">Preview</button>
+  <span class="preview-status"></span>
+  <span class="spacer"></span>
+  <span class="compare-modes" role="group" aria-label="Compare the two frames" hidden>
+    <button type="button" class="mode-side" aria-pressed="true">Side by side</button>
+    <button type="button" class="mode-overlay" aria-pressed="false">Overlay</button>
+  </span>
+</div>
+<div class="help">Renders this configuration and shows the frame it would
+  produce. It saves nothing and sends nothing to the panel — Save is what
+  writes the configuration. A render can take as long as
+  <code>render.timeout</code>; the rest of the drawer stays usable while it
+  runs.</div>
+<div class="compare is-side" hidden>
+  <figure class="compare-now">
+    <img class="shot" alt="" hidden><div class="shot shot-empty">no frame yet</div>
+    <figcaption>On the panel now</figcaption>
+  </figure>
+  <figure class="compare-new">
+    <img class="shot" alt="" hidden><div class="shot shot-empty">not previewed yet</div>
+    <figcaption>This configuration</figcaption>
+  </figure>
+</div>
+<label class="compare-mix" hidden>Fade to this configuration
+  <input type="range" min="0" max="100" value="100"></label>
+<ul class="issues preview-issues"></ul>`;
+
+/** The one drawer, built on first use and refilled on every open. */
+let editorDialog = null;
+let editorId = '';
+/** The `GET /api/displays/{id}` payload the open drawer was filled from. */
+let editorSummary = null;
+/** One entry per generated control: `{path, section, name, spec, read}`. */
+let editorFields = [];
+/** The transport section's working copy, so a look at another transport and
+ *  back does not cost what was typed under this one. */
+let editorTransport = {};
+/** The keys the stored config has under `transport`, which stay on screen
+ *  whichever transport is selected. */
+let storedTransportKeys = [];
+/** `collectBody()` as the drawer was loaded, for the unsaved-changes guard. */
+let editorBaseline = '';
+let editorOpener = null;
+let editorDeleted = false;
+let editorNeedsToken = false;
+/** What the confirmation row's accept button does, set by `askFirst`. */
+let editorConfirmAction = null;
+let previewTicker = null;
+
+// ------------------------------------------------------------ opening it --
+
+async function openEditor(id, opener) {
+  const dialog = ensureEditor();
+  editorOpener = opener || document.activeElement;
+  editorId = id;
+  editorSummary = null;
+  editorFields = [];
+  editorBaseline = '';
+  editorDeleted = false;
+  editorNeedsToken = false;
+  hideConfirm();
+  editorError('');
+  setText(dialog.querySelector('#editor-title'), 'Loading…');
+  setText(dialog.querySelector('.editor-id'), id);
+  setText(dialog.querySelector('.editor-panel'), '');
+  dialog.querySelector('.drawer-body').replaceChildren();
+  if (!dialog.open) dialog.showModal();
+  try {
+    const [data, summary] = await Promise.all([ensureFormData(), loadDisplay(id)]);
+    fillEditor(data, summary);
+  } catch (error) {
+    // A modal dialog makes the header's token field inert, so a 401 has to
+    // close the drawer to leave the field it just revealed reachable.
+    if (error.unauthorised) {
+      editorNeedsToken = true;
+      closeEditor();
+      return;
+    }
+    editorError('Could not open the editor: ' + error.message);
+  }
+}
+
+function ensureEditor() {
+  if (editorDialog) return editorDialog;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'editor';
+  dialog.className = 'drawer';
+  dialog.setAttribute('aria-labelledby', 'editor-title');
+  dialog.innerHTML = EDITOR;
+  document.body.appendChild(dialog);
+
+  dialog.querySelector('.drawer-close').addEventListener('click', requestClose);
+  dialog.querySelector('.act-close').addEventListener('click', requestClose);
+  dialog.querySelector('.act-save').addEventListener('click', (e) => saveEditor(e.currentTarget));
+  dialog.querySelector('.act-delete').addEventListener('click', askToDelete);
+  dialog.querySelector('.editor-confirm-no').addEventListener('click', hideConfirm);
+  dialog.querySelector('.editor-confirm-yes').addEventListener('click', () => {
+    const action = editorConfirmAction;
+    hideConfirm();
+    if (action) action();
+  });
+  // Escape fires `cancel`, which would close the drawer and drop whatever is
+  // in it; intercepted so unsaved changes get a question first.
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    requestClose();
+  });
+  dialog.addEventListener('close', afterClose);
+  // Anything typed anywhere in the drawer can change what Save would send, so
+  // the guard follows the controls rather than each one announcing itself.
+  dialog.addEventListener('input', markDirty);
+  dialog.addEventListener('change', markDirty);
+  editorDialog = dialog;
+  return dialog;
+}
+
+async function loadDisplay(id) {
+  const response = await authFetch(`api/displays/${encodeURIComponent(id)}`);
+  return response.json();
+}
+
+function fillEditor(data, summary) {
+  editorSummary = summary;
+  editorFields = [];
+  editorTransport = Object.assign({}, (summary.config && summary.config.transport) || {});
+  storedTransportKeys = Object.keys(editorTransport).filter((key) => key !== 'type');
+  const schema = data.schema;
+  setText(editorDialog.querySelector('#editor-title'), summary.name || summary.id);
+  setText(editorDialog.querySelector('.editor-id'), summary.id);
+  setText(editorDialog.querySelector('.editor-panel'), '· ' + summary.panel_name);
+
+  const parts = [previewSection(summary)];
+  parts.push(sectionNode('', 'Display', displayFields(schema, data, summary), true));
+  for (const [key, title] of sectionOrder(schema)) {
+    const fields = key === 'transport'
+      ? transportFields(schema, data)
+      : modelFields(schema, key);
+    parts.push(sectionNode(key, title, fields, false, sectionHelp(schema, key)));
+  }
+  editorDialog.querySelector('.drawer-body').replaceChildren(...parts);
+  // Every field is registered and in the document by now, which is what the
+  // panel's placeholders and the first dirty check both need.
+  onEditorPanelChange();
+  editorBaseline = JSON.stringify(collectBody());
+  markDirty();
+}
+
+/** The nested models the schema has, the ones named above first. */
+function sectionOrder(schema) {
+  const nested = Object.keys(schema.properties).filter((key) => isSection(schema, key));
+  const known = Object.keys(SECTION_TITLES).filter((key) => nested.includes(key));
+  // A model added to `DisplayConfig` and not named above still gets a section,
+  // titled from the schema, rather than silently going missing from the editor.
+  const rest = nested.filter((key) => !(key in SECTION_TITLES));
+  return [
+    ...known.map((key) => [key, SECTION_TITLES[key]]),
+    ...rest.map((key) => [key, deref(schema, schema.properties[key].$ref).title || key]),
+  ];
+}
+
+function isSection(schema, key) {
+  const node = schema.properties[key];
+  if (!node || !node.$ref) return false;
+  return Boolean((deref(schema, node.$ref) || {}).properties);
+}
+
+function deref(schema, ref) {
+  const name = String(ref || '').replace('#/$defs/', '');
+  return (schema.$defs || {})[name] || {};
+}
+
+// ----------------------------------------------------------- the sections --
+
+/** What a nested model says about itself.
+ *
+ * Pydantic moves a field's description onto the definition it refers to when
+ * the field has nothing else to say, so `theme` carries none and
+ * `$defs.ThemeConfig` carries "Overrides for the injected e-ink stylesheet."
+ * The field's own wins where there is one, since it describes this use of the
+ * model rather than the model.
+ */
+function sectionHelp(schema, key) {
+  const node = schema.properties[key] || {};
+  return node.description || deref(schema, node.$ref).description || '';
+}
+
+function sectionNode(key, title, fields, open, helpText) {
+  const section = document.createElement('details');
+  section.className = 'section';
+  section.dataset.section = key;
+  if (open) section.open = true;
+  const summary = document.createElement('summary');
+  summary.textContent = title;
+  const body = document.createElement('div');
+  body.className = 'section-body';
+  const help = document.createElement('div');
+  help.className = 'help';
+  help.textContent = helpText || '';
+  const error = document.createElement('div');
+  error.className = 'field-error section-error';
+  body.append(help, error, ...fields);
+  section.append(summary, body);
+  return section;
+}
+
+function displayFields(schema, data, summary) {
+  const names = Object.keys(schema.properties).filter(
+    // `id` is the path a PUT goes to and the key every stored frame is under;
+    // it is shown in the header rather than offered as something to change.
+    (key) => key !== 'id' && !isSection(schema, key)
+  );
+  const ordered = [
+    ...DISPLAY_FIRST.filter((key) => names.includes(key)),
+    ...names.filter((key) => !DISPLAY_FIRST.includes(key)),
+  ];
+  return ordered.map((name) => {
+    if (name === 'panel') return panelField(schema, data, summary);
+    return fieldNode(schema, '', name, schema.properties[name], resolvedFor(summary, name));
+  });
+}
+
+function modelFields(schema, key) {
+  const def = deref(schema, schema.properties[key].$ref);
+  return Object.entries(def.properties || {}).map(
+    ([name, node]) => fieldNode(schema, key, name, node, '')
+  );
+}
+
+/** What an empty box for this field resolves to, or '' for a field nothing
+ *  fills in. */
+function resolvedFor(summary, name) {
+  if (!RESOLVED.includes(name)) return '';
+  const value = summary[name];
+  return value === null || value === undefined ? '' : String(value);
+}
+
+// ------------------------------------------------------------ the controls --
+
+/** What the schema says a field is, in the terms a control needs. */
+function specFor(schema, node) {
+  const spec = { kind: 'text', nullable: false, values: [], step: 'any' };
+  let branches = [node];
+  if (node.anyOf) {
+    spec.nullable = node.anyOf.some((branch) => branch.type === 'null');
+    branches = node.anyOf.filter((branch) => branch.type !== 'null');
+  }
+  const enumRef = branches.find((branch) => branch.$ref);
+  if (enumRef) {
+    spec.kind = 'enum';
+    spec.values = deref(schema, enumRef.$ref).enum || [];
+    return spec;
+  }
+  // `str | float`: a duration, whose whole point is that it can be written
+  // "45s" (`parse_duration`, `src/maverick/config.py`). A text box takes both.
+  if (branches.length > 1) return spec;
+  const branch = branches[0] || {};
+  if (branch.type === 'boolean') {
+    spec.kind = 'boolean';
+  } else if (branch.type === 'integer' || branch.type === 'number') {
+    spec.kind = 'number';
+    spec.step = branch.type === 'integer' ? '1' : 'any';
+    // An exclusive bound is a bound the browser cannot express, so it is given
+    // as an inclusive one: the model has the last word either way, and says so
+    // as a 422 this drawer puts back under the field.
+    spec.min = pick(branch.minimum, branch.exclusiveMinimum);
+    spec.max = pick(branch.maximum, branch.exclusiveMaximum);
+  } else if (branch.type === 'array') {
+    spec.kind = 'strings';
+  } else if (branch.type === 'object' && (branch.additionalProperties || {}).type === 'array') {
+    spec.kind = 'palette';
+  }
+  return spec;
+}
+
+function pick(first, second) {
+  return first === undefined ? second : first;
+}
+
+/** One labelled control, registered in `editorFields` so `collectBody` can read it. */
+function fieldNode(schema, section, name, node, placeholder) {
+  const path = section ? `${section}.${name}` : name;
+  const spec = specFor(schema, node);
+  const field = document.createElement('div');
+  field.className = 'field';
+  field.dataset.path = path;
+
+  const id = 'editor-' + path.replace(/\./g, '-');
+  const current = valueOf(section, name, node);
+  const built = spec.kind === 'palette'
+    ? paletteControl(id, current)
+    : plainControl(spec, id, current, placeholder, TEXTAREAS.has(path));
+
+  const help = document.createElement('div');
+  help.className = 'help';
+  help.textContent = node.description || '';
+  const error = document.createElement('div');
+  error.className = 'field-error';
+
+  if (spec.kind === 'boolean') {
+    // A switch reads as one line: the control, then what it does. The label
+    // wraps the checkbox rather than pointing at it, which is what makes the
+    // whole line a hit target.
+    field.classList.add('checkbox');
+    const wrap = document.createElement('label');
+    wrap.append(built.control, ' ' + name);
+    field.append(wrap, help, error);
+  } else {
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = name;
+    field.append(label, built.control, help, error);
+  }
+  editorFields.push({ path, section, name, spec, read: built.read, control: built.control });
+  return field;
+}
+
+function plainControl(spec, id, current, placeholder, textarea) {
+  let control;
+  if (spec.kind === 'boolean') {
+    control = document.createElement('input');
+    control.type = 'checkbox';
+    control.checked = Boolean(current);
+  } else if (spec.kind === 'enum') {
+    control = document.createElement('select');
+    populateEnumSelect(control, spec.values, spec.nullable
+      ? (placeholder ? `panel default (${placeholder})` : 'panel default')
+      : null);
+    control.value = current === null || current === undefined ? '' : String(current);
+  } else if (spec.kind === 'number') {
+    control = document.createElement('input');
+    control.type = 'number';
+    control.step = spec.step;
+    if (spec.min !== undefined) control.min = String(spec.min);
+    if (spec.max !== undefined) control.max = String(spec.max);
+    control.value = current === null || current === undefined ? '' : String(current);
+  } else if (textarea) {
+    control = document.createElement('textarea');
+    control.rows = 5;
+    control.value = current === null || current === undefined ? '' : String(current);
+  } else {
+    control = document.createElement('input');
+    control.type = 'text';
+    control.autocomplete = 'off';
+    control.value = listOrText(spec, current);
+  }
+  control.id = id;
+  // An enum says what an empty selection means in the option's own label
+  // instead, since a <select> has no placeholder.
+  if (spec.kind === 'strings') control.placeholder = placeholder || 'a, b, c';
+  else if (placeholder && spec.kind !== 'enum') control.placeholder = placeholder;
+  return { control, read: () => readControl(spec, control, textarea) };
+}
+
+function listOrText(spec, current) {
+  if (current === null || current === undefined) return '';
+  if (spec.kind === 'strings') return Array.isArray(current) ? current.join(', ') : String(current);
+  return String(current);
+}
+
+/* An empty control means "leave this to its default", which is the same thing
+ * the key being absent from the file means — so it is left out of the body
+ * rather than sent as an empty string. That is what lets Preview and Save send
+ * only the keys a display actually sets, and what lets a geometry override be
+ * cleared back to the panel's own value. */
+function readControl(spec, control, textarea) {
+  if (spec.kind === 'boolean') return control.checked;
+  const raw = textarea ? control.value : control.value.trim();
+  if (raw === '') return undefined;
+  if (spec.kind === 'number') {
+    const value = Number(raw);
+    return Number.isNaN(value) ? raw : value;
+  }
+  if (spec.kind === 'strings') {
+    const items = raw.split(',').map((item) => item.trim()).filter(Boolean);
+    return items.length ? items : undefined;
+  }
+  return raw;
+}
+
+/** `image.palette_overrides`: measured inks, so each row shows the colour it names. */
+function paletteControl(id, current) {
+  const box = document.createElement('div');
+  box.className = 'palette';
+  box.id = id;
+  const rows = document.createElement('div');
+  rows.className = 'palette-rows';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'palette-add';
+  add.textContent = 'Add an ink';
+  add.addEventListener('click', () => {
+    rows.appendChild(paletteRow('', [0, 0, 0]));
+    markDirty();
+  });
+  for (const [name, rgb] of Object.entries(current || {})) rows.appendChild(paletteRow(name, rgb));
+  box.append(rows, add);
+  return {
+    control: box,
+    read: () => {
+      const value = {};
+      for (const row of rows.querySelectorAll('.palette-row')) {
+        const inputs = row.querySelectorAll('input');
+        const name = inputs[0].value.trim();
+        if (!name) continue;
+        value[name] = [1, 2, 3].map((i) => Number(inputs[i].value || 0));
+      }
+      return Object.keys(value).length ? value : undefined;
+    },
+  };
+}
+
+function paletteRow(name, rgb) {
+  const row = document.createElement('div');
+  row.className = 'palette-row';
+  const swatch = document.createElement('span');
+  swatch.className = 'swatch';
+  const fields = [];
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'palette-name';
+  nameInput.value = name;
+  nameInput.setAttribute('aria-label', 'palette name');
+  fields.push(nameInput);
+  for (let i = 0; i < 3; i += 1) {
+    const channel = document.createElement('input');
+    channel.type = 'number';
+    channel.min = '0';
+    channel.max = '255';
+    channel.step = '1';
+    channel.className = 'palette-channel';
+    channel.value = String((rgb || [])[i] ?? 0);
+    channel.setAttribute('aria-label', ['red', 'green', 'blue'][i]);
+    fields.push(channel);
+  }
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'palette-remove';
+  remove.setAttribute('aria-label', 'remove this ink');
+  remove.textContent = '×';
+  remove.addEventListener('click', () => {
+    row.remove();
+    markDirty();
+  });
+  const paint = () => {
+    const [r, g, b] = fields.slice(1).map((input) => clamp(Number(input.value || 0)));
+    swatch.style.background = `rgb(${r},${g},${b})`;
+  };
+  for (const input of fields) input.addEventListener('input', paint);
+  paint();
+  row.append(swatch, ...fields, remove);
+  return row;
+}
+
+function clamp(value) {
+  return Math.max(0, Math.min(255, Number.isFinite(value) ? Math.round(value) : 0));
+}
+
+/** The panel select, grouped by vendor like the Add display form's. */
+function panelField(schema, data, summary) {
+  const node = schema.properties.panel;
+  const field = document.createElement('div');
+  field.className = 'field';
+  field.dataset.path = 'panel';
+  const label = document.createElement('label');
+  label.setAttribute('for', 'editor-panel');
+  label.textContent = 'panel';
+  const select = document.createElement('select');
+  select.id = 'editor-panel';
+  populatePanelSelect(select, data.panels);
+  select.value = summary.panel;
+  // A display naming a panel this build does not have would otherwise be
+  // silently moved to the first one in the list by the select itself.
+  if (select.value !== summary.panel) {
+    const missing = document.createElement('option');
+    missing.value = summary.panel;
+    missing.textContent = `${summary.panel} — not in this catalogue`;
+    select.prepend(missing);
+    select.value = summary.panel;
+  }
+  select.addEventListener('change', onEditorPanelChange);
+  const help = document.createElement('div');
+  help.className = 'help';
+  help.textContent = node.description || '';
+  const notes = document.createElement('div');
+  notes.className = 'help panel-notes';
+  const error = document.createElement('div');
+  error.className = 'field-error';
+  field.append(label, select, help, notes, error);
+  editorFields.push({
+    path: 'panel', section: '', name: 'panel', spec: { kind: 'text' },
+    read: () => select.value || undefined, control: select,
+  });
+  return field;
+}
+
+/** The panel's own values are what an empty geometry override resolves to. */
+function onEditorPanelChange() {
+  const select = editorDialog && editorDialog.querySelector('#editor-panel');
+  if (!select || !editorSummary) return;
+  const panel = (formData ? formData.panels : []).find((p) => p.id === select.value) || null;
+  const notes = editorDialog.querySelector('.panel-notes');
+  if (notes) notes.textContent = (panel && panel.notes) || '';
+  for (const name of PANEL_RESOLVED) {
+    const field = editorFields.find((entry) => entry.path === name);
+    if (!field) continue;
+    // Unchanged panel: the summary's resolved value, which has been through
+    // every override and the transport's own default. Changed: the panel
+    // profile's, since that is what an empty box would now resolve to.
+    let value = resolvedFor(editorSummary, name);
+    if (panel && panel.id !== editorSummary.panel) {
+      value = panel[name] === null || panel[name] === undefined ? '' : String(panel[name]);
+      if (name === 'frame_format' && !value) value = 'from the transport';
+    }
+    if (field.control.tagName === 'SELECT') {
+      const empty = field.control.querySelector('option[value=""]');
+      if (empty) empty.textContent = value ? `panel default (${value})` : 'panel default';
+    } else {
+      field.control.placeholder = value;
+    }
+  }
+}
+
+// ----------------------------------------------------------- the transport --
+
+/* The one section whose fields are not in the schema: `TransportConfig` is
+ * `extra="allow"`, so each transport's `options_doc` is the only description
+ * of its options there is. Keys the chosen transport does not document are
+ * shown anyway — a key already in the file is there for a reason, and this
+ * drawer is not the place to decide it was a typo. */
+function transportFields(schema, data) {
+  const def = deref(schema, schema.properties.transport.$ref);
+  const fields = [];
+
+  const field = document.createElement('div');
+  field.className = 'field';
+  field.dataset.path = 'transport.type';
+  const label = document.createElement('label');
+  label.setAttribute('for', 'editor-transport-type');
+  label.textContent = 'type';
+  const select = document.createElement('select');
+  select.id = 'editor-transport-type';
+  populateTransportSelect(select, data.transports);
+  const current = String(editorTransport.type || 'http_pull');
+  select.value = current;
+  if (select.value !== current) {
+    const missing = document.createElement('option');
+    missing.value = current;
+    missing.textContent = `${current} — not a registered transport`;
+    select.prepend(missing);
+    select.value = current;
+  }
+  select.addEventListener('change', () => {
+    // Keep what is on screen before the options under it are replaced, so a
+    // look at another transport does not cost the keys already typed. What is
+    // on screen replaces rather than merges, or clearing a box and switching
+    // away would put the old value back.
+    editorTransport = Object.assign(withoutShownKeys(), collectTransport());
+    editorTransport.type = select.value;
+    redrawTransportOptions(data, editorDialog.querySelector('.transport-options'), select.value);
+    markDirty();
+  });
+  const help = document.createElement('div');
+  help.className = 'help';
+  help.textContent = (def.properties.type || {}).description || '';
+  const error = document.createElement('div');
+  error.className = 'field-error';
+  field.append(label, select, help, error);
+  fields.push(field);
+
+  const options = document.createElement('div');
+  options.className = 'transport-options';
+  fields.push(options);
+  redrawTransportOptions(data, options, select.value);
+  return fields;
+}
+
+function redrawTransportOptions(data, box, type) {
+  const info = (data.schema.transports || {})[type] || { options: {} };
+  const nodes = [];
+  if (info.description) {
+    const note = document.createElement('div');
+    note.className = 'help';
+    note.textContent = info.description;
+    nodes.push(note);
+  }
+  if (type === 'mqtt') {
+    const note = document.createElement('div');
+    note.className = 'help warn';
+    note.textContent = 'Needs MQTT enabled globally: mqtt.enabled: true, or the ' +
+      'Mosquitto broker app under the Supervisor.';
+    nodes.push(note);
+  }
+  const documented = Object.keys(info.options || {});
+  // The stored keys this transport does not document. They are shown rather
+  // than quietly carried, because `extra="allow"` means the file is the only
+  // record of them and a drawer that hid them would be the thing that dropped
+  // them. A key typed while another transport was selected is not one of
+  // these: it stays in the working copy for a look back, and is neither shown
+  // nor sent under this one.
+  const extras = storedTransportKeys.filter((key) => !documented.includes(key));
+  for (const key of documented) nodes.push(transportOption(key, info.options[key], false));
+  for (const key of extras) nodes.push(transportOption(key, '', true));
+  box.replaceChildren(...nodes);
+}
+
+function transportOption(key, description, extra) {
+  const field = document.createElement('div');
+  field.className = 'field';
+  field.dataset.path = `transport.${key}`;
+  const id = 'editor-transport-' + key;
+  const label = document.createElement('label');
+  label.setAttribute('for', id);
+  label.textContent = key;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.id = id;
+  input.autocomplete = 'off';
+  input.dataset.transportKey = key;
+  const value = editorTransport[key];
+  input.value = value === undefined || value === null
+    ? ''
+    : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+  const help = document.createElement('div');
+  help.className = 'help' + (extra ? ' warn' : '');
+  help.textContent = extra
+    ? 'Not an option this transport documents. It is kept as it is; clear the ' +
+      'box to drop it.'
+    : description;
+  field.append(label, input, help);
+  return field;
+}
+
+/** The working copy minus every key the transport section is showing, which
+ *  `collectTransport` is about to supply from the boxes themselves. */
+function withoutShownKeys() {
+  const shown = new Set(
+    [...editorDialog.querySelectorAll('.transport-options [data-transport-key]')]
+      .map((input) => input.dataset.transportKey)
+  );
+  const kept = {};
+  for (const [key, value] of Object.entries(editorTransport)) {
+    if (!shown.has(key)) kept[key] = value;
+  }
+  return kept;
+}
+
+/** The transport section as a mapping, each option in the type `parseOption`
+ *  reads it as. Only the boxes on screen are in it, which is what keeps a key
+ *  typed under another transport out of the body. */
+function collectTransport() {
+  const select = editorDialog.querySelector('#editor-transport-type');
+  const transport = { type: select ? select.value : editorTransport.type };
+  for (const input of editorDialog.querySelectorAll('.transport-options [data-transport-key]')) {
+    const value = parseOption(input.value, editorTransport[input.dataset.transportKey]);
+    if (value !== undefined) transport[input.dataset.transportKey] = value;
+  }
+  return transport;
+}
+
+/* Every option arrives as text and most transports coerce it themselves —
+ * `float(self.option("timeout", 30))` and so on — but two shapes cannot
+ * survive being a string: `write_preview` is read for truth, where "false" is
+ * true, and `headers` is read as a mapping (`src/maverick/transports/pull.py`).
+ * So JSON wins where it is unambiguous, and the string stands everywhere else:
+ * a topic that happens to read as a number stays the text that was typed
+ * unless it was a number to begin with. */
+function parseOption(text, previous) {
+  const raw = text.trim();
+  if (raw === '') return undefined;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (raw.startsWith('{') || raw.startsWith('[')) {
+    try { return JSON.parse(raw); } catch (e) { return raw; }
+  }
+  if (typeof previous === 'number' && Number.isFinite(Number(raw))) return Number(raw);
+  return raw;
+}
+
+// ------------------------------------------------------------- the payload --
+
+/** The display as the drawer has it, in the shape `PUT` and Preview take. */
+function collectBody() {
+  const body = { id: editorId };
+  for (const field of editorFields) {
+    const value = field.read();
+    if (value === undefined) continue;
+    if (!field.section) {
+      body[field.name] = value;
+    } else {
+      if (!body[field.section]) body[field.section] = {};
+      body[field.section][field.name] = value;
+    }
+  }
+  body.transport = collectTransport();
+  return body;
+}
+
+/** The stored value for a field, or the schema's default when the file omits it.
+ *
+ * `config` is `dump_display` (`src/maverick/store.py`): the shortest mapping
+ * that loads back as the display, so every key left at its default is missing
+ * from it. The control shows the value that is in force, not an empty box.
+ */
+function valueOf(section, name, node) {
+  const config = (editorSummary && editorSummary.config) || {};
+  const holder = section ? config[section] || {} : config;
+  if (Object.prototype.hasOwnProperty.call(holder, name)) return holder[name];
+  return node.default === undefined ? null : node.default;
+}
+
+function isDirty() {
+  return Boolean(editorBaseline) && JSON.stringify(collectBody()) !== editorBaseline;
+}
+
+function markDirty() {
+  if (!editorDialog) return;
+  const pill = editorDialog.querySelector('.editor-dirty');
+  if (pill) pill.hidden = !isDirty();
+}
+
+// ------------------------------------------------------------ the preview --
+
+function previewSection(summary) {
+  const node = document.createElement('section');
+  node.className = 'editor-preview';
+  node.innerHTML = PREVIEW;
+
+  const now = node.querySelector('.compare-now img');
+  if (summary.checksum) {
+    now.setAttribute('src', withToken(
+      `api/displays/${encodeURIComponent(summary.id)}/preview.png` +
+      `?c=${encodeURIComponent(summary.checksum)}`
+    ));
+    now.alt = `current frame for ${summary.name || summary.id}`;
+    now.hidden = false;
+    node.querySelector('.compare-now .shot-empty').hidden = true;
+  }
+  node.querySelector('.act-preview').addEventListener(
+    'click', (e) => runPreview(e.currentTarget)
+  );
+  const compare = node.querySelector('.compare');
+  const mix = node.querySelector('.compare-mix');
+  node.querySelector('.mode-side').addEventListener('click', () => setCompareMode(node, 'side'));
+  node.querySelector('.mode-overlay').addEventListener(
+    'click', () => setCompareMode(node, 'overlay')
+  );
+  mix.querySelector('input').addEventListener('input', (e) => {
+    compare.style.setProperty('--mix', String(Number(e.currentTarget.value) / 100));
+  });
+  return node;
+}
+
+function setCompareMode(node, mode) {
+  const compare = node.querySelector('.compare');
+  compare.classList.toggle('is-side', mode === 'side');
+  compare.classList.toggle('is-overlay', mode === 'overlay');
+  node.querySelector('.compare-mix').hidden = mode !== 'overlay';
+  node.querySelector('.mode-side').setAttribute('aria-pressed', String(mode === 'side'));
+  node.querySelector('.mode-overlay').setAttribute('aria-pressed', String(mode === 'overlay'));
+}
+
+async function runPreview(button) {
+  const section = editorDialog.querySelector('.editor-preview');
+  const status = section.querySelector('.preview-status');
+  clearEditorErrors();
+  setBusy(button, true);
+  setText(button, 'Rendering…');
+  startTicker(status);
+  try {
+    const result = await sendJSON(
+      'api/displays/preview', 'POST', collectBody(), 'The preview could not be rendered.'
+    );
+    showPreview(section, result);
+  } catch (error) {
+    status.textContent = '';
+    if (error.unauthorised) {
+      editorNeedsToken = true;
+      closeEditor();
+      return;
+    }
+    if (error.fields) applyEditorErrors(error.fields, 'The configuration is not valid yet.');
+    else editorError(error.message);
+  } finally {
+    stopTicker();
+    setBusy(button, false);
+    setText(button, 'Preview');
+  }
+}
+
+function showPreview(section, result) {
+  const image = section.querySelector('.compare-new img');
+  image.setAttribute('src', 'data:image/png;base64,' + result.preview_png);
+  image.alt = 'the frame this configuration would produce';
+  image.hidden = false;
+  section.querySelector('.compare-new .shot-empty').hidden = true;
+  section.querySelector('.compare').hidden = false;
+  section.querySelector('.compare-modes').hidden = false;
+  const lint = result.lint || { summary: '', issues: [] };
+  section.querySelector('.preview-status').textContent =
+    `${result.width}×${result.height} · rendered in ${result.render_s.toFixed(2)} s · ` +
+    `${lint.summary} · nothing saved`;
+  issues(section, lint.issues || []);
+}
+
+function startTicker(status) {
+  stopTicker();
+  const began = Date.now();
+  const tick = () => {
+    status.textContent = `rendering… ${Math.round((Date.now() - began) / 1000)}s`;
+  };
+  tick();
+  previewTicker = setInterval(tick, 1000);
+}
+
+function stopTicker() {
+  clearInterval(previewTicker);
+  previewTicker = null;
+}
+
+// ------------------------------------------- saving, deleting and closing --
+
+async function saveEditor(button) {
+  clearEditorErrors();
+  setBusy(button, true);
+  try {
+    await sendJSON(
+      `api/displays/${encodeURIComponent(editorId)}`, 'PUT', collectBody(),
+      'The display could not be saved.'
+    );
+    await poll();
+    closeEditor();
+  } catch (error) {
+    if (error.unauthorised) {
+      editorNeedsToken = true;
+      closeEditor();
+    } else if (error.fields) {
+      applyEditorErrors(error.fields, 'Some fields need fixing.');
+    } else {
+      editorError(error.message);
+    }
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function askToDelete() {
+  const name = editorSummary ? editorSummary.name || editorSummary.id : editorId;
+  askFirst(
+    `Delete ${name}? Its stored frames go with it, and a panel holding this ` +
+    'frame keeps showing it.',
+    'Delete it', deleteEditor
+  );
+}
+
+async function deleteEditor() {
+  const button = editorDialog.querySelector('.act-delete');
+  clearEditorErrors();
+  setBusy(button, true);
+  try {
+    await sendJSON(`api/displays/${encodeURIComponent(editorId)}`, 'DELETE', null,
+      'The display could not be deleted.');
+    editorDeleted = true;
+    await poll();
+    closeEditor();
+  } catch (error) {
+    if (error.unauthorised) {
+      editorNeedsToken = true;
+      closeEditor();
+    } else {
+      editorError(error.message);
+    }
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+/** A question in the drawer rather than a browser dialog, which an ingress
+ *  iframe is entitled to refuse to show. */
+function askFirst(message, label, action) {
+  const box = editorDialog.querySelector('.editor-confirm');
+  editorConfirmAction = action;
+  setText(box.querySelector('.editor-confirm-text'), message);
+  setText(box.querySelector('.editor-confirm-yes'), label);
+  box.hidden = false;
+  box.querySelector('.editor-confirm-yes').focus();
+}
+
+function hideConfirm() {
+  editorConfirmAction = null;
+  if (!editorDialog) return;
+  editorDialog.querySelector('.editor-confirm').hidden = true;
+}
+
+function requestClose() {
+  if (!isDirty()) {
+    closeEditor();
+    return;
+  }
+  askFirst('Close without saving? The changes in this drawer are not on the ' +
+    'display yet.', 'Discard them', closeEditor);
+}
+
+function closeEditor() {
+  hideConfirm();
+  if (editorDialog && editorDialog.open) editorDialog.close();
+}
+
+function afterClose() {
+  stopTicker();
+  const opener = editorOpener;
+  editorOpener = null;
+  editorFields = [];
+  editorBaseline = '';
+  if (editorNeedsToken) {
+    editorNeedsToken = false;
+    askForToken();
+    return;
+  }
+  // The card the drawer was opened from is gone once its display is, so focus
+  // goes to the one control the header always has.
+  const fallback = editorDeleted ? document.getElementById('add-display-btn') : null;
+  const target = fallback || (opener && document.body.contains(opener) ? opener : null);
+  if (target) target.focus();
+}
+
+// ----------------------------------------------------------- field errors --
+
+/** FastAPI's 422: `{loc: ["body", "image", "black_level"], msg}`.
+ *
+ * A model validator fails against the model rather than a field —
+ * `ImageConfig._levels` reports at `["body", "image"]` — so the shortest
+ * prefix that names something on screen wins, and the section holding the
+ * first error is opened and shown.
+ */
+function applyEditorErrors(fields, fallback) {
+  let first = null;
+  for (const item of fields) {
+    // `loc[0]` is the request part, always "body" here; the rest is the path
+    // through `DisplayConfig`.
+    const loc = (item.loc || []).slice(item.loc && item.loc[0] === 'body' ? 1 : 0);
+    const message = String(item.msg || '').replace(/^Value error,\s*/, '');
+    const target = errorTarget(loc);
+    if (!target) {
+      editorError(message || fallback);
+      continue;
+    }
+    setText(target.querySelector('.field-error'), message);
+    if (!first) first = target;
+  }
+  if (!first) return;
+  editorError(fallback);
+  const section = first.closest('.section');
+  if (section) section.open = true;
+  first.scrollIntoView({ block: 'center', behavior: 'auto' });
+  const control = first.querySelector('input, select, textarea');
+  if (control) control.focus();
+}
+
+function errorTarget(loc) {
+  const parts = loc.map(String);
+  while (parts.length) {
+    const path = parts.join('.');
+    const field = editorDialog.querySelector(`.field[data-path="${path}"]`);
+    if (field) return field;
+    const section = editorDialog.querySelector(`.section[data-section="${path}"]`);
+    if (section) return section.querySelector('.section-body');
+    parts.pop();
+  }
+  return null;
+}
+
+function clearEditorErrors() {
+  editorError('');
+  if (!editorDialog) return;
+  for (const node of editorDialog.querySelectorAll('.field-error')) node.textContent = '';
+}
+
+function editorError(message) {
+  if (!editorDialog) return;
+  const box = editorDialog.querySelector('.editor-error');
+  box.textContent = message || '';
+  box.hidden = !message;
 }

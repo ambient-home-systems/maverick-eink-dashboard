@@ -15,7 +15,10 @@ render next, and a button to re-render now.
 The cards themselves are drawn by ``static/app.js`` from ``GET /api/displays``,
 which it re-polls so a scheduled render in the background shows up without a
 reload. The first copy of that payload is embedded in the page, so the first
-paint has content and no spinner. Two things stay server-rendered because they
+paint has content and no spinner. The adjusting half of that loop is there too:
+each card's *Edit* opens a drawer that script generates from
+``GET /api/schema/display``, with a Preview that renders a candidate
+configuration without saving it. Two things stay server-rendered because they
 have to work before any of that does: the connection chips in the header, and
 :func:`_link_card`, which is the one thing on the page that helps when no
 credential works — no token, no JSON, no script.
@@ -82,15 +85,16 @@ _MQTT_HELP = """<details class="chip">
     </div>
   </details>"""
 
-# The Add display dialog. Static markup for a fixed set of fields — unlike the
-# per-display editor P2.3 generates from the schema, this form's shape does not
-# change, so it is server-rendered like the rest of the shell and app.js only
-# fills in what has to come from `/api/panels`, `/api/transports` and
-# `/api/schema/display`: panel and transport options, and every `data-help`
-# node's text, which is each field's own `Field(description=...)` in
-# `src/maverick/config.py` so the two copies cannot drift apart. Working with
-# no script is not a goal here, unlike the rest of the page: there is nothing
-# for the dialog to do without one.
+# The Add display dialog. Static markup for a fixed set of fields: it asks for
+# what a display cannot be created without and leaves the hundred-odd others to
+# the editor drawer, which generates a control per field from the schema
+# instead (`static/app.js`). This form's shape does not change, so it is
+# server-rendered like the rest of the shell and app.js only fills in what has
+# to come from `/api/panels`, `/api/transports` and `/api/schema/display`:
+# panel and transport options, and every `data-help` node's text, which is each
+# field's own `Field(description=...)` in `src/maverick/config.py` so the two
+# copies cannot drift apart. Working with no script is not a goal here, unlike
+# the rest of the page: there is nothing for the dialog to do without one.
 _ADD_DIALOG = """<dialog id="add-dialog" aria-labelledby="add-dialog-title">
   <form id="add-form">
     <h2 id="add-dialog-title">Add display</h2>
