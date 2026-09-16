@@ -278,6 +278,49 @@ class HomeAssistantClient:
                 )
             return result.get("result")
 
+    async def list_devices(self, integration: str) -> list[dict[str, Any]]:
+        """Every device the `integration` owns, from the device registry.
+
+        One WebSocket command, `config/device_registry/list`, registered in
+        `homeassistant/helpers/device_registry.py` (`websocket_list_devices`),
+        which returns every device entry as a dict. An entry belongs to an
+        integration when one of its `identifiers` pairs starts with that
+        domain — the pair is `(domain, unique id)`, serialised as a two-item
+        list — so filtering here is exactly what the frontend's device page
+        does when it shows one integration's devices.
+
+        What comes back is what a picker needs and nothing else: the registry
+        `id` (which is what `opendisplay.upload_image` wants, not an entity
+        id and not a MAC), the name the user gave it or the one the
+        integration did, and the model and manufacturer strings the
+        integration reported, which are what a panel guess is made from
+        (`src/maverick/devices/guess.py`).
+        """
+        entries = await self._ws_call("config/device_registry/list")
+        devices: list[dict[str, Any]] = []
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            identifiers = entry.get("identifiers") or []
+            owned = any(
+                isinstance(pair, (list, tuple)) and pair and pair[0] == integration
+                for pair in identifiers
+            )
+            if not owned:
+                continue
+            devices.append(
+                {
+                    "id": entry.get("id"),
+                    "name": entry.get("name_by_user") or entry.get("name") or entry.get("id"),
+                    "model": entry.get("model"),
+                    "manufacturer": entry.get("manufacturer"),
+                    "sw_version": entry.get("sw_version"),
+                    "hw_version": entry.get("hw_version"),
+                }
+            )
+        devices.sort(key=lambda d: str(d["name"]).lower())
+        return devices
+
     async def list_dashboards(self) -> list[dict[str, Any]]:
         """Every Lovelace dashboard and its views.
 

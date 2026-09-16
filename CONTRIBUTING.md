@@ -102,6 +102,7 @@ ruff check src tests                 # lint and import order; --fix applies the 
 pytest -q                            # the full suite; no browser, broker or network
 python scripts/gen_docs.py --check   # the generated reference matches the code
 python scripts/check_links.py        # every relative Markdown link resolves to a file
+python scripts/check_esphome.py      # ESPHome accepts every generated firmware config (needs `pip install esphome`)
 ```
 
 `check_links.py` is standard library only and follows relative links only, so it

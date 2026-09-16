@@ -218,8 +218,48 @@ def cmd_check(args: argparse.Namespace) -> int:
     else:
         print("mqtt: disabled (displays will not appear as Home Assistant entities)")
 
+    # Every transport can say whether a delivery would arrive without sending
+    # one (`Transport.probe`): an OpenDisplay tag's device id is checked
+    # against Home Assistant's registry, a BLE tag is scanned for, a pull
+    # display needs `server.base_url`. Nothing before this asked, so a wrong
+    # device id used to surface on the first scheduled render, as a generic
+    # upload failure.
+    if not args.no_probe:
+        problems += asyncio.run(_probe_displays(config))
+
     print("OK" if not problems else f"{problems} problem(s) found")
     return 1 if problems else 0
+
+
+async def _probe_displays(config: Config) -> int:
+    """Probe every enabled display's transport; return how many failed."""
+    from .engine import Engine
+
+    engine = Engine(config)
+    failures = 0
+    try:
+        await engine.start()
+    except Exception as exc:  # noqa: BLE001 - probing without a started engine still works
+        print(f"delivery: engine did not start ({exc}); probing transports cold")
+    try:
+        for display in config.enabled_displays:
+            try:
+                result = await engine.probe(display.id)
+            except Exception as exc:  # noqa: BLE001 - reported per display
+                print(f"delivery: {display.id:16s} FAILED — {exc}")
+                failures += 1
+                continue
+            if result.ok:
+                print(f"delivery: {display.id:16s} ok — {result.detail}")
+            else:
+                print(f"delivery: {display.id:16s} FAILED — {result.detail}")
+                failures += 1
+    finally:
+        try:
+            await engine.stop()
+        except Exception:  # noqa: BLE001, S110 - nothing left to report on
+            pass
+    return failures
 
 
 def cmd_panels(args: argparse.Namespace) -> int:
@@ -337,14 +377,23 @@ def cmd_scan(args: argparse.Namespace) -> int:
         if not found:
             print("No OpenDisplay tags found. Check they are powered and in range.")
             return 1
+        from .devices.guess import guess_panel
+
         print(f"Found {len(found)} tag(s):")
         for name, mac in sorted(found.items()):
-            print(f"  {mac}  {name}")
+            guess = guess_panel(name, prefer_transport="opendisplay")
+            print(f"  {mac}  {name}" + (f"  (looks like {guess})" if guess else ""))
         print("\nAdd one to your config:")
         first_name, first_mac = sorted(found.items())[0]
+        guess = guess_panel(first_name, prefer_transport="opendisplay")
+        panel_line = (
+            f"    panel: {guess}   # guessed from the name; check it"
+            if guess
+            else "    panel: opendisplay-solum-2in6-bwr   # pick your model"
+        )
         print(
             f"  - id: my-tag\n"
-            f"    panel: opendisplay-solum-2in6-bwr   # pick your model\n"
+            f"{panel_line}\n"
             f"    dashboard: /lovelace-eink/tag\n"
             f"    transport:\n      type: opendisplay\n      mode: ble\n"
             f"      mac: \"{first_mac}\""
@@ -418,6 +467,11 @@ def build_parser() -> argparse.ArgumentParser:
     render.set_defaults(func=cmd_render)
 
     check = sub.add_parser("check", help="validate config and connectivity")
+    check.add_argument(
+        "--no-probe",
+        action="store_true",
+        help="skip asking each display's transport whether a delivery would arrive",
+    )
     check.set_defaults(func=cmd_check)
 
     panels = sub.add_parser("panels", help="list supported panels")

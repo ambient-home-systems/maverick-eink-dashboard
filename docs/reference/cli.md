@@ -24,9 +24,12 @@ maverick serve
 touching a transport, so a bad theme or a broken selector never reaches a
 real panel. Once the frame looks right, `check` confirms the config loads,
 the panel and transport resolve, and Home Assistant and MQTT (if configured)
-are reachable — all without rendering anything. `serve` is what actually
-runs the service: the HTTP server, the scheduler and the Home Assistant
-listeners together.
+are reachable — and asks each enabled display's transport whether a delivery
+would arrive (`Transport.probe`: for an OpenDisplay tag in `ha` mode, that
+Home Assistant's device registry knows the `device_id`; in `ble` mode, that a
+scan hears the tag; `--no-probe` skips it) — all without rendering anything.
+`serve` is what actually runs the service: the HTTP server, the scheduler
+and the Home Assistant listeners together.
 
 ## Global options
 
@@ -66,6 +69,10 @@ render now (all displays, or one)
 ### `maverick check`
 
 validate config and connectivity
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--no-probe` | `false` | skip asking each display's transport whether a delivery would arrive |
 
 ### `maverick panels`
 

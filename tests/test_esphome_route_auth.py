@@ -1,11 +1,12 @@
-"""``GET /api/displays/{id}/esphome.yaml`` must not leak ``server.api_token``.
+"""``/api/displays/{id}/esphome.yaml`` and ``/esphome`` must not leak the token.
 
-The generated document embeds the token verbatim as an ``Authorization:
-Bearer`` header (`src/maverick/esphome/generator.py`), so the route that
-serves it needs the same ``_require_token`` dependency as every other
-``/api/displays/...`` route (`src/maverick/server/api.py`) — otherwise an
-unauthenticated request on the published port hands back the secret that
-gates the rest of the API.
+The generated document references ``server.api_token`` as
+``!secret maverick_authorization`` rather than embedding it
+(`src/maverick/esphome/generator.py`), so the YAML itself is no longer a
+secret. The JSON companion, ``GET /api/displays/{id}/esphome``, *is*: it
+carries the secret's value so the setup UI can hand it to the user in one
+step. Both routes therefore need the same ``_require_token`` dependency as
+every other ``/api/displays/...`` route (`src/maverick/server/api.py`).
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ def _config(tmp_path, *, token: str) -> Config:
             "data_dir": str(tmp_path / "data"),
             "server": {"base_url": "http://192.168.1.10:5000", "api_token": token},
             "displays": [
-                {"id": "kitchen", "panel": "trmnl-7in5", "transport": {"type": "file"}}
+                {"id": "kitchen", "panel": "waveshare-7in5-mono", "transport": {"type": "file"}}
             ],
         }
     )
@@ -53,34 +54,64 @@ def open_app(tmp_path, monkeypatch) -> Application:
     return _app(_config(tmp_path, token=""), monkeypatch)
 
 
+@pytest.mark.parametrize("route", ["esphome.yaml", "esphome"])
 def test_unauthenticated_request_is_rejected_and_the_token_is_not_leaked(
-    token_app: Application,
+    token_app: Application, route: str
 ) -> None:
     with TestClient(create_app(token_app)) as client:
-        response = client.get("/api/displays/kitchen/esphome.yaml")
+        response = client.get(f"/api/displays/kitchen/{route}")
     assert response.status_code == 401
     assert _TOKEN not in response.text
 
 
-def test_bearer_header_is_accepted(token_app: Application) -> None:
+def test_the_yaml_references_the_token_as_a_secret(token_app: Application) -> None:
+    """The document itself carries no secret: the token is a `!secret` name."""
     with TestClient(create_app(token_app)) as client:
         response = client.get(
             "/api/displays/kitchen/esphome.yaml",
             headers={"Authorization": f"Bearer {_TOKEN}"},
         )
     assert response.status_code == 200
-    assert f'Authorization: "Bearer {_TOKEN}"' in response.text
+    assert "Authorization: !secret maverick_authorization" in response.text
+    assert _TOKEN not in response.text
+
+
+def test_the_json_companion_carries_the_secret_value(token_app: Application) -> None:
+    """The one place the value appears, so the UI can offer it for secrets.yaml."""
+    with TestClient(create_app(token_app)) as client:
+        response = client.get(
+            "/api/displays/kitchen/esphome", headers={"Authorization": f"Bearer {_TOKEN}"}
+        )
+    assert response.status_code == 200
+    body = response.json()
+    secrets = {entry["name"]: entry["value"] for entry in body["secrets"]}
+    assert secrets["maverick_authorization"] == f"Bearer {_TOKEN}"
+    assert secrets["wifi_ssid"] is None, "Maverick does not know the Wi-Fi password"
+    assert body["node"] == "kitchen-panel"
+    assert body["filename"] == "kitchen-panel.yaml"
+    assert body["model_known"] is True
+    assert body["yaml"] == (
+        TestClient(create_app(token_app))
+        .get("/api/displays/kitchen/esphome.yaml", headers={"Authorization": f"Bearer {_TOKEN}"})
+        .text
+    )
 
 
 def test_query_token_is_accepted(token_app: Application) -> None:
-    """The setup UI's plain anchor cannot send a header, so it uses ``?token=``."""
+    """A plain anchor cannot send a header, so `?token=` still works."""
     with TestClient(create_app(token_app)) as client:
         response = client.get(f"/api/displays/kitchen/esphome.yaml?token={_TOKEN}")
     assert response.status_code == 200
-    assert f'Authorization: "Bearer {_TOKEN}"' in response.text
 
 
-def test_no_token_configured_leaves_the_route_open(open_app: Application) -> None:
+def test_no_token_configured_leaves_the_route_open_and_asks_for_no_secret(
+    open_app: Application,
+) -> None:
     with TestClient(create_app(open_app)) as client:
-        response = client.get("/api/displays/kitchen/esphome.yaml")
-    assert response.status_code == 200
+        yaml = client.get("/api/displays/kitchen/esphome.yaml")
+        body = client.get("/api/displays/kitchen/esphome").json()
+    assert yaml.status_code == 200
+    assert "request_headers" not in yaml.text
+    assert [entry["name"] for entry in body["secrets"]] == [
+        "wifi_ssid", "wifi_password", "api_key",
+    ]

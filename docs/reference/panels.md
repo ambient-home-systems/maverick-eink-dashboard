@@ -23,7 +23,7 @@ way `maverick panels` prints them.
 | Partial refresh | Whether the controller can update part of the panel without a full flash. | `Engine._needs_full_refresh` forces a full refresh on every render when this is `no`. |
 | Full-refresh cadence | How often a full (flashing) refresh is forced to clear ghosting, from `full_refresh_every`. | Same method; a display's `schedule.full_refresh_every` overrides it. |
 | Default transport | The transport a display uses if it sets none of its own. | `DisplayConfig.resolved()`, via `default_transport`. |
-| ESPHome model | The `online_image`/display component model string for `maverick esphome`. | `esphome/generator.py`. Panels with no ESPHome path (BLE tags, e-readers) leave this blank. |
+| ESPHome model | The display component `model:` for `maverick esphome`, with the platform in brackets when it is not `waveshare_epaper`. | `esphome/generator.py`. Every value is validated against ESPHome's own schema by `scripts/check_esphome.py`. Panels with no ESPHome path (BLE tags, e-readers) and panels ESPHome has no driver for leave this blank. |
 | Notes | Free text: caveats, refresh speed, what the entry has actually been checked against. | Datasheet-only entries say nothing here; an entry that has been run on real hardware says so. |
 
 `native_rotation` and `default_format` are not shown as their own columns —
@@ -69,8 +69,9 @@ Add an entry to `src/maverick/devices/panels.yaml` with the fields
   than the transport's own default.
 - `measured_palette` — a note of which measured-ink constant applies, if you
   have one.
-- `esphome_model`, `supports_partial`, `full_refresh_every` — as described
-  above.
+- `esphome_model`, `esphome_platform`, `supports_partial`, `full_refresh_every`
+  — as described above. Set `esphome_model` only to a name ESPHome accepts,
+  and run `python scripts/check_esphome.py <id>` to prove it.
 - `notes` — say what you actually verified.
 
 No code change is required: `all_panels()` reads the YAML at import time, so
@@ -104,7 +105,7 @@ otherwise.
 
 | id | Name | Resolution | Color scheme | dpi | Partial refresh | Full-refresh cadence | Default transport | ESPHome model | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `lilygo-t5-4in7` | LilyGO T5 4.7" (16-level grayscale) | 960×540 | `gray16` | 234 | yes | every 10 frames | `http_pull` | — |  |
+| `lilygo-t5-4in7` | LilyGO T5 4.7" (16-level grayscale) | 960×540 | `gray16` | 234 | yes | every 10 frames | `http_pull` | — | Parallel EPD on the T5's own driver; ESPHome's waveshare_epaper component does not cover it, so the generated firmware config needs a display block of your own. |
 
 ## opendisplay
 
@@ -148,13 +149,13 @@ otherwise.
 
 | id | Name | Resolution | Color scheme | dpi | Partial refresh | Full-refresh cadence | Default transport | ESPHome model | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `waveshare-10in3-gray16` | Waveshare 10.3" 16-level grayscale | 1872×1404 | `gray16` | 227 | yes | every 10 frames | `http_pull` | — | IT8951 controller. Grayscale depth makes it the best panel for dense dashboards. |
-| `waveshare-13in3-gray16` | Waveshare 13.3" 16-level grayscale | 1600×1200 | `gray16` | 150 | yes | every 10 frames | `http_pull` | — |  |
+| `waveshare-10in3-gray16` | Waveshare 10.3" 16-level grayscale | 1872×1404 | `gray16` | 227 | yes | every 10 frames | `http_pull` | — | IT8951 controller. Grayscale depth makes it the best panel for dense dashboards. ESPHome ships no driver for it, so the generated firmware config needs a model of your own. |
+| `waveshare-13in3-gray16` | Waveshare 13.3" 16-level grayscale | 1600×1200 | `gray16` | 150 | yes | every 10 frames | `http_pull` | — | IT8951 controller. ESPHome ships no driver for it, so the generated firmware config needs a model of your own. |
 | `waveshare-2in13-mono` | Waveshare 2.13" monochrome | 250×122 | `mono` | 131 | yes | every 20 frames | `http_pull` | `2.13in-ttgo-b74` |  |
 | `waveshare-2in9-mono` | Waveshare 2.9" monochrome | 296×128 | `mono` | 111 | yes | every 20 frames | `http_pull` | `2.90in` |  |
 | `waveshare-4in2-bwr` | Waveshare 4.2" black/white/red | 400×300 | `bwr` | 119 | no | every render — the panel has no partial-refresh mode | `http_pull` | `4.20in-bv2-bwr` |  |
 | `waveshare-4in2-mono` | Waveshare 4.2" monochrome | 400×300 | `mono` | 119 | yes | every 20 frames | `http_pull` | `4.20in` |  |
-| `waveshare-5in65-acep` | Waveshare 5.65" ACeP 7-color | 600×448 | `acep7` | 132 | no | every render — the panel has no partial-refresh mode | `http_pull` | `5.65in-acep7` | Seven-color ACeP. Refresh takes ~30s and is visually noisy. |
-| `waveshare-7in3-spectra` | Waveshare 7.3" Spectra 6 | 800×480 | `spectra6` | 128 | no | every render — the panel has no partial-refresh mode | `http_pull` | — |  |
-| `waveshare-7in5-bwr` | Waveshare 7.5" black/white/red | 800×480 | `bwr` | 124 | no | every render — the panel has no partial-refresh mode | `http_pull` | `7.50in-bv2-bwr` |  |
+| `waveshare-5in65-acep` | Waveshare 5.65" ACeP 7-color | 600×448 | `acep7` | 132 | no | every render — the panel has no partial-refresh mode | `http_pull` | `5.65in-f` | Seven-color ACeP. Refresh takes ~30s and is visually noisy. |
+| `waveshare-7in3-spectra` | Waveshare 7.3" Spectra 6 | 800×480 | `spectra6` | 128 | no | every render — the panel has no partial-refresh mode | `http_pull` | `7.3in-Spectra-E6` (`epaper_spi`) | Six-color Spectra E6. Refreshes take ~30s; ESPHome drives it through epaper_spi, not waveshare_epaper. |
+| `waveshare-7in5-bwr` | Waveshare 7.5" black/white/red | 800×480 | `bwr` | 124 | no | every render — the panel has no partial-refresh mode | `http_pull` | `7.50in-bv2` |  |
 | `waveshare-7in5-mono` | Waveshare 7.5" monochrome (V2) | 800×480 | `mono` | 124 | no | every render — the panel has no partial-refresh mode | `http_pull` | `7.50inV2` | The most common DIY HA dashboard panel. |

@@ -1,3 +1,13 @@
-from .generator import generate_all, generate_esphome_config
+from .generator import (
+    describe_esphome,
+    esphome_applicable,
+    generate_all,
+    generate_esphome_config,
+)
 
-__all__ = ["generate_esphome_config", "generate_all"]
+__all__ = [
+    "describe_esphome",
+    "esphome_applicable",
+    "generate_all",
+    "generate_esphome_config",
+]

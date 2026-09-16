@@ -380,7 +380,7 @@ maverick transports
 | Transport | Direction | Suits | Required options |
 |---|---|---|---|
 | `mqtt` | push | Always-on clients holding a subscription: a Pi driving an Inky, an ESPHome node, a custom client | none; needs `mqtt.enabled: true` globally. Optional `topic` (defaults to `<base_topic>/display/<id>`) |
-| `opendisplay` | push | OpenDisplay BLE e-paper tags, including reflashed Solum shelf labels | `mode: ha` needs `device_id`. `mode: ble` needs `mac` or `device_name` |
+| `opendisplay` | push | OpenDisplay BLE e-paper tags, including reflashed Solum shelf labels | `mode: ha` needs `device_id`, which the setup UI picks from Home Assistant's device registry. `mode: ble` needs `mac` or `device_name`, and is refused inside the Home Assistant app |
 | `http_pull` | pull | Battery devices that wake, fetch and sleep: ESP32, ESPHome, Kindle, TRMNL | none; needs `server.base_url` set to something the panel can reach |
 | `file` | push | Anything that reads a file: a Kindle screensaver over rsync, a Samba share, a separate web server, or eyeballing output | none. Optional `path` (defaults to `./out`), `filename`, `write_preview` |
 | `webhook` | push | The escape hatch: any device or service with an HTTP endpoint | `url`. Optional `method`, `headers`, `timeout` |
@@ -390,8 +390,12 @@ now and the scheduler learns which. A pull transport cannot deliver anything —
 it publishes the frame and reports `awaiting_pull`, and the real confirmation
 arrives later when the device fetches.
 
-For `opendisplay` in `mode: ble`, run `maverick scan` to find tags in range.
-It needs a Bluetooth adapter the process can see, and the `opendisplay` extra.
+For `opendisplay` in `mode: ble`, run `maverick scan` — or press **Scan for
+tags** in the setup UI — to find tags in range. Both need a Bluetooth adapter
+the process can see, and the `opendisplay` extra. `maverick check` and the
+setup UI's **Test delivery** ask every transport whether a delivery would
+arrive before one is attempted: for a tag in `mode: ha`, that the device id is
+one Home Assistant's OpenDisplay integration owns.
 
 **Device recipes.** [`docs/recipes/`](docs/recipes/README.md) has a page per
 device path — [ESPHome and a Waveshare panel](docs/recipes/esphome-waveshare.md),
@@ -449,10 +453,11 @@ default — Maverick hands the frame to Home Assistant's own
 Bluetooth it has, **including ESPHome Bluetooth proxies**. A proxy in the room
 with the tag beats a server in a cupboard, and Maverick needs no Bluetooth
 hardware at all. Two things are required: `device_id`, which is the device
-registry id from the OpenDisplay integration rather than an entity id or a MAC,
-and a media path both processes can see — Maverick writes the PNG to
-`media_dir` (default `/media/maverick`) and Home Assistant reads it back from
-its media folder. See `src/maverick/transports/opendisplay.py:9-27`.
+registry id from the OpenDisplay integration rather than an entity id or a MAC
+— the setup UI lists the integration's tags and picks it for you — and a media
+path both processes can see — Maverick writes the PNG to `media_dir` (default
+`/media/maverick`) and Home Assistant reads it back from its media folder. See
+`src/maverick/transports/opendisplay.py:9-27`.
 
 [docs/guides/home-assistant.md](docs/guides/home-assistant.md) is the full
 guide to all of this: making the token, getting the URL rule right, the
@@ -475,6 +480,9 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | GET | `/api/transports` | no | Registered transports |
 | GET | `/api/schema/display` | yes | The display config JSON Schema, for a form to render |
 | GET | `/api/ha/dashboards` | yes | Every Lovelace dashboard and its views, for the Dashboard field's picker; `503` when not connected to Home Assistant |
+| GET | `/api/ha/opendisplay/devices` | yes | Every tag Home Assistant's OpenDisplay integration knows, with a guessed panel; `503` when not connected |
+| GET | `/api/environment` | yes | Whether this is the app, whether it can scan for tags, and where the ESPHome Device Builder is |
+| POST | `/api/opendisplay/scan` | yes | Scan for OpenDisplay tags from this host's adapter; `409` in the app |
 | GET | `/api/displays` | yes | Every display, with state, checksum and lint findings |
 | GET | `/api/displays/{id}` | yes | One display |
 | GET | `/api/displays/{id}/history` | yes | Past render outcomes for this display, newest first; `?limit=N`, default 20, maximum 50 |
@@ -484,12 +492,16 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | POST | `/api/displays/{id}/schedule` | yes | Pause or resume a display's schedule at runtime |
 | POST | `/api/displays/{id}/page` | yes | Put one of a display's pages on the panel: `{"index": n}`, `{"name": "..."}` or `{"step": 1}` |
 | POST | `/api/displays/preview` | yes | Dry-run render of a candidate config; saves nothing |
+| POST | `/api/displays/probe` | yes | Ask a candidate config's transport whether a delivery would arrive; saves nothing |
+| POST | `/api/displays/{id}/probe` | yes | The same probe for a configured display |
 | POST | `/api/displays/{id}/render` | yes | Render one display now; `?force=true` ignores the unchanged and lint gates; `?wait=false` returns `202` and renders in the background |
 | POST | `/api/render` | yes | Render every enabled display |
 | GET | `/api/displays/{id}/frame` | yes | The current frame, in the panel's wire format |
 | GET | `/api/displays/{id}/preview.png` | yes | The frame as a viewable PNG |
 | GET | `/api/displays/{id}/screenshot.png` | yes | The pre-quantisation capture, downscaled to panel resolution |
-| GET | `/api/displays/{id}/esphome.yaml` | yes | A ready-to-flash ESPHome config for this display |
+| GET | `/api/displays/{id}/esphome.yaml` | yes | A ready-to-flash ESPHome config for this display; secrets are `!secret` references |
+| GET | `/api/displays/{id}/esphome` | yes | That config as JSON, with the secrets it expects and where it can be installed |
+| POST | `/api/displays/{id}/esphome/install` | yes | Write it where the ESPHome Device Builder reads configurations |
 | GET | `/api/auth/status` | no | What Home Assistant credential Maverick currently holds, and whether linking is possible |
 | GET | `/api/auth/start` | yes | The URL to send the browser to, to link a Home Assistant account |
 | GET | `/api/auth/callback` | no* | Where Home Assistant sends the browser back; authenticated by its own single-use nonce instead of the token |

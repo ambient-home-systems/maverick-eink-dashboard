@@ -198,6 +198,7 @@ the one worth getting right.
 | `base_url` | `str` | `""` | Advertised to devices that pull frames, and used for the links in Home Assistant discovery. Must be reachable *from them*, not just from your laptop. |
 | `api_token` | `str` | `""` | Optional token for the API, the setup UI and the preview images, accepted as a bearer token, an `Access-Token` header or a `?token=` query parameter, and written into generated ESPHome configurations. Requests arriving through the Home Assistant app's ingress are exempt, because Home Assistant has already authenticated them. Setting it also switches the MQTT image entity to sending frames over the broker, since Home Assistant fetches an image URL with no credentials. Empty leaves every endpoint unauthenticated. |
 | `enable_ui` | `bool` | `true` | Serve the setup UI at `/`. False serves the JSON API alone. |
+| `esphome_dir` | `str` | `""` | Directory the ESPHome Device Builder reads its configurations from, for the setup UI's *Send to ESPHome* button. Empty offers nothing standalone; in the Home Assistant app the ESPHome add-on's own folder is found without it. |
 
 ## Top-level keys
 
@@ -501,7 +502,7 @@ OpenDisplay BLE tags, via Home Assistant BLE proxies or a local adapter. Pushes 
 | `encryption_key` | no | AES-128 key as hex, for tags that require encrypted transfers. Unset sends unencrypted. |
 | `timeout` | no | Seconds to wait for a BLE connection, in `ble` mode. Default 20. |
 | `max_attempts` | no | BLE connection attempts before giving up, in `ble` mode. Default 4. |
-| `scan_timeout` | no | Seconds to scan for tags when `maverick check` probes a `ble` transport. Default 10. |
+| `scan_timeout` | no | Seconds to scan for tags when `maverick check` or the setup UI's *Test delivery* probes a `ble` transport. Default 10. |
 
 ### `webhook`
 

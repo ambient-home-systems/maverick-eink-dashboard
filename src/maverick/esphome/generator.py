@@ -15,9 +15,25 @@ the radio, not on preference:
 The generated config uses ESPHome's ``online_image`` component to fetch the
 frame Maverick rendered, so the device does no layout work at all — which is
 the entire point. The firmware never changes when the dashboard does.
+
+**Nothing secret is written into the file.** Wi-Fi, the ESPHome API key and
+Maverick's own API token are all ``!secret`` references, resolved from the
+``secrets.yaml`` beside the configuration when ESPHome compiles it. The token
+used to be written in literally, which made the generated document itself a
+secret and every copy of it a leak; :func:`describe_esphome` hands the setup
+UI the names of the secrets the file expects, and the values Maverick knows
+(the token, if one is set) so they can be copied across in one step.
+
+**The keys are ESPHome's, checked against ESPHome.** ``scripts/check_esphome.py``
+runs ``esphome config`` over a configuration for every panel in the catalogue
+that names a model, and CI runs it (``.github/workflows/ci.yml``, the
+``esphome`` job). That is validation, not a flash: the untested banner on the
+recipe stays until someone runs the result on a panel.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from ..config import Config, ResolvedDisplay
 from ..eink.palette import ColorScheme
@@ -35,24 +51,83 @@ _IMAGE_TYPE = {
     ColorScheme.ACEP7: "RGB565",
 }
 
-#: Bytes per pixel for each decode type, used to size the frame buffer.
+#: Bytes per pixel for each decode type, used to estimate the decoded frame.
 _BYTES_PER_PIXEL = {"BINARY": 0.125, "GRAYSCALE": 1.0, "RGB565": 2.0}
 
+#: Above this many decoded bytes a plain ESP32 (~200 KB of usable heap) cannot
+#: hold the frame, and the generated file says so and asks for PSRAM.
+PSRAM_THRESHOLD = 180_000
 
-def _buffer_size(display: ResolvedDisplay, image_type: str) -> int:
+#: `online_image.buffer_size` is the *download* buffer, and ESPHome caps it at
+#: 64 KiB (`cv.int_range(256, 65536)` in `esphome/components/online_image`).
+#: The decoded image lives elsewhere, in heap or PSRAM.
+DOWNLOAD_BUFFER_MAX = 65_536
+
+#: The `!secret` names the generated file references. `secrets.yaml` next to
+#: the ESPHome configuration must define every one of them, or the compile
+#: fails naming the missing key.
+SECRET_WIFI_SSID = "wifi_ssid"
+SECRET_WIFI_PASSWORD = "wifi_password"
+SECRET_API_KEY = "api_key"
+SECRET_AUTHORIZATION = "maverick_authorization"
+
+#: Panel vendors whose catalogue entries are never an ESP32 running ESPHome:
+#: e-readers, TRMNL, and a Pi driving an Inky. The pull transport suits them,
+#: the firmware config does not, so the setup UI does not offer it for them.
+_NOT_ESPHOME_VENDORS = frozenset({"amazon", "kobo", "trmnl", "pimoroni"})
+
+#: Transports over which an ESPHome node collects frames. `opendisplay` and
+#: `webhook` reach a device that is not running this firmware.
+_ESPHOME_TRANSPORTS = frozenset({"http_pull", "mqtt", "file"})
+
+
+def _decoded_size(display: ResolvedDisplay, image_type: str) -> int:
+    """Roughly what the decoded frame costs in RAM, with headroom."""
     pixels = display.width * display.height
-    # 20% headroom: the decoder needs scratch space, and a too-small buffer
-    # fails at download time with a message that is not obviously about size.
+    # 20% headroom: the decoder needs scratch space, and a too-small
+    # allocation fails at download time with a message that is not obviously
+    # about size.
     return int(pixels * _BYTES_PER_PIXEL[image_type] * 1.2) + 1024
+
+
+def esphome_applicable(display: ResolvedDisplay) -> bool:
+    """Whether an ESPHome configuration makes sense for this display at all.
+
+    True for a display that collects frames over a transport an ESPHome node
+    can use, on a panel that is plausibly wired to an ESP32. A Kindle over
+    `http_pull` is a pull display too, but no firmware config helps it.
+    """
+    return (
+        display.transport_type in _ESPHOME_TRANSPORTS
+        and display.profile.vendor not in _NOT_ESPHOME_VENDORS
+    )
 
 
 def generate_esphome_config(display: ResolvedDisplay, config: Config) -> str:
     """Return a complete ESPHome YAML document for ``display``."""
+    return describe_esphome(display, config)["yaml"]
+
+
+def describe_esphome(display: ResolvedDisplay, config: Config) -> dict[str, Any]:
+    """The generated document plus everything a guided install step needs.
+
+    Returned alongside the YAML rather than parsed back out of it: the node
+    name (which is the filename ESPHome expects), the secrets the file
+    references with the values Maverick already knows, whether the panel has a
+    driver ESPHome knows by name, and whether the frame needs PSRAM. The setup
+    UI's *Install on device* panel is drawn from this
+    (`src/maverick/server/static/app.js`), and `GET
+    /api/displays/{id}/esphome` serves it (`src/maverick/server/api.py`).
+    """
     options = display.config.esphome
     profile = display.profile
     node = options.node_name or f"{display.id}-panel".replace("_", "-")
     image_type = _IMAGE_TYPE[display.color_scheme]
-    buffer = options.buffer_size or _buffer_size(display, image_type)
+    decoded = _decoded_size(display, image_type)
+    needs_psram = decoded > PSRAM_THRESHOLD
+    # `buffer_size` on `online_image` is the download buffer, capped by ESPHome
+    # at 64 KiB; an explicit `esphome.buffer_size` is honoured up to that cap.
+    download_buffer = min(options.buffer_size or decoded, DOWNLOAD_BUFFER_MAX)
 
     base = (config.server.base_url or "http://maverick.local:5000").rstrip("/")
     url = f"{base}/api/displays/{display.id}/frame"
@@ -60,10 +135,13 @@ def generate_esphome_config(display: ResolvedDisplay, config: Config) -> str:
     interval = display.config.schedule.interval_seconds or 900
     interval_text = f"{int(interval)}s"
 
-    if not profile.esphome_model:
+    platform = profile.esphome_platform or "waveshare_epaper"
+    model_known = bool(profile.esphome_model)
+    if not model_known:
         model_line = (
-            "    # This panel is not in ESPHome's waveshare_epaper model list.\n"
-            "    # Set `model:` to the closest match from\n"
+            "    # ESPHome has no driver for this panel in Maverick's catalogue, so the\n"
+            "    # model below is a placeholder. Set `model:` (and `platform:`, if the\n"
+            "    # panel is not a waveshare_epaper one) from\n"
             "    # https://esphome.io/components/display/waveshare_epaper.html\n"
             "    model: 7.50inV2"
         )
@@ -74,10 +152,11 @@ def generate_esphome_config(display: ResolvedDisplay, config: Config) -> str:
     # can exceed that by an order of magnitude, and the failure mode at flash
     # time is an allocation error that says nothing about panel choice.
     ram_warning = ""
-    if buffer > 180_000:
+    psram_block = ""
+    if needs_psram:
         ram_warning = f"""
 # ---------------------------------------------------------------------------
-# WARNING: this frame needs {buffer // 1024} KB of RAM to decode, which a plain
+# WARNING: this frame needs {decoded // 1024} KB of RAM to decode, which a plain
 # ESP32 does not have (~200 KB usable heap).
 #
 # Options, best first:
@@ -89,20 +168,43 @@ def generate_esphome_config(display: ResolvedDisplay, config: Config) -> str:
 #      need it: a mono frame for this panel is {display.width * display.height // 8 // 1024} KB.
 # ---------------------------------------------------------------------------
 """
+        # Octal PSRAM is an ESP32-S3 thing; on a classic ESP32 or a WROVER the
+        # PSRAM is quad, and ESPHome rejects `octal` there outright.
+        psram_block = (
+            "\npsram:\n  mode: octal\n  speed: 80MHz\n"
+            if "s3" in options.board.lower()
+            else "\npsram:\n"
+        )
 
-    psram_block = ""
-    if buffer > 180_000:
-        psram_block = """
-psram:
-  mode: octal
-  speed: 80MHz
-"""
-
-    token_header = ""
+    secrets: list[dict[str, Any]] = [
+        {"name": SECRET_WIFI_SSID, "value": None, "description": "Wi-Fi network the panel joins."},
+        {"name": SECRET_WIFI_PASSWORD, "value": None, "description": "Its password."},
+        {
+            "name": SECRET_API_KEY,
+            "value": None,
+            "description": (
+                "ESPHome's native API encryption key: base64, 32 bytes. The ESPHome "
+                "Device Builder generates one, or `openssl rand -base64 32` does."
+            ),
+        },
+    ]
+    header_block = ""
     if config.server.api_token:
-        token_header = (
-            "\n    headers:\n"
-            f'      Authorization: "Bearer {config.server.api_token}"'
+        # A `!secret` rather than the literal: the generated document is
+        # copied, downloaded and pasted, and a token in it travels with it.
+        header_block = (
+            "\n    request_headers:\n"
+            f"      Authorization: !secret {SECRET_AUTHORIZATION}"
+        )
+        secrets.append(
+            {
+                "name": SECRET_AUTHORIZATION,
+                "value": f"Bearer {config.server.api_token}",
+                "description": (
+                    "Maverick's API token, as the panel presents it: `server.api_token` "
+                    "with `Bearer ` in front."
+                ),
+            }
         )
 
     if options.deep_sleep:
@@ -133,7 +235,10 @@ interval:
       - component.update: dashboard_image
 """
 
-    return f"""{ram_warning}# ESPHome configuration for "{display.name}"
+    secret_lines = "\n".join(
+        f"#        {entry['name']}" for entry in secrets
+    )
+    yaml = f"""{ram_warning}# ESPHome configuration for "{display.name}"
 # Generated by Maverick for {profile.name}
 # {display.width}x{display.height}, {display.color_scheme.value}, ~{display.dpi} dpi
 #
@@ -141,7 +246,8 @@ interval:
 # rendered and draws it. Change your dashboard, not this file.
 #
 # Before flashing:
-#   1. Put wifi_ssid / wifi_password / api_key in your ESPHome secrets.yaml.
+#   1. Put these in the secrets.yaml next to this file:
+{secret_lines}
 #   2. Check the pins below against your wiring.
 #   3. Confirm `model:` matches your panel exactly — a wrong model usually
 #      shows as a garbled or half-drawn screen rather than an error.
@@ -156,8 +262,8 @@ esp32:
     type: arduino
 {psram_block}
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  ssid: !secret {SECRET_WIFI_SSID}
+  password: !secret {SECRET_WIFI_PASSWORD}
   # A captive portal fallback saves a trip to the panel when Wi-Fi changes.
   ap:
     ssid: "{node} setup"
@@ -169,7 +275,7 @@ logger:
 
 api:
   encryption:
-    key: !secret api_key
+    key: !secret {SECRET_API_KEY}
 
 ota:
   - platform: esphome
@@ -177,17 +283,20 @@ ota:
 http_request:
   verify_ssl: {str(options.verify_ssl).lower()}
   timeout: 30s
-  # A rendered frame is large for an ESP32; this must exceed the buffer below.
-  buffer_size_rx: {min(buffer + 2048, 65536)}
+  # A rendered frame arrives in many TCP segments; a larger receive buffer
+  # than the 512-byte default keeps the download from stalling.
+  buffer_size_rx: 8192
 
 online_image:
   - id: dashboard_image
     url: "{url}"
     format: PNG
     type: {image_type}
-    buffer_size: {buffer}
+    # The download buffer, not the decoded frame: ESPHome caps it at 64 KiB
+    # and decodes into heap (or PSRAM) separately.
+    buffer_size: {download_buffer}
     # Maverick decides when to refresh; never poll on the component's own timer.
-    update_interval: never{token_header}
+    update_interval: never{header_block}
     on_download_finished:
       - component.update: eink
     on_error:
@@ -198,7 +307,7 @@ spi:
   mosi_pin: {options.mosi_pin}
 
 display:
-  - platform: waveshare_epaper
+  - platform: {platform}
     id: eink
     cs_pin: {options.cs_pin}
     dc_pin: {options.dc_pin}
@@ -229,6 +338,21 @@ text_sensor:
     lambda: 'return {{"{display.id}"}};'
     update_interval: 3600s
 """
+    return {
+        "yaml": yaml,
+        "node": node,
+        "filename": f"{node}.yaml",
+        "board": options.board,
+        "platform": platform,
+        "model": profile.esphome_model,
+        "model_known": model_known,
+        "image_type": image_type,
+        "decoded_bytes": decoded,
+        "needs_psram": needs_psram,
+        "deep_sleep": options.deep_sleep,
+        "frame_url": url,
+        "secrets": secrets,
+    }
 
 
 def generate_all(config: Config) -> dict[str, str]:
@@ -236,9 +360,20 @@ def generate_all(config: Config) -> dict[str, str]:
     out: dict[str, str] = {}
     for display in config.enabled_displays:
         resolved = display.resolved()
-        if display.transport_type in ("http_pull", "mqtt", "file"):
+        if display.transport_type in _ESPHOME_TRANSPORTS:
             out[display.id] = generate_esphome_config(resolved, config)
     return out
 
 
-__all__ = ["generate_esphome_config", "generate_all"]
+__all__ = [
+    "DOWNLOAD_BUFFER_MAX",
+    "PSRAM_THRESHOLD",
+    "SECRET_API_KEY",
+    "SECRET_AUTHORIZATION",
+    "SECRET_WIFI_PASSWORD",
+    "SECRET_WIFI_SSID",
+    "describe_esphome",
+    "esphome_applicable",
+    "generate_all",
+    "generate_esphome_config",
+]

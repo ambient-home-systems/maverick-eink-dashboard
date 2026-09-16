@@ -4,8 +4,10 @@
 
 > **Not run on hardware by this project.** Nothing on this page has been flashed
 > to an ESP32 or drawn on a panel. What *was* checked, on this repository, is
-> listed under [What was verified](#what-was-verified); everything about the
-> device end is read from the source and from ESPHome's own documentation.
+> listed under [What was verified](#what-was-verified): the generated document
+> is validated by ESPHome's own `esphome config` in CI, for every panel in the
+> catalogue with a model, and everything about the device end is read from the
+> source and from ESPHome's own documentation.
 
 This is the DIY dashboard panel: an ESP32 wired to a Waveshare e-paper module,
 running firmware that does no layout work at all. Maverick renders the frame;
@@ -15,14 +17,15 @@ dashboard does.
 
 1. [Configure the display](#configure-the-display)
 2. [Generate the firmware config](#generate-the-firmware-config)
-3. [The secrets the file expects](#the-secrets-the-file-expects)
-4. [The pins, and why those pins](#the-pins-and-why-those-pins)
-5. [The buffer, and which panels need PSRAM](#the-buffer-and-which-panels-need-psram)
-6. [Battery: `deep_sleep` and the OTA caveat](#battery-deep_sleep-and-the-ota-caveat)
-7. [Flash it](#flash-it)
-8. [A garbled or half-drawn screen](#a-garbled-or-half-drawn-screen)
-9. [What was verified](#what-was-verified)
-10. [What to check first when it does not work](#what-to-check-first-when-it-does-not-work)
+3. [The setup UI's *Install on device* step](#the-setup-uis-install-on-device-step)
+4. [The secrets the file expects](#the-secrets-the-file-expects)
+5. [The pins, and why those pins](#the-pins-and-why-those-pins)
+6. [The buffer, and which panels need PSRAM](#the-buffer-and-which-panels-need-psram)
+7. [Battery: `deep_sleep` and the OTA caveat](#battery-deep_sleep-and-the-ota-caveat)
+8. [Flash it](#flash-it)
+9. [A garbled or half-drawn screen](#a-garbled-or-half-drawn-screen)
+10. [What was verified](#what-was-verified)
+11. [What to check first when it does not work](#what-to-check-first-when-it-does-not-work)
 
 ## Configure the display
 
@@ -65,21 +68,16 @@ $ curl -s http://maverick.local:5000/api/displays/kitchen/esphome.yaml -o kitche
 ```
 
 That route requires `server.api_token` when one is set, the same as the other
-`/api/displays/...` routes (`src/maverick/server/api.py`) — the generated
-document embeds the token itself, so serving it without a check would hand it
-out to anyone who could reach the port. Add `-H "Authorization: Bearer
-<token>"` to the command above when a token is configured. The setup UI links
-it on each display's card as **ESPHome config**, appending `?token=` itself
-when the page was opened with one (`server/ui.py`).
-
-Two things about that endpoint are worth knowing before you use it:
-
-* **It is not behind the API token.** Unlike the frame endpoint, it answers
-  anyone who can reach the server.
-* **When `server.api_token` is set, the generated document contains it**, as an
-  `Authorization: "Bearer <token>"` header on the `online_image` block — the
-  panel needs it to fetch frames. Treat the output as a secret, and prefer the
-  CLI on the machine you are flashing from.
+`/api/displays/...` routes (`src/maverick/server/api.py`); add
+`-H "Authorization: Bearer <token>"` to the command above when a token is
+configured. The document itself carries no secret: when a token is set the
+`online_image` block references it as `!secret maverick_authorization`,
+alongside the Wi-Fi and API-key secrets it always referenced
+(`src/maverick/esphome/generator.py`), so a copy of the file is not a copy of
+the token. Its JSON companion, `GET /api/displays/kitchen/esphome`, is what
+carries the token's value — as the `maverick_authorization` entry of
+`secrets` — for the setup UI step below, and is behind the token for that
+reason.
 
 The document is generated from the display's resolved geometry, so the panel
 model, buffer size, image type, frame URL and fetch interval are already filled
@@ -129,15 +127,59 @@ You can edit the file afterwards — it is yours. Keys worth changing live under
 want the change to survive regeneration: `board`, the six pins, `deep_sleep`,
 `buffer_size`, `verify_ssl` and `node_name`.
 
+## The setup UI's *Install on device* step
+
+Each card for a panel an ESP32 plausibly drives — a pull transport, and not a
+Kindle, a Kobo, a TRMNL or an Inky (`esphome_applicable`,
+`src/maverick/esphome/generator.py`) — carries an **Install on device**
+disclosure. It is the same document, arranged as the three things a person
+has to do with it, drawn from `GET /api/displays/{id}/esphome`
+(`src/maverick/server/static/app.js`):
+
+1. **Secrets.** The `secrets.yaml` entries the file references, with a Copy
+   button. Maverick fills in the one it knows — its own token, as
+   `maverick_authorization: "Bearer …"` — and leaves the Wi-Fi and API-key
+   values blank with their descriptions as comments.
+2. **The configuration.** Copy, Download (named `<node>.yaml`, which is the
+   name ESPHome expects), and — when there is somewhere to put it — **Send to
+   ESPHome**, which writes the file where the ESPHome Device Builder reads its
+   configurations so the device appears there with nothing to paste
+   (`POST /api/displays/{id}/esphome/install`,
+   `src/maverick/esphome/install.py`). In the Home Assistant app that is the
+   ESPHome add-on's own config folder, which the app reaches through its
+   `all_addon_configs:rw` mapping (`app/config.yaml`), with `/share/esphome`
+   as the fallback; standalone it is
+   [`server.esphome_dir`](../reference/configuration.md#server), and with that
+   unset the button is not shown. A file already there with different content
+   is yours and is not replaced until you say so. The status line under the
+   button reads the destination's `secrets.yaml` — reads only, it holds your
+   Wi-Fi password — and says which of the names in step 1 are still missing.
+3. **Install.** A link to the ESPHome Device Builder's own page when the add-on
+   is installed (the Supervisor reports it; `dashboard_url` in
+   `src/maverick/esphome/install.py`), where the device now appears and
+   *Install* compiles it and flashes over USB from the browser or over the
+   air. Standalone, the equivalent `esphome run` command.
+
+Above the steps, two warnings appear when they apply: the panel has no ESPHome
+driver in the catalogue (the file names a placeholder model — see
+[A garbled or half-drawn screen](#a-garbled-or-half-drawn-screen)), and the
+frame needs PSRAM (see [The buffer](#the-buffer-and-which-panels-need-psram)).
+
+Maverick itself never compiles or flashes. The toolchain is a gigabyte of disk
+and minutes of CPU on the Pi 3 the app targets, and the Device Builder already
+does both; what was missing was the hand-off, and this step is it.
+
 ## The secrets the file expects
 
-The generated document references three entries by name, and will not compile
-without them. Put them in the `secrets.yaml` next to your ESPHome configuration:
+The generated document references three entries by name — four with a token —
+and will not compile without them. Put them in the `secrets.yaml` next to your
+ESPHome configuration:
 
 ```yaml
 wifi_ssid: "your-ssid"
 wifi_password: "your-wifi-password"
 api_key: "base64-32-bytes"          # esphome's own API encryption key
+maverick_authorization: "Bearer <server.api_token>"   # only when a token is set
 ```
 
 | Reference in the file | What it is |
@@ -145,10 +187,10 @@ api_key: "base64-32-bytes"          # esphome's own API encryption key
 | `!secret wifi_ssid` | Wi-Fi network the panel joins. |
 | `!secret wifi_password` | Its password. |
 | `!secret api_key` | The ESPHome native API encryption key, base64, 32 bytes. Generate one in the ESPHome dashboard, or with `openssl rand -base64 32`. |
+| `!secret maverick_authorization` | Maverick's API token as the panel presents it: `server.api_token` with `Bearer ` in front. Referenced only when a token is set. The setup UI's step 1 writes this line for you. |
 
-Maverick's own API token is *not* a secret reference: when `server.api_token`
-is set it is written into the file literally, as described above. Nothing else
-in the document is sensitive.
+Nothing in the document itself is sensitive; the values live in `secrets.yaml`
+and nowhere else.
 
 The file has no `ota:` password and no `mqtt:` block. OTA uses the `esphome`
 platform with the API key, and frames arrive over HTTP, not MQTT — a panel on
@@ -198,18 +240,25 @@ costs a minute.
 
 ## The buffer, and which panels need PSRAM
 
-`online_image` decodes the downloaded PNG into a RAM buffer that you size in
-advance. Maverick computes it in `esphome/generator.py`:
+Two buffers are in play, and the generated file names one of them.
+`online_image.buffer_size` is the **download** buffer — ESPHome caps it at
+64 KiB (`cv.int_range(256, 65536)` in its `online_image` component) and
+decodes the image into heap or PSRAM separately. What decides whether a plain
+ESP32 can cope is the **decoded** frame, which Maverick estimates in
+`esphome/generator.py` and uses for the warning, the `psram:` block and the
+download buffer, capped:
 
 ```python
 _BYTES_PER_PIXEL = {"BINARY": 0.125, "GRAYSCALE": 1.0, "RGB565": 2.0}
 
-def _buffer_size(display, image_type):
+def _decoded_size(display, image_type):
     pixels = display.width * display.height
     return int(pixels * _BYTES_PER_PIXEL[image_type] * 1.2) + 1024
+
+download_buffer = min(options.buffer_size or decoded, DOWNLOAD_BUFFER_MAX)   # 65536
 ```
 
-Three things set the size, and only one of them is the panel's resolution:
+Three things set the estimate, and only one of them is the panel's resolution:
 
 1. **The decode type**, from the colour scheme. `mono` decodes to `BINARY` at
    one bit per pixel; the greyscale schemes decode to `GRAYSCALE` at one byte;
@@ -221,25 +270,25 @@ Three things set the size, and only one of them is the panel's resolution:
    size.
 3. **1 KB flat**, on top.
 
-So `waveshare-7in5-mono` at 800×480 needs 58,624 bytes and `waveshare-7in5-bwr`
-— the same panel with one more ink — needs 922,624. That difference is the
-whole decision:
+So `waveshare-7in5-mono` at 800×480 decodes to 58,624 bytes and
+`waveshare-7in5-bwr` — the same panel with one more ink — to 922,624. That
+difference is the whole decision:
 
-| Panel id | Pixels | Scheme | `type` | `buffer_size` | PSRAM needed |
-| --- | --- | --- | --- | --- | --- |
-| [`waveshare-2in13-mono`](../reference/panels.md#waveshare) | 250×122 | mono | `BINARY` | 5,599 | no |
-| `waveshare-2in9-mono` | 296×128 | mono | `BINARY` | 6,707 | no |
-| `waveshare-4in2-mono` | 400×300 | mono | `BINARY` | 19,024 | no |
-| `waveshare-7in5-mono` | 800×480 | mono | `BINARY` | 58,624 | no |
-| `waveshare-4in2-bwr` | 400×300 | bwr | `RGB565` | 289,024 | **yes** |
-| `waveshare-7in5-bwr` | 800×480 | bwr | `RGB565` | 922,624 | **yes** |
-| `waveshare-5in65-acep` | 600×448 | acep7 | `RGB565` | 646,144 | **yes** |
-| `waveshare-7in3-spectra` | 800×480 | spectra6 | `RGB565` | 922,624 | **yes** |
-| `waveshare-13in3-gray16` | 1600×1200 | gray16 | `GRAYSCALE` | 2,305,024 | **yes** |
-| `waveshare-10in3-gray16` | 1872×1404 | gray16 | `GRAYSCALE` | 3,154,969 | **yes** |
+| Panel id | Pixels | Scheme | `type` | Decoded estimate | `buffer_size` written | PSRAM needed |
+| --- | --- | --- | --- | --- | --- | --- |
+| [`waveshare-2in13-mono`](../reference/panels.md#waveshare) | 250×122 | mono | `BINARY` | 5,599 | 5,599 | no |
+| `waveshare-2in9-mono` | 296×128 | mono | `BINARY` | 6,707 | 6,707 | no |
+| `waveshare-4in2-mono` | 400×300 | mono | `BINARY` | 19,024 | 19,024 | no |
+| `waveshare-7in5-mono` | 800×480 | mono | `BINARY` | 58,624 | 58,624 | no |
+| `waveshare-4in2-bwr` | 400×300 | bwr | `RGB565` | 289,024 | 65,536 | **yes** |
+| `waveshare-7in5-bwr` | 800×480 | bwr | `RGB565` | 922,624 | 65,536 | **yes** |
+| `waveshare-5in65-acep` | 600×448 | acep7 | `RGB565` | 646,144 | 65,536 | **yes** |
+| `waveshare-7in3-spectra` | 800×480 | spectra6 | `RGB565` | 922,624 | 65,536 | **yes** |
+| `waveshare-13in3-gray16` | 1600×1200 | gray16 | `GRAYSCALE` | 2,305,024 | 65,536 | **yes** |
+| `waveshare-10in3-gray16` | 1872×1404 | gray16 | `GRAYSCALE` | 3,154,969 | 65,536 | **yes** |
 
-Above **180 KB** the generator assumes a plain ESP32 cannot cope — it has
-around 200 KB of usable heap — and does two things: it prepends a warning
+Above **180 KB** decoded the generator assumes a plain ESP32 cannot cope — it
+has around 200 KB of usable heap — and does two things: it prepends a warning
 comment, and it adds a `psram:` block.
 
 ```text
@@ -259,8 +308,10 @@ comment, and it adds a `psram:` block.
 
 Read the warning as an instruction, not a note. The `psram:` block is emitted
 whatever `board` says, so leaving `board: esp32dev` (the default) gives you a
-configuration that declares PSRAM on a board that has none. Set `board` to a
-PSRAM part at the same time:
+configuration that declares PSRAM on a board that has none — a bare `psram:`
+there, since octal mode is an ESP32-S3 feature and ESPHome rejects it on a
+classic ESP32; with an S3 board it is written as `mode: octal` at 80 MHz. Set
+`board` to a PSRAM part at the same time:
 
 ```yaml
 displays:
@@ -274,21 +325,21 @@ Option 3 in that warning is the one people underrate. If the dashboard is text
 and icons, set `color_scheme: mono` on the display and the same panel decodes
 through `BINARY` instead of `RGB565`: 58,624 bytes instead of 922,624, under
 the threshold, on the ESP32 you already have. (The warning's own "46 KB" is the
-packed frame on the wire, not the decode buffer — two different numbers, both
+packed frame on the wire, not the decoded frame — two different numbers, both
 much smaller than the colour ones.) The generated `model:` does not change — it
 is still the BWR driver, now being handed a two-ink image. You lose the red ink,
 which on most dashboards is carrying an alert you could express with weight
 instead. See the [design guide](../design-guide.md) for what spot ink costs.
 
-You can also set the buffer by hand with `esphome.buffer_size`, which skips the
-arithmetic entirely; `0` (the default) means "work it out".
+You can also set the download buffer by hand with `esphome.buffer_size`, which
+skips the arithmetic; `0` (the default) means "work it out", and any value is
+still capped at ESPHome's 65,536.
 
-One detail to check when you compile: `http_request.buffer_size_rx` is set to
-`min(buffer_size + 2048, 65536)`, so for every panel in the "yes" rows above it
-is capped at 65,536 — below the `buffer_size` the comment directly above it says
-it must exceed. On the mono panels the comment holds. Whether the cap matters in
-practice is exactly the kind of thing a first flash settles, and we would like
-to know.
+`http_request.buffer_size_rx` is written as `8192`: a bump over ESPHome's
+512-byte default so a frame arriving in many TCP segments does not stall, and
+nothing to do with the image buffers. It used to mirror `buffer_size`, which
+overran the option's 16-bit range on every colour panel — one of the two things
+`esphome config` rejected in the file before CI started running it.
 
 ## Battery: `deep_sleep` and the OTA caveat
 
@@ -339,21 +390,33 @@ Two consequences worth planning for:
 
 ## Flash it
 
-**The generated YAML has never been compiled by this project.** It parses as
-YAML, and every key in it is a key ESPHome documents, but no one here has run
-it through ESPHome's own validation, let alone flashed it. So the first step is
-not flashing — it is compiling:
+**The generated YAML has been validated by ESPHome, and never compiled or
+flashed by this project.** `scripts/check_esphome.py` generates a configuration
+for every panel in the catalogue that names an `esphome_model`, in both shapes
+the generator produces (plain, and with a token and `deep_sleep`), and runs
+`esphome config` over each; CI runs it on every push (`.github/workflows/ci.yml`,
+the `esphome` job). That is ESPHome's own schema validation — the model name,
+every key, the pin options — with no toolchain and no device. It caught two
+things before any user did: `online_image` takes `request_headers`, not
+`headers`, and the ACeP and 7.5" BWR panels named models ESPHome does not have.
+It does not build the firmware. So the first step is still not flashing — it is
+compiling:
 
 ```console
 $ esphome compile kitchen.yaml
 ```
 
-That validates the schema, resolves the `waveshare_epaper` model and builds the
-firmware, all without touching the panel. When it is clean:
+That resolves the display model and builds the firmware, all without touching
+the panel. When it is clean:
 
 ```console
 $ esphome run kitchen.yaml
 ```
+
+In the Home Assistant app, both of those are the ESPHome Device Builder's
+**Install** button, on the device that *Send to ESPHome* put there
+([the setup UI step](#the-setup-uis-install-on-device-step)): it compiles, and
+offers to flash over USB from the browser or over the air.
 
 **Please tell us what happened.** Open an issue with the panel id, the ESPHome
 version, and either "compiled clean" or the error. A recipe that has been run
@@ -371,19 +434,24 @@ inverted, or blank after a visibly busy refresh.
 Work through this in order:
 
 1. **Check `model:` against the panel, not the box.** The generated value comes
-   from the catalogue's `esphome_model` for the panel id you configured. If you
-   configured `waveshare-7in5-mono` but own the V2 revision's successor, or a
-   BWR module, the model is wrong. Compare it against
-   [ESPHome's `waveshare_epaper` model list](https://esphome.io/components/display/waveshare_epaper.html).
-2. **Check the catalogue entry has a model at all.** Three Waveshare panels
-   have no `esphome_model` — `waveshare-7in3-spectra` and both `gray16`
-   panels — and nor does any panel you added yourself. For those the generator
-   emits a comment and falls back to `model: 7.50inV2`, which is almost
-   certainly wrong for your panel:
+   from the catalogue's `esphome_model` for the panel id you configured, and
+   every value there is one ESPHome's schema accepts (`scripts/check_esphome.py`).
+   If you configured `waveshare-7in5-mono` but own the V2 revision's successor,
+   or a BWR module, the model is wrong for *your* panel all the same. Compare it
+   against [ESPHome's `waveshare_epaper` model list](https://esphome.io/components/display/waveshare_epaper.html).
+   `waveshare-7in3-spectra` is the one catalogued panel on another platform:
+   its block says `platform: epaper_spi` and `model: 7.3in-Spectra-E6`.
+2. **Check the catalogue entry has a model at all.** Two Waveshare panels have
+   no `esphome_model` — both `gray16` panels, whose IT8951 controller ESPHome
+   ships no driver for — nor does the LilyGO T5, nor any panel you added
+   yourself. For those the generator emits a comment and falls back to
+   `model: 7.50inV2`, which is almost certainly wrong for your panel, and the
+   setup UI's *Install on device* step says so above the steps:
 
    ```yaml
-       # This panel is not in ESPHome's waveshare_epaper model list.
-       # Set `model:` to the closest match from
+       # ESPHome has no driver for this panel in Maverick's catalogue, so the
+       # model below is a placeholder. Set `model:` (and `platform:`, if the
+       # panel is not a waveshare_epaper one) from
        # https://esphome.io/components/display/waveshare_epaper.html
        model: 7.50inV2
    ```
@@ -418,23 +486,33 @@ Checked on this repository, at the commit this page was written against:
 
 * `maverick esphome kitchen` and `GET /api/displays/kitchen/esphome.yaml`
   produce the same document for a `waveshare-7in5-mono` display — byte for
-  byte, apart from the trailing newline the CLI's `print` adds. It parses as
-  YAML once `!secret` is substituted, and carries the blocks quoted above.
-* Every buffer figure in the table is `_buffer_size()` run over the catalogue
-  entry, not arithmetic done by hand.
+  byte, apart from the trailing newline the CLI's `print` adds.
+* **ESPHome 2026.6.5 accepts every generated configuration.**
+  `scripts/check_esphome.py` ran `esphome config` over the eight catalogued
+  panels with a model, in both generator shapes: sixteen documents, sixteen
+  passes. The run that preceded the fixes failed on `headers` (renamed
+  `request_headers` in ESPHome), on `5.65in-acep7` (ESPHome's name is
+  `5.65in-f`) and on `7.50in-bv2-bwr` (ESPHome's is `7.50in-bv2`); the
+  catalogue now carries the accepted names, and CI repeats the run.
+* Every buffer figure in the table is `_decoded_size()` and the cap run over
+  the catalogue entry, not arithmetic done by hand.
 * The PSRAM warning, the `psram:` block and the `deep_sleep`/`on_boot` swap were
   produced by generating configs for `waveshare-7in5-bwr` with
   `esphome.deep_sleep: true`.
-* Adding `color_scheme: mono` to that same `waveshare-7in5-bwr` display changed
-  the generated `type:` to `BINARY` and `buffer_size:` to `58624`, dropped the
-  warning and the `psram:` block, and left `model: 7.50in-bv2-bwr` unchanged.
-* With `server.api_token` set, the generated document contains
-  `Authorization: "Bearer <token>"`, and the `esphome.yaml` endpoint itself
-  now requires that same token (`src/maverick/server/api.py`); an
-  unauthenticated request gets **401**, not the document.
+* With `server.api_token` set, the generated document references
+  `!secret maverick_authorization` and does not contain the token; the JSON
+  route carries it under `secrets`; both routes require that same token
+  (`tests/test_esphome_route_auth.py`); an unauthenticated request gets
+  **401**, not the document.
+* *Send to ESPHome* writes `<node>.yaml` into a configured directory, refuses
+  with **409** to replace a file with different content until told to, and
+  reads a `secrets.yaml` there to report missing names
+  (`tests/test_esphome_install.py`).
 
-Not checked: anything involving ESPHome or hardware — no `esphome compile`, no
-flash, no panel, no measurement of RAM, refresh time or battery life.
+Not checked: `esphome compile`, any flash, any panel, any measurement of RAM,
+refresh time or battery life, and the ESPHome add-on's config folder on a
+real Home Assistant OS installation — its path is read from the Supervisor's
+`all_addon_configs` mapping and the add-on's slug, not from a running system.
 
 ## What to check first when it does not work
 
@@ -447,7 +525,7 @@ shows up as an HTTP status at the panel.
 | Log line `[kitchen] FAILED: frame store unavailable (server not running)` | `deliver()` ran outside `maverick serve` — a bare `maverick render` has nowhere to publish to. | Run the display under `maverick serve`. A one-shot `maverick render kitchen -o out/` is for looking at the image, not for feeding a panel. |
 | `server.base_url is not set, so devices cannot be told where to fetch from.` | `server.base_url` is empty, so the URL in the firmware is meaningless. | Set it to a URL the panel can reach — an IP address if mDNS is unreliable on your network. |
 | ESPHome log: `frame download failed` | The `on_error` branch of `online_image`. The download did not complete: DNS, an unreachable host, TLS, a 401, or a buffer too small. | Fetch the same URL with `curl` from another machine on that network. It is nearly always the URL or the token, not the panel. |
-| Panel fetches, HTTP **401** | `server.api_token` is set and the firmware is not sending it. | Regenerate the config *after* setting the token, so the `Authorization` header is embedded, and re-flash. |
+| Panel fetches, HTTP **401** | `server.api_token` is set and the firmware is not sending it. | Regenerate the config *after* setting the token, so the `request_headers` block is present, put `maverick_authorization: "Bearer <token>"` in `secrets.yaml`, and re-flash. |
 | Panel fetches, HTTP **404** | Nothing has been rendered for this display yet. Normal on a cold server. | Wait for the first scheduled render, or `POST /api/displays/kitchen/render`. A device should sleep and retry rather than treat it as an error. |
 | Panel never fetches at all | With `deep_sleep: true`, the node is asleep and has no API. | Check `last_pulled_at` in `GET /api/displays/kitchen` — it records every fetch, including 304s. That is how you tell a sleeping panel from a dead one. |
 | It fetches, but nothing changes on screen | Probably 304s, which is correct behaviour. | Confirm with `curl -sD - -o /dev/null <frame url>` and look at the ETag; force a render with `?force=true` to prove the path end to end. |

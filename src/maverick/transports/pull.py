@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from ..eink import Frame
-from .base import DeliveryContext, DeliveryResult, Transport, register
+from .base import DeliveryContext, DeliveryResult, OptionField, Transport, register
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +88,14 @@ class FileTransport(Transport):
             "frame. Default false."
         ),
     }
+    option_fields: ClassVar[dict[str, OptionField]] = {
+        "path": OptionField(kind="path", default="./out", label="Directory"),
+        "filename": OptionField(advanced=True, label="File name"),
+        "write_preview": OptionField(
+            advanced=True, kind="select", choices=("true", "false"), default="false",
+            label="Also write a preview PNG",
+        ),
+    }
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:
         directory = Path(self.option("path", "./out"))
@@ -133,6 +141,15 @@ class WebhookTransport(Transport):
             "`X-Maverick-Checksum` are set for you unless you give them here."
         ),
         "timeout": "Request timeout in seconds. Default 30.",
+    }
+    option_fields: ClassVar[dict[str, OptionField]] = {
+        "url": OptionField(required=True, label="Endpoint URL"),
+        "method": OptionField(
+            advanced=True, kind="select", choices=("POST", "PUT", "PATCH"), default="POST",
+            label="HTTP method",
+        ),
+        "headers": OptionField(advanced=True, label="Extra headers (JSON object)"),
+        "timeout": OptionField(advanced=True, kind="number", default=30, label="Timeout (s)"),
     }
 
     async def deliver(self, frame: Frame, context: DeliveryContext) -> DeliveryResult:

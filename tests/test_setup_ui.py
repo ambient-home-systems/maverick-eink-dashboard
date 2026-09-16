@@ -303,6 +303,19 @@ def test_the_base_url_blocker_says_where_to_set_it(app: Application) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Discovered tags
+# --------------------------------------------------------------------------- #
+
+def test_the_page_carries_the_discovered_tags_shell(app: Application) -> None:
+    """Server-rendered and hidden: app.js fills it from
+    `GET /api/ha/opendisplay/devices` and shows it only when a tag is listed."""
+    page = _page(app)
+    assert '<section class="discovery" id="discovery" hidden>' in page
+    assert 'id="discovery-list"' in page
+    assert 'id="discovery-refresh"' in page
+
+
+# --------------------------------------------------------------------------- #
 # The MQTT chip
 # --------------------------------------------------------------------------- #
 
@@ -443,6 +456,13 @@ def test_only_three_fields_sit_above_the_advanced_fold(app: Application) -> None
 
     for field in ("add-name", "add-panel", "add-dashboard", "add-refresh"):
         assert f'id="{field}"' in above, f"#{field} should be asked for up front"
+    # What the transport cannot deliver without — a tag's device id, a
+    # webhook's URL — is drawn above the fold too, into this block, by
+    # `onTransportChange` in static/app.js from each transport's own
+    # `option_fields`; a display that fails on its first schedule for want of
+    # a required option was the cost of folding it away.
+    assert 'id="add-delivery"' in above, "the Delivery block should sit above the fold"
+    assert 'id="add-test"' in dialog, "the dialog should offer Test delivery"
     for field in (
         "add-id", "add-transport", "add-cron", "add-quiet-hours", "add-on-change",
         "add-enabled", "add-width", "add-height", "add-color-scheme", "add-dpi",

@@ -64,6 +64,7 @@ ruff check src tests
 pytest -q
 python scripts/gen_docs.py --check
 python scripts/check_links.py     # relative Markdown links only, offline
+python scripts/check_esphome.py   # `esphome config` over every generated firmware config; needs `pip install esphome`
 ```
 
 ## Looks like a bug, is deliberate
@@ -84,3 +85,11 @@ python scripts/check_links.py     # relative Markdown links only, offline
   (`src/maverick/scheduling/scheduler.py:177-179`). Home Assistant fires
   `state_changed` for attribute updates too; a ticking timestamp attribute would
   otherwise refresh the panel continuously.
+- **Maverick never compiles or flashes ESPHome firmware**
+  (`src/maverick/esphome/install.py`, module docstring). The toolchain is a
+  gigabyte on a Pi 3 and the ESPHome Device Builder already does both; the
+  *Install on device* step hands the file and its secrets to it instead.
+- **`mode: ble` is refused in the Home Assistant app**
+  (`src/maverick/transports/opendisplay.py`, `_resolve_mode`). The manifest
+  asks for no Bluetooth access, so no adapter is ever visible; refusing in
+  words beats a connection error on every schedule.

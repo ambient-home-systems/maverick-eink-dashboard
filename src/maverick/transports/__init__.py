@@ -3,6 +3,7 @@
 from .base import (
     DeliveryContext,
     DeliveryResult,
+    OptionField,
     Transport,
     available_transports,
     get_transport,
@@ -15,6 +16,6 @@ from .opendisplay import OpenDisplayTransport  # noqa: F401
 from .pull import FileTransport, HttpPullTransport, WebhookTransport  # noqa: F401
 
 __all__ = [
-    "Transport", "DeliveryContext", "DeliveryResult", "register", "get_transport",
-    "available_transports", "MqttPublisher", "availability_topic",
+    "Transport", "DeliveryContext", "DeliveryResult", "OptionField", "register",
+    "get_transport", "available_transports", "MqttPublisher", "availability_topic",
 ]

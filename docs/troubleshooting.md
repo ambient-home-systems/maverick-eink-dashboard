@@ -709,6 +709,19 @@ has no working Home Assistant connection.
 to talk to the tag directly (needs a local Bluetooth adapter).
 
 ```text
+opendisplay mode 'ble' is not available in the Home Assistant app: it has no Bluetooth of its own. Use mode: ha, which delivers through Home Assistant's Bluetooth and its ESPHome proxies.
+```
+
+**Cause:** `transport.mode: ble` on a display running inside the Home
+Assistant app. The app's manifest asks for no Bluetooth access
+(`app/config.yaml`), so no adapter is ever visible to it, and
+`_resolve_mode` (`src/maverick/transports/opendisplay.py`) refuses up front
+rather than failing every schedule with a connection error that reads like a
+range problem. The setup UI does not offer the mode in the app at all.
+**Fix:** set `transport.mode: ha` (or drop the key: `auto` resolves to `ha`
+in the app) and set up the OpenDisplay integration in Home Assistant.
+
+```text
 cannot write to {media_dir} ({exc}). The add-on needs the 'media:rw' mapping, or set transport.media_dir to a shared path.
 ```
 
@@ -761,14 +774,73 @@ transport.device_id is not set
 ```
 
 **Where:** `probe()`, `ha` mode, when `transport.device_id` was never set.
+Reached by `maverick check` and the setup UI's *Test delivery*.
 
 ```text
-tag {mac or '(unset)'} not found. In range: {listing}
+device_id {device_id!r} is not a device of the OpenDisplay integration in Home Assistant; pick the tag from the list in the setup UI, or copy the id from the device page URL.
+```
+
+**Where:** `probe()`, `ha` mode. Home Assistant's device registry was read
+(`HomeAssistantClient.list_devices`, `src/maverick/ha/client.py`) and no
+OpenDisplay device has this id — the entity id or the MAC was pasted where the
+registry id goes, which is the mistake the upload action itself reports only
+generically.
+**Fix:** pick the tag from the picker in the setup UI's Add or Edit dialog,
+which writes the registry id, or take it from the end of the device page's
+URL in Home Assistant.
+
+```text
+neither transport.mac nor transport.device_name is set; scan for the tag from the setup UI or with `maverick scan`
+```
+
+**Where:** `probe()`, `ble` mode, before any scan. Delivery in the same state
+raises `opendisplay mode 'ble' needs either 'mac' or 'device_name'` instead.
+**Fix:** set `transport.mac` — the *Scan for tags* button in the setup UI
+fills it on a host with an adapter, and `maverick scan` prints it.
+
+```text
+tag {mac or device_name or '(unset)'} not found. In range: {listing}
 ```
 
 **Where:** `probe()`, `ble` mode — the scan completed but did not see
-`transport.mac`. The listing shows what *was* found, which is usually the
-fastest way to spot a typo'd MAC.
+`transport.mac` (or `transport.device_name`). The listing shows what *was*
+found, which is usually the fastest way to spot a typo'd MAC.
+
+### Sending a configuration to ESPHome
+
+The setup UI's *Send to ESPHome* (`POST /api/displays/{id}/esphome/install`,
+`src/maverick/server/api.py`) writes the generated firmware configuration
+where the ESPHome Device Builder reads it (`src/maverick/esphome/install.py`).
+Its failures come back as the button's status line:
+
+```text
+{filename} already exists in {label} with different content. Replace it to lose any edits made there.
+```
+
+**Cause:** a file of the same name is already there and is not byte-for-byte
+this version — the generated file is yours to edit, so it is not replaced
+without being asked. **Fix:** *Replace it* in the UI, or `overwrite: true` on
+the route, once you are sure the edits there are not wanted.
+
+```text
+no ESPHome destination '…' on this host
+```
+
+**Cause:** the destination id is not one `GET /api/displays/{id}/esphome`
+listed: the ESPHome add-on's folder is not mounted (the app needs the
+`all_addon_configs:rw` mapping, `app/config.yaml`), or standalone
+`server.esphome_dir` is not set. **Fix:** set `server.esphome_dir`, or copy
+the file by hand from the same step.
+
+```text
+cannot create {path}: {exc}
+cannot write {path}: {exc}
+```
+
+**Cause:** the directory cannot be made or the file cannot be written —
+permissions, or a read-only mount. **Fix:** check the mapping or the
+directory's ownership; the *Copy* and *Download* buttons beside it need no
+write access at all.
 
 ---
 

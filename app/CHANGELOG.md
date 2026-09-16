@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- **Install on device.** A display on an ESP32 board now has a step-by-step
+  hand-off to the ESPHome Device Builder on its card: the secrets the
+  generated configuration needs, the configuration itself, and **Send to
+  ESPHome**, which puts it straight into the ESPHome add-on's folder so the
+  device shows up there ready to install. The app now maps `/addon_configs`
+  for that. Nothing is compiled or flashed by this app.
+- **Tags Home Assistant can see.** Every OpenDisplay tag the integration has
+  found is listed above your displays, with the panel it looks like, and
+  **Add as display** fills in the rest.
+- **Pick the tag, don't paste its id.** The Add and Edit dialogs offer a tag
+  picker over Home Assistant's devices, show only the options the chosen mode
+  needs, and mark the one that is required. Everything else folds away.
+- **Test delivery** before saving: for a tag, that Home Assistant really knows
+  the device id; for a board that fetches, that it has an address to fetch
+  from.
+- **Fixed: the generated ESPHome configuration was not one ESPHome accepted**
+  (a renamed key, an oversized buffer, and two panel model names ESPHome does
+  not have). It is now validated by ESPHome itself on every change. It also no
+  longer contains your API token; the token is a `!secret` like the Wi-Fi
+  password.
+- `mode: ble` for a tag is refused inside the app, with a message saying why,
+  instead of failing on every schedule; the app has no Bluetooth of its own.
+
 ## 0.4.1
 
 - **The documentation is linked from the web UI at last.** *Design guide*,

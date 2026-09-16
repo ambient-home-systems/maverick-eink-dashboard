@@ -21,7 +21,7 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Twenty-five routes and one static mount, plus the two FastAPI adds for its
+Thirty-two routes and one static mount, plus the two FastAPI adds for its
 own documentation.
 
 | Method | Path | Token | Purpose |
@@ -31,6 +31,9 @@ own documentation.
 | `GET` | `/api/transports` | no | The registered transports |
 | `GET` | `/api/schema/display` | **yes** | The display config JSON Schema, for a form to render |
 | `GET` | `/api/ha/dashboards` | **yes** | Every Lovelace dashboard and its views, for the Dashboard field's picker |
+| `GET` | `/api/ha/opendisplay/devices` | **yes** | Every tag Home Assistant's OpenDisplay integration knows, with a guessed panel |
+| `GET` | `/api/environment` | **yes** | What this host can do: app or not, Bluetooth scan, the ESPHome Device Builder |
+| `POST` | `/api/opendisplay/scan` | **yes** | Scan for OpenDisplay tags from this host's own adapter |
 | `GET` | `/api/displays` | **yes** | Full summary of every configured display |
 | `GET` | `/api/displays/{display_id}` | **yes** | The same summary for one display |
 | `GET` | `/api/displays/{display_id}/history` | **yes** | Past render outcomes for one display, newest first |
@@ -40,12 +43,16 @@ own documentation.
 | `POST` | `/api/displays/{display_id}/schedule` | **yes** | Pause or resume a display's schedule at runtime |
 | `POST` | `/api/displays/{display_id}/page` | **yes** | Put one of a display's pages on the panel |
 | `POST` | `/api/displays/preview` | **yes** | Dry-run render of a candidate config; saves nothing |
+| `POST` | `/api/displays/probe` | **yes** | Ask a candidate config's transport whether a delivery would arrive; saves nothing |
+| `POST` | `/api/displays/{display_id}/probe` | **yes** | The same probe for a configured display |
 | `POST` | `/api/displays/{display_id}/render` | **yes** | Render one display now, or queue it with `?wait=false` |
 | `POST` | `/api/render` | **yes** | Render every enabled display now |
 | `GET` | `/api/displays/{display_id}/frame` | **yes** | The current frame, for a device that pulls |
 | `GET` | `/api/displays/{display_id}/preview.png` | **yes** | The current frame as a viewable PNG |
 | `GET` | `/api/displays/{display_id}/screenshot.png` | **yes** | The pre-quantisation capture, downscaled to panel resolution |
 | `GET` | `/api/displays/{display_id}/esphome.yaml` | **yes** | A ready-to-flash ESPHome configuration |
+| `GET` | `/api/displays/{display_id}/esphome` | **yes** | That configuration plus the secrets it expects and where to install it |
+| `POST` | `/api/displays/{display_id}/esphome/install` | **yes** | Write it where the ESPHome Device Builder reads configurations |
 | `GET` | `/api/displays/{display_id}/dashboard.yaml` | **yes** | A starter Lovelace dashboard sized for this panel |
 | `GET` | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | `GET` | `/api/display` | no | TRMNL per-fetch metadata |
@@ -59,7 +66,7 @@ own documentation.
 
 ## Authentication
 
-Authentication is off until `server.api_token` is set. Set it, and the sixteen
+Authentication is off until `server.api_token` is set. Set it, and the
 routes marked **yes** above require it; `_authenticated` decides for all of
 them, and it returns true immediately when the configured token is empty, so an
 unset token means every route is open.
@@ -136,10 +143,12 @@ publishing the frame over the broker instead — an image entity fetches with no
 credentials — which is described under
 [the image entity](mqtt.md#the-image-entity-two-modes).
 
-`/api/displays/{id}/esphome.yaml` is behind the token because the configuration
-it generates embeds `Authorization: "Bearer <api_token>"` verbatim
-(`src/maverick/esphome/generator.py`). The setup UI's "ESPHome config" link
-appends `?token=` for the same reason the images do.
+`/api/displays/{id}/esphome.yaml` and its JSON companion
+`/api/displays/{id}/esphome` are behind the token. The YAML no longer carries
+the token — it references it as `!secret maverick_authorization`
+(`src/maverick/esphome/generator.py`) — but the JSON route hands back that
+secret's value so the setup UI can offer it for `secrets.yaml`, and the two
+are gated alike rather than leaving a reader to remember which is which.
 
 ## Status and catalogue
 
@@ -189,11 +198,86 @@ panel:
 }
 ```
 
+`esphome_model` is the display component `model:` the generated ESPHome
+configuration names, or `null` for a panel ESPHome has no driver for
+(`src/maverick/devices/panels.yaml`); the platform it belongs to is not in
+this payload, since only `GET /api/displays/{id}/esphome` needs it.
+
 `rotation` and `frame_format` are the panel's own `native_rotation` and
 `default_format` (`src/maverick/devices/profiles.py`) — what
 `DisplayConfig.rotation` and `.frame_format` resolve to when left unset, and
 what the setup UI's Add display form shows as the placeholder for those two
 overrides.
+
+### `GET /api/ha/opendisplay/devices`
+
+**Token required.** Every device the OpenDisplay integration owns in Home
+Assistant's device registry, sorted by name, from
+`HomeAssistantClient.list_devices` (`src/maverick/ha/client.py`), which runs
+the `config/device_registry/list` WebSocket command and keeps the entries
+whose `identifiers` carry the `opendisplay` domain. **503** when not
+connected to Home Assistant.
+
+```json
+[
+  {
+    "id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+    "name": "Hallway tag",
+    "model": "ST-GR29000 2.9\" BWR",
+    "manufacturer": "Solum",
+    "sw_version": "0.3",
+    "hw_version": null,
+    "panel_guess": "opendisplay-solum-2in9-bwr",
+    "display_id": null
+  }
+]
+```
+
+`id` is the device registry id — what `transport.device_id` wants, and the
+value the setup UI's tag picker writes so nobody copies it out of a URL.
+`panel_guess` is `guess_panel` (`src/maverick/devices/guess.py`) over the
+model, name and manufacturer strings: the catalogue id whose size and inks
+they name, or `null`. `display_id` names the configured display already
+delivering to this device, if any.
+
+### `GET /api/environment`
+
+**Token required.** What this host can and cannot do, for the setup UI's forms
+to draw themselves by:
+
+```json
+{
+  "addon": false,
+  "opendisplay_extra": false,
+  "bluetooth_scan": false,
+  "home_assistant": true,
+  "esphome_dashboard": null,
+  "esphome_destinations": []
+}
+```
+
+`addon` is `running_under_supervisor` (`src/maverick/ha/supervisor.py`): in
+the app no Bluetooth adapter is ever visible, so the transport forms leave
+`mode: ble` out. `bluetooth_scan` is true only with the `opendisplay` extra
+installed and not in the app. `esphome_dashboard` is the ESPHome Device
+Builder add-on when the Supervisor reports one installed — `slug`, `name`,
+`version`, `state` and the `url` of its page inside Home Assistant — and
+`esphome_destinations` the directories a generated configuration can be
+written to (`src/maverick/esphome/install.py`).
+
+### `POST /api/opendisplay/scan`
+
+**Token required.** Scan for OpenDisplay tags from this host's own Bluetooth
+adapter, for `?timeout=` seconds (default 10, 1 to 60), the way
+`maverick scan` does. **200**:
+
+```json
+{"tags": [{"name": "OpenDisplay_A1B2", "mac": "AA:BB:CC:DD:EE:FF", "panel_guess": null}]}
+```
+
+**409** in the Home Assistant app, which has no adapter; **501** without the
+`opendisplay` extra; **502** with the library's own message when the scan
+itself fails.
 
 ### `GET /api/transports`
 
@@ -542,6 +626,31 @@ unknown display is **404**, the same lookup error as
 | `full_refresh` | Whether this render forced or triggered a flashing full refresh rather than a partial one. |
 | `delivery` | The transport's own detail string (`DeliveryResult.detail`, `src/maverick/transports/base.py`), or empty when delivery never ran. |
 
+### `POST /api/displays/probe`
+
+**Token required.** Body: a `DisplayConfig`, as `POST /api/displays` takes.
+Asks the candidate's transport whether a delivery would reach the panel,
+without saving anything and without sending a frame
+(`Engine.probe_candidate`, `src/maverick/engine.py`, which builds the
+transport from the candidate's own options and drops it afterwards). **200**:
+
+```json
+{"ok": true, "detail": "Home Assistant knows Hallway tag (ST-GR29000 2.9\" BWR) as an OpenDisplay tag", "pending": false}
+```
+
+What is checked is each transport's `probe` (`src/maverick/transports/`):
+for `opendisplay` in `ha` mode that the device id is one Home Assistant's
+OpenDisplay integration owns, in `ble` mode that a scan hears the tag; for
+`http_pull` that `server.base_url` is set; for `mqtt` that the broker is
+connected. **422** when the body is not a valid display or names an
+unregistered transport. This is the setup UI's *Test delivery* button.
+
+### `POST /api/displays/{display_id}/probe`
+
+**Token required.** The same probe for a configured display, on its running
+transport — what `maverick check` runs per display. **404** for an unknown
+display.
+
 ### `POST /api/displays/{display_id}/render`
 
 **Requires the token.** Renders one display now.
@@ -766,14 +875,81 @@ when `render.keep_screenshot` is off.
 ### `GET /api/displays/{display_id}/esphome.yaml`
 
 **Token required.** **200** `text/plain` containing a complete ESPHome YAML
-document for this display: the panel model, the display buffer, and an
-`online_image` pointing at this display's frame URL with the refresh interval
-already filled in. **404** for an unknown display. When `server.api_token` is
-set, the generated document embeds it as an `Authorization: Bearer` header
-(`src/maverick/esphome/generator.py`), so the route carries the same
-`_require_token` dependency as the other authenticated `/api/displays/...`
-routes — otherwise an unauthenticated request to this route would hand back
-the very token that gates every other endpoint.
+document for this display: the panel model, an `online_image` pointing at
+this display's frame URL with the refresh interval already filled in, and the
+download buffer sized within ESPHome's 64 KiB cap. **404** for an unknown
+display. Every secret in it — Wi-Fi, the ESPHome API key and, when
+`server.api_token` is set, an `Authorization` request header — is a `!secret`
+reference resolved from the `secrets.yaml` beside the file, so the document
+itself carries no credential (`src/maverick/esphome/generator.py`). It is
+validated against ESPHome's own schema for every catalogued panel by
+`scripts/check_esphome.py`, which CI runs; it has not been flashed.
+
+### `GET /api/displays/{display_id}/esphome`
+
+**Token required.** The same document as JSON, with what the setup UI's
+*Install on device* step shows around it (`describe_esphome`,
+`src/maverick/esphome/generator.py`):
+
+```json
+{
+  "yaml": "# ESPHome configuration for ...",
+  "node": "kitchen-panel",
+  "filename": "kitchen-panel.yaml",
+  "board": "esp32dev",
+  "platform": "waveshare_epaper",
+  "model": "7.50inV2",
+  "model_known": true,
+  "image_type": "BINARY",
+  "decoded_bytes": 58624,
+  "needs_psram": false,
+  "deep_sleep": false,
+  "frame_url": "http://192.168.1.10:5000/api/displays/kitchen/frame",
+  "secrets": [
+    {"name": "wifi_ssid", "value": null, "description": "Wi-Fi network the panel joins."},
+    {"name": "maverick_authorization", "value": "Bearer s3cret", "description": "..."}
+  ],
+  "applicable": true,
+  "destinations": [
+    {"id": "5c53de3b_esphome", "path": "/addon_configs/5c53de3b_esphome", "kind": "addon",
+     "label": "the ESPHome Device Builder add-on", "writable": true, "exists": true,
+     "missing_secrets": ["maverick_authorization"], "installed": false}
+  ],
+  "dashboard": {"slug": "5c53de3b_esphome", "name": "ESPHome Device Builder",
+                "version": "2026.6.5", "state": "started",
+                "url": "http://homeassistant.local:8123/hassio/ingress/5c53de3b_esphome"}
+}
+```
+
+`secrets` is every `!secret` the document references, with the value Maverick
+knows (its own token, as the panel presents it) and `null` for the ones only
+the user has; this is why the route is behind the token. `model_known` is
+false for a panel ESPHome has no driver for, where the document names a
+placeholder model. `destinations` is where the file can be written so the
+ESPHome Device Builder sees it (`src/maverick/esphome/install.py`): the
+add-on's own config folder in the app, `server.esphome_dir` standalone, each
+with which of the secret names its `secrets.yaml` still lacks (`null` when
+there is no such file). `dashboard` is the Device Builder add-on when the
+Supervisor reports one, `null` otherwise.
+
+### `POST /api/displays/{display_id}/esphome/install`
+
+**Token required.** Body `{"destination": "<id>", "overwrite": false}`, the id
+one of the `destinations` above. Writes the generated document as
+`<node>.yaml` into that directory, creating it if needed; `secrets.yaml`
+beside it is read to report what is still missing and never written. **200**:
+
+```json
+{"path": "/addon_configs/5c53de3b_esphome/kitchen-panel.yaml",
+ "destination": {"id": "5c53de3b_esphome", "...": "..."},
+ "missing_secrets": ["maverick_authorization"],
+ "dashboard": null}
+```
+
+**409** when a file of that name exists there with different content — it is
+the user's, edited after generation — until `overwrite: true` says to replace
+it; **400** for a destination this host does not offer, or a directory that
+cannot be written.
 
 ### `GET /api/displays/{display_id}/dashboard.yaml`
 
@@ -947,8 +1123,12 @@ first use, so a callback Maverick did not start is refused.
 With `server.enable_ui: true` (the default) this is the setup and monitoring
 page: one card per display showing the current frame, the resolved geometry, the
 schedule, when the next render is due and how long the last one took, the lint
-findings, buttons to render, full-render and pause the schedule, and a link to
-the display's generated ESPHome configuration.
+findings, buttons to render, full-render and pause the schedule, and — for a
+panel an ESP32 drives — an *Install on device* step built from
+[`GET /api/displays/{id}/esphome`](#get-apidisplaysdisplay_idesphome). Above
+the cards, the tags Home Assistant's OpenDisplay integration has found
+([`GET /api/ha/opendisplay/devices`](#get-apihaopendisplaydevices)) are
+offered as displays to add.
 
 What this route returns is a shell — the header, the *Link with Home Assistant*
 card when no credential works, and an empty `<main>`. The cards are built by

@@ -14,15 +14,23 @@ and it becomes a battery panel that runs for months on a coin cell — because i
 speaks BLE and nothing else. There is no access point to configure, no IP
 address, and no way for the tag to fetch anything: everything is pushed to it.
 
+**Putting OpenDisplay firmware on a shelf label is not something Maverick can
+do, or help with.** A label ships with its vendor's firmware and no way to
+replace it over the air; reflashing means physical access to the tag's
+programming pads and a hardware flasher, which is the OpenDisplay project's
+territory, not this one's. Everything on this page starts *after* that: the
+tag is running OpenDisplay firmware and advertising over BLE.
+
 1. [The tags in the catalogue](#the-tags-in-the-catalogue)
 2. [Two modes, one decision](#two-modes-one-decision)
-3. [Finding a tag: `maverick scan`](#finding-a-tag-maverick-scan)
-4. [`mode: ha`](#mode-ha)
-5. [`mode: ble`](#mode-ble)
-6. [Refresh: full, fast, and `full_refresh_every`](#refresh-full-fast-and-full_refresh_every)
-7. [Why the image arrives already quantised](#why-the-image-arrives-already-quantised)
-8. [What was verified](#what-was-verified)
-9. [What to check first when it does not work](#what-to-check-first-when-it-does-not-work)
+3. [Adding a tag from the setup UI](#adding-a-tag-from-the-setup-ui)
+4. [Finding a tag: `maverick scan`](#finding-a-tag-maverick-scan)
+5. [`mode: ha`](#mode-ha)
+6. [`mode: ble`](#mode-ble)
+7. [Refresh: full, fast, and `full_refresh_every`](#refresh-full-fast-and-full_refresh_every)
+8. [Why the image arrives already quantised](#why-the-image-arrives-already-quantised)
+9. [What was verified](#what-was-verified)
+10. [What to check first when it does not work](#what-to-check-first-when-it-does-not-work)
 
 ## The tags in the catalogue
 
@@ -75,12 +83,55 @@ Does the process running Maverick have a Bluetooth adapter it can use?
 
 `mode: ha` is the default in all but name: the option's default is `auto`,
 which resolves to `ha` when a Home Assistant connection exists and `ble`
-otherwise (`OpenDisplayTransport.deliver`).
+otherwise (`_resolve_mode`, `transports/opendisplay.py`). In the Home
+Assistant app the decision is made for you: the app asks for no Bluetooth
+access at all (`app/config.yaml`), so `auto` always resolves to `ha` there
+and an explicit `ble` is refused with a message that says why, on every
+delivery and on every probe, rather than failing to connect on every
+schedule. The setup UI does not offer the mode in the app.
 
 The reason to prefer `ha` is coverage, not convenience. Home Assistant delivers
 through whatever Bluetooth it has, **including ESPHome Bluetooth proxies** — so
 a £5 ESP32 in the room with the tag extends your range further than any adapter
 in the server ever will.
+
+## Adding a tag from the setup UI
+
+The setup UI (`/`, or **Open Web UI** in the app) is the short path, and it
+takes the two decisions this page spends its length on off your hands.
+
+**Tags Home Assistant can see.** Once the OpenDisplay integration has found a
+tag, it appears above the display cards with its name, its model and the
+catalogue panel that model looks like (`GET /api/ha/opendisplay/devices`,
+`src/maverick/server/api.py`, which reads Home Assistant's device registry
+through `HomeAssistantClient.list_devices` and guesses the panel from the
+model string with `guess_panel`, `src/maverick/devices/guess.py`). **Add as
+display** opens the Add dialog with the name, the panel, `mode: ha` and the
+device registry id already filled in; a tag a display already delivers to
+says which one instead.
+
+**Delivery, above the fold.** Whether opened that way or from **Add
+display**, the dialog draws the transport's required options — and only those
+— between Refresh and Advanced, from each transport's own `option_fields`
+(`src/maverick/transports/base.py`). For `opendisplay` that is a three-way
+mode picker and, in `ha` mode, a **tag picker** over the same device list,
+which writes the registry id into the box beside it; the box stays, so an id
+can still be pasted. In `ble` mode it is the MAC, with a **Scan for tags**
+button on a host that has an adapter and the `opendisplay` extra
+(`POST /api/opendisplay/scan`). The nine remaining options sit under *More
+options* for that mode, each with its default as its placeholder.
+
+**Test delivery.** Before Save, the button asks the transport whether a
+delivery would arrive (`POST /api/displays/probe`, which runs the transport's
+`probe` on the unsaved candidate — `Engine.probe_candidate`,
+`src/maverick/engine.py`). In `ha` mode that checks the device id against
+Home Assistant's device registry — the check that catches an entity id or a
+MAC pasted where the registry id goes, which the upload action itself reports
+only as a generic failure — and in `ble` mode it scans for the tag. The same
+probe is behind **Test delivery** in each display's Edit drawer, and behind
+`maverick check`, which now runs it for every enabled display.
+
+Everything below is what those controls do, and how to do it by hand.
 
 ## Finding a tag: `maverick scan`
 
@@ -101,15 +152,20 @@ Add one to your config:
 ```
 
 That block is printed for the first tag by name order, and it is a starting
-point rather than a finished display: the `panel:` line is a guess the comment
-admits to, and `dashboard:` is a placeholder.
+point rather than a finished display: the `panel:` line is a guess — from the
+advertised name, when it names a size, otherwise the fallback the comment
+admits to (`guess_panel`, `src/maverick/devices/guess.py`) — and `dashboard:`
+is a placeholder. Each listed tag carries the same guess as `(looks like …)`
+when one can be made.
 
 `--timeout` sets how long the scan runs (default 10 seconds). Tags advertise
 only intermittently to save power, so a tag that does not appear in one scan may
 appear in the next.
 
 Scanning always uses the local adapter — there is no scan-through-Home-Assistant
-path — so in a container it fails, and says so:
+path — so in a container it fails, and says so (the setup UI's scan button is
+not offered there at all, and `POST /api/opendisplay/scan` answers **409** in
+the app):
 
 ```text
 BLE scan failed: <error>
@@ -142,9 +198,12 @@ displays:
 ```
 
 `device_id` is **the device registry id** from the OpenDisplay integration — not
-the entity id, not the MAC. Open the device page in Home Assistant and take it
-from the URL (`/config/devices/device/<this>`). Getting this wrong is the single
-most common failure in this mode, which is why the error message says so.
+the entity id, not the MAC. The setup UI's tag picker writes it for you
+([above](#adding-a-tag-from-the-setup-ui)); by hand, open the device page in
+Home Assistant and take it from the URL (`/config/devices/device/<this>`).
+Getting this wrong was the single most common failure in this mode, which is
+why the error message says so and why `probe()` now checks the id against the
+registry before a frame is ever sent.
 
 Maverick does not send the image over the wire to Home Assistant. It writes a
 PNG somewhere both processes can see and calls `opendisplay.upload_image` with a
@@ -186,12 +245,12 @@ $ pip install "maverick-eink-dashboard[opendisplay]"
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `mac` | unset | The tag's MAC. Either this or `device_name` is required; without both, delivery raises `opendisplay mode 'ble' needs either 'mac' or 'device_name'. Run `maverick scan` to find your tags.` |
+| `mac` | unset | The tag's MAC. Either this or `device_name` is required; without both, delivery raises `opendisplay mode 'ble' needs either 'mac' or 'device_name'. Run `maverick scan` to find your tags.` and `probe()` returns the shorter `neither transport.mac nor transport.device_name is set`. |
 | `device_name` | unset | The advertised name, when the MAC is not known. |
 | `encryption_key` | unset | AES-128 key, **as hex** — `bytes.fromhex()` is applied, so 32 hex characters, no `0x`, no colons. Unset sends unencrypted, which tags that do not require a key accept. A malformed value raises a `ValueError` from `fromhex` before any BLE work happens. |
 | `timeout` | `20` | Seconds to wait for the BLE connection. Raise it for a tag at the edge of range; a slow connection is more common than a refused one. |
 | `max_attempts` | `4` | Connection attempts before giving up. BLE connections to battery tags fail often and retry cheaply, which is why the default is not 1. |
-| `scan_timeout` | `10` | Seconds the transport's own `probe()` scans for. Nothing calls `probe()` today — no CLI command and no route reaches it — so this option currently has no effect. |
+| `scan_timeout` | `10` | Seconds the transport's own `probe()` scans for, when `maverick check` or the setup UI's *Test delivery* runs it. |
 
 `timeout` and `max_attempts` multiply: with the defaults, a tag that is simply
 not there costs about eighty seconds before `deliver()` returns a failure. On a
@@ -288,10 +347,23 @@ Checked on this repository:
   including the configuration block it prints. **The command was not run** —
   there is no Bluetooth adapter here — so the tag names and MACs in it are
   invented, and only the shape of the output is real.
+* The setup UI's tag list, tag picker, mode picker and *Test delivery* were
+  driven in a real Chromium against a served Maverick whose Home Assistant
+  client was a double answering `config/device_registry/list` with three
+  invented tags: the list appeared, *Add as display* prefilled the panel and
+  the id, and the probe reported the id as known. The device registry payload
+  shape is Home Assistant's `websocket_list_devices`
+  (`homeassistant/helpers/device_registry.py`), read from source, not captured
+  (`tests/test_opendisplay_onboarding.py`).
+* `mode: ble` inside the app is refused before any BLE work, by setting
+  `SUPERVISOR_TOKEN` in a test and calling `deliver` (the same file).
 
 Not checked: any BLE connection, any Home Assistant service call, any tag, any
-refresh timing, and the behaviour of `py-opendisplay`, which is not installed
-here.
+refresh timing, the behaviour of `py-opendisplay`, which is not installed
+here, and the model strings a real OpenDisplay integration reports — the
+panel guess is written to size words (`2.9`, `4.2in`, `7.5"`) and ink words
+(`BWR`, `Spectra`), and a model string with neither gives no guess rather
+than a wrong one.
 
 ## What to check first when it does not work
 
@@ -307,6 +379,8 @@ same, and these are every failure this transport can produce
 | Message | What to do |
 | --- | --- |
 | `opendisplay mode 'ha' needs a Home Assistant connection; set home_assistant.url and home_assistant.token, or use mode: ble.` | The Home Assistant client is not connected. Check `home_assistant.url`/`token` with `maverick check`, or switch to `mode: ble`. |
+| `opendisplay mode 'ble' is not available in the Home Assistant app: it has no Bluetooth of its own. Use mode: ha, …` | `mode: ble` inside the app. Use `ha`, or drop the key. |
+| `device_id '…' is not a device of the OpenDisplay integration in Home Assistant; pick the tag from the list in the setup UI, or copy the id from the device page URL.` *(probe)* | The id is not one the integration owns — an entity id or a MAC in its place. Pick the tag in the setup UI. |
 | `transport 'opendisplay' requires the 'device_id' option to be set` *(raised)* | `mode: ha` without `device_id`. Take it from the device page URL in Home Assistant. |
 | `opendisplay.upload_image failed: … it is the device registry id, not the entity id or the MAC.` | The action itself failed. Confirm the OpenDisplay integration is installed and the tag is online, then re-check `device_id` — the message names the usual mistake because it is the usual mistake. |
 | `cannot write to /media/maverick (…). The add-on needs the 'media:rw' mapping, or set transport.media_dir to a shared path.` | The process cannot create or write `media_dir`. Grant the mapping, or point `media_dir` somewhere writable *and* visible to Home Assistant. |

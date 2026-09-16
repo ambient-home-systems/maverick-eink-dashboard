@@ -33,7 +33,15 @@ class PanelProfile:
     default_transport: str = "http_pull"
     default_format: str | None = None
     measured_palette: str | None = None
+    #: The `model:` ESPHome's display component knows this panel by, or None
+    #: when ESPHome ships no driver for it. `scripts/check_esphome.py` runs
+    #: `esphome config` over a generated configuration for every panel that
+    #: names one, so a value here has been validated against ESPHome's schema.
     esphome_model: str | None = None
+    #: The display platform that model belongs to. Almost every catalogued
+    #: panel is a `waveshare_epaper` one; the Spectra 6 panels live under
+    #: ESPHome's newer `epaper_spi` component instead.
+    esphome_platform: str | None = None
     supports_partial: bool = False
     #: Do a full (flashing) refresh every N frames to clear accumulated ghosting.
     full_refresh_every: int = 0

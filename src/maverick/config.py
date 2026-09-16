@@ -298,6 +298,14 @@ class ServerConfig(Base):
         default=True,
         description="Serve the setup UI at `/`. False serves the JSON API alone.",
     )
+    esphome_dir: str = Field(
+        default="",
+        description=(
+            "Directory the ESPHome Device Builder reads its configurations from, for the "
+            "setup UI's *Send to ESPHome* button. Empty offers nothing standalone; in the "
+            "Home Assistant app the ESPHome add-on's own folder is found without it."
+        ),
+    )
 
 
 # --------------------------------------------------------------------------- #
