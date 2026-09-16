@@ -175,12 +175,20 @@ panel:
   "height": 800,
   "color_scheme": "gray16",
   "dpi": 167,
+  "rotation": 0,
+  "frame_format": null,
   "supports_partial": false,
   "default_transport": "http_pull",
   "esphome_model": null,
   "notes": ""
 }
 ```
+
+`rotation` and `frame_format` are the panel's own `native_rotation` and
+`default_format` (`src/maverick/devices/profiles.py`) — what
+`DisplayConfig.rotation` and `.frame_format` resolve to when left unset, and
+what the setup UI's Add display form shows as the placeholder for those two
+overrides.
 
 ### `GET /api/transports`
 

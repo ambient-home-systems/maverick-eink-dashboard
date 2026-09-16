@@ -463,9 +463,6 @@ function severityClass(severity) {
   return { error: 'err', warning: 'warn', info: 'muted' }[severity] || '';
 }
 
-const DOCS_URL =
-  'https://github.com/ambient-home-systems/maverick-eink-dashboard#configuration';
-
 function emptyState(main) {
   let card = document.getElementById('no-displays');
   if (state.length) {
@@ -477,10 +474,360 @@ function emptyState(main) {
   card.className = 'card';
   card.id = 'no-displays';
   card.innerHTML = `<h2>No displays configured</h2>
-<div class="meta">Add a <code>displays:</code> entry to your config and restart.
-See the <a class="docs-link">docs</a>.</div>`;
-  card.querySelector('.docs-link').href = DOCS_URL;
+<div class="meta">Nothing is set up to render yet.</div>
+<div class="row"><button type="button" class="add-btn">Add display</button></div>`;
+  card.querySelector('.add-btn').addEventListener('click', (e) => openAddDialog(e.currentTarget));
   main.appendChild(card);
+}
+
+// ----------------------------------------------------- the add-display form --
+
+// The dialog's markup is server-rendered (`src/maverick/server/ui.py`) since
+// its fields are fixed, unlike the per-display editor P2.3 builds from the
+// schema. What this module owns is everything the markup cannot know without
+// a fetch: the panel and transport lists, every field's help text (each
+// node's `data-help` names a path into `GET /api/schema/display`, so the copy
+// here and the description in `src/maverick/config.py` cannot drift apart),
+// and turning a 422 or 409 from `POST /api/displays` into a message under the
+// field it is about.
+
+/** Cached once per page load: the three endpoints the form needs. */
+let addDialogData = null;
+/** The element focus should return to when the dialog closes. */
+let addDialogOpener = null;
+/** Set just before closing on a successful add, so `close` offers it instead. */
+let addDialogJustAdded = '';
+/** Whether the user has typed in the id field directly, so name no longer drives it. */
+let addIdEdited = false;
+
+function slugify(value) {
+  return (value || '')
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/^[^a-z0-9]+/, '');
+}
+
+async function openAddDialog(opener) {
+  const dialog = document.getElementById('add-dialog');
+  if (!dialog) return;
+  addDialogOpener = opener || document.activeElement;
+  resetAddForm();
+  dialog.showModal();
+  document.getElementById('add-name').focus();
+  await ensureAddDialogData();
+}
+
+function resetAddForm() {
+  const form = document.getElementById('add-form');
+  if (form) form.reset();
+  addIdEdited = false;
+  dialogError('add-dialog-error', '');
+  dialogError('add-network-error', '');
+  for (const el of document.querySelectorAll('#add-dialog .field-error')) {
+    el.textContent = '';
+    el.hidden = true;
+  }
+  // `form.reset()` puts the panel and transport <select>s back to their first
+  // option, but does not know to refresh what depends on the *value* of
+  // either — the panel notes, the advanced placeholders, the transport's own
+  // option fields — so a second open of a dialog left mid-edit would show
+  // last time's transport fields under this time's selection.
+  if (addDialogData) {
+    onPanelChange();
+    onTransportChange();
+  } else {
+    updatePanelNotes(null);
+  }
+}
+
+async function ensureAddDialogData() {
+  const submit = document.getElementById('add-submit');
+  if (addDialogData) return;
+  setBusy(submit, true);
+  try {
+    const [panelsRes, transportsRes, schemaRes] = await Promise.all([
+      authFetch('api/panels'), authFetch('api/transports'), authFetch('api/schema/display'),
+    ]);
+    addDialogData = {
+      panels: await panelsRes.json(),
+      transports: await transportsRes.json(),
+      schema: await schemaRes.json(),
+    };
+    populateAddDialog(addDialogData);
+  } catch (error) {
+    if (!error.unauthorised) dialogError('add-dialog-error', 'Could not load the form: ' + error.message);
+  } finally {
+    setBusy(submit, false);
+  }
+}
+
+function populateAddDialog(data) {
+  fillHelpTexts(data.schema);
+  populatePanelSelect(data.panels);
+  populateEnumSelect(document.getElementById('add-color-scheme'), data.schema, 'ColorScheme');
+  populateEnumSelect(document.getElementById('add-frame-format'), data.schema, 'FrameFormat');
+  populateTransportSelect(data.transports);
+  onPanelChange();
+  onTransportChange();
+}
+
+/** `data-help="dashboard"` or `data-help="schedule.every"` -> a schema description. */
+function fillHelpTexts(schema) {
+  for (const el of document.querySelectorAll('#add-dialog [data-help]')) {
+    const path = el.dataset.help.split('.');
+    let node = path.length === 2 ? schema.$defs.ScheduleConfig.properties[path[1]] : schema.properties[path[0]];
+    el.textContent = (node && node.description) || '';
+  }
+}
+
+function populatePanelSelect(panels) {
+  const select = document.getElementById('add-panel');
+  const groups = new Map();
+  for (const p of panels) {
+    const label = p.vendor ? p.vendor[0].toUpperCase() + p.vendor.slice(1) : 'Other';
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(p);
+  }
+  select.replaceChildren();
+  for (const label of [...groups.keys()].sort()) {
+    const group = document.createElement('optgroup');
+    group.label = label;
+    for (const p of groups.get(label).sort((a, b) => a.name.localeCompare(b.name))) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} — ${p.width}×${p.height} · ${p.color_scheme} · ${p.dpi} dpi`;
+      group.appendChild(opt);
+    }
+    select.appendChild(group);
+  }
+}
+
+function populateTransportSelect(transports) {
+  const select = document.getElementById('add-transport');
+  select.replaceChildren();
+  for (const t of transports) {
+    const opt = document.createElement('option');
+    opt.value = t.name;
+    opt.textContent = t.name;
+    opt.title = t.description;
+    select.appendChild(opt);
+  }
+}
+
+/** An enum <select>, `""` meaning "let the panel decide" — its label gets the panel's value. */
+function populateEnumSelect(select, schema, defName) {
+  select.replaceChildren();
+  const unset = document.createElement('option');
+  unset.value = '';
+  unset.textContent = 'panel default';
+  select.appendChild(unset);
+  for (const value of (schema.$defs[defName] || {}).enum || []) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    select.appendChild(opt);
+  }
+}
+
+function currentPanel() {
+  if (!addDialogData) return null;
+  const id = document.getElementById('add-panel').value;
+  return addDialogData.panels.find((p) => p.id === id) || null;
+}
+
+function onPanelChange() {
+  const panel = currentPanel();
+  updatePanelNotes(panel);
+  updateAdvancedPlaceholders(panel);
+}
+
+function updatePanelNotes(panel) {
+  const notes = document.getElementById('add-panel-notes');
+  notes.textContent = (panel && panel.notes) || '';
+  notes.hidden = !notes.textContent;
+}
+
+function updateAdvancedPlaceholders(panel) {
+  if (!panel) return;
+  document.getElementById('add-width').placeholder = String(panel.width);
+  document.getElementById('add-height').placeholder = String(panel.height);
+  document.getElementById('add-dpi').placeholder = String(panel.dpi);
+  defaultOptionLabel('add-color-scheme', `panel default (${panel.color_scheme})`);
+  defaultOptionLabel('add-rotation', `panel default (${panel.rotation}°)`);
+  defaultOptionLabel('add-frame-format', panel.frame_format
+    ? `panel default (${panel.frame_format})`
+    : 'panel default (from transport)');
+}
+
+function defaultOptionLabel(selectId, label) {
+  const option = document.querySelector(`#${selectId} option[value=""]`);
+  if (option) option.textContent = label;
+}
+
+function onTransportChange() {
+  const container = document.getElementById('add-transport-options');
+  const help = document.getElementById('add-transport-help');
+  container.replaceChildren();
+  if (!addDialogData) return;
+  const type = document.getElementById('add-transport').value;
+  const info = addDialogData.schema.transports[type];
+  help.textContent = (info && info.description) || '';
+  if (!info) return;
+  if (type === 'mqtt') {
+    const note = document.createElement('div');
+    note.className = 'help warn';
+    note.textContent = 'Needs MQTT enabled globally: mqtt.enabled: true, or the ' +
+      'Mosquitto broker app under the Supervisor.';
+    container.appendChild(note);
+  }
+  for (const [key, description] of Object.entries(info.options)) {
+    const field = document.createElement('div');
+    field.className = 'field';
+    const id = `add-opt-${key}`;
+    field.innerHTML = `<label for="${id}"></label><input type="text" autocomplete="off">` +
+      `<div class="help"></div>`;
+    const label = field.querySelector('label');
+    label.setAttribute('for', id);
+    label.textContent = key;
+    const input = field.querySelector('input');
+    input.id = id;
+    input.dataset.transportKey = key;
+    field.querySelector('.help').textContent = description;
+    container.appendChild(field);
+  }
+}
+
+function dialogError(id, message) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+function fieldError(name, message) {
+  const el = document.querySelector(`#add-dialog [data-error="${name}"]`);
+  if (!el) {
+    dialogError('add-dialog-error', message);
+    return;
+  }
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+function buildAddBody() {
+  const value = (id) => document.getElementById(id).value.trim();
+  const schedule = {};
+  if (value('add-every')) schedule.every = value('add-every');
+  if (value('add-cron')) schedule.cron = value('add-cron');
+  if (value('add-quiet-hours')) schedule.quiet_hours = value('add-quiet-hours');
+  const onChange = value('add-on-change').split(',').map((s) => s.trim()).filter(Boolean);
+  if (onChange.length) schedule.on_change = onChange;
+
+  const transport = { type: value('add-transport') };
+  for (const input of document.querySelectorAll('#add-transport-options [data-transport-key]')) {
+    if (input.value.trim()) transport[input.dataset.transportKey] = input.value.trim();
+  }
+
+  const body = {
+    id: value('add-id'),
+    name: value('add-name'),
+    panel: value('add-panel'),
+    dashboard: value('add-dashboard') || '/lovelace/0',
+    enabled: document.getElementById('add-enabled').checked,
+    schedule,
+    transport,
+  };
+  if (value('add-width')) body.width = Number(value('add-width'));
+  if (value('add-height')) body.height = Number(value('add-height'));
+  if (value('add-color-scheme')) body.color_scheme = value('add-color-scheme');
+  if (value('add-dpi')) body.dpi = Number(value('add-dpi'));
+  if (value('add-rotation')) body.rotation = Number(value('add-rotation'));
+  if (value('add-frame-format')) body.frame_format = value('add-frame-format');
+  return body;
+}
+
+/** Like `authFetch`, but keeps the structured 422/409 body instead of flattening it. */
+async function postDisplay(body) {
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, authHeaders());
+  let response;
+  try {
+    response = await fetch('api/displays', { method: 'POST', headers, body: JSON.stringify(body) });
+  } catch (e) {
+    const error = new Error('Could not reach Maverick. Check the connection and try again.');
+    error.network = true;
+    throw error;
+  }
+  if (response.status === 401) {
+    askForToken();
+    const error = new Error('Maverick needs its API token.');
+    error.unauthorised = true;
+    throw error;
+  }
+  if (response.status === 201) return response.json();
+  let detail = null;
+  try { detail = (await response.json()).detail; } catch (e) { /* no body */ }
+  const error = new Error(typeof detail === 'string' ? detail : 'The display could not be added.');
+  error.status = response.status;
+  error.fields = Array.isArray(detail) ? detail : null;
+  throw error;
+}
+
+async function submitAddDisplay(event) {
+  event.preventDefault();
+  const submit = document.getElementById('add-submit');
+  dialogError('add-dialog-error', '');
+  dialogError('add-network-error', '');
+  for (const el of document.querySelectorAll('#add-dialog .field-error')) {
+    el.textContent = '';
+    el.hidden = true;
+  }
+  setBusy(submit, true);
+  try {
+    const created = await postDisplay(buildAddBody());
+    // Poll before closing, not after: the `close` event (queued, not
+    // synchronous) is what moves focus onward, and it has to have a finished
+    // card to focus rather than racing it.
+    await poll();
+    addDialogJustAdded = created.id;
+    document.getElementById('add-dialog').close();
+  } catch (error) {
+    if (error.unauthorised) {
+      // The token field is already showing; the dialog stays open with
+      // everything the user typed so far still in it.
+    } else if (error.network) {
+      dialogError('add-network-error', error.message);
+    } else if (error.status === 409) {
+      fieldError('id', error.message);
+    } else if (error.fields) {
+      applyFieldErrors(error.fields);
+    } else {
+      dialogError('add-dialog-error', error.message);
+    }
+  } finally {
+    setBusy(submit, false);
+  }
+}
+
+/** FastAPI's 422 body: a list of `{loc: ["body", "field", ...], msg}`. */
+function applyFieldErrors(fields) {
+  for (const item of fields) {
+    const loc = item.loc || [];
+    const name = loc.length > 1 ? String(loc[1]) : '';
+    const message = String(item.msg || '').replace(/^Value error,\s*/, '');
+    fieldError(name, message);
+  }
+}
+
+/** Draws the user's eye to the new card's own render action rather than adding a
+ * second button that would do the same thing every other card already offers. */
+function offerRenderNow(id) {
+  const card = cards.get(id);
+  if (!card) return;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  card.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+  const button = card.querySelector('.act-render');
+  if (button) button.focus();
 }
 
 // ------------------------------------------------------------- formatting --
@@ -587,5 +934,35 @@ if (main) {
     } else {
       pollAgain();
     }
+  });
+}
+
+const addDialog = document.getElementById('add-dialog');
+if (addDialog) {
+  document.getElementById('add-display-btn')?.addEventListener(
+    'click', (e) => openAddDialog(e.currentTarget)
+  );
+  document.getElementById('add-cancel').addEventListener('click', () => addDialog.close());
+  document.getElementById('add-form').addEventListener('submit', submitAddDisplay);
+  document.getElementById('add-panel').addEventListener('change', onPanelChange);
+  document.getElementById('add-transport').addEventListener('change', onTransportChange);
+  document.getElementById('add-name').addEventListener('input', (e) => {
+    if (!addIdEdited) document.getElementById('add-id').value = slugify(e.target.value);
+  });
+  document.getElementById('add-id').addEventListener('input', () => { addIdEdited = true; });
+  // A native <dialog> already returns focus to whatever was focused before
+  // `showModal()`, but only when that element is still in the document — the
+  // empty-state's Add display button is recreated on every poll, so it can be
+  // gone by the time this fires. A successful add offers the new card's own
+  // render action instead of returning focus to the opener.
+  addDialog.addEventListener('close', () => {
+    const justAdded = addDialogJustAdded;
+    addDialogJustAdded = '';
+    if (justAdded) {
+      offerRenderNow(justAdded);
+    } else if (addDialogOpener && document.body.contains(addDialogOpener)) {
+      addDialogOpener.focus();
+    }
+    addDialogOpener = null;
   });
 }
