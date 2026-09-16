@@ -481,11 +481,41 @@ pull protocol a battery panel needs.
 ## Running as a service
 
 On Home Assistant OS or Supervised, [the app](#install-as-a-home-assistant-app)
-is the packaged way to run it. There is **no standalone Docker image yet**:
-[`app/Dockerfile`](app/Dockerfile) is built by the Supervisor and expects the
-app's options file, so it is not a general-purpose image; a plain one is on the
-roadmap in [docs/roadmap.md](docs/roadmap.md). Everywhere else, run it under
-systemd.
+is the packaged way to run it. Everywhere else, run it as a Docker container or
+under systemd.
+
+### Docker
+
+The root [`Dockerfile`](Dockerfile) builds a standalone image — distinct from
+[`app/Dockerfile`](app/Dockerfile), which the Supervisor builds and which
+expects the Home Assistant app's own options file. This one takes a config file
+by volume instead:
+
+```bash
+docker build -t maverick .
+docker run -d \
+  --name maverick \
+  -p 5000:5000 \
+  -v /path/to/maverick.yaml:/config/maverick.yaml \
+  -v /path/to/media:/media \
+  -v /path/to/share:/share \
+  maverick
+```
+
+`/config/maverick.yaml` is the config file (`config.example.yaml` is a starting
+point); `/media` and `/share` are volumes a display's `dashboard` might
+reference through Home Assistant's own media or local file paths. The image
+installs Debian's `chromium` package and sets `MAVERICK_CHROMIUM_PATH` itself,
+the same way [`app/Dockerfile`](app/Dockerfile) does, so no separate Chromium
+install is needed inside the container.
+
+To develop against a real Home Assistant instead of production, see "Running
+against a real Home Assistant" in
+[CONTRIBUTING.md](CONTRIBUTING.md#running-against-a-real-home-assistant), which
+stands up Home Assistant, Mosquitto and this image together with
+`docker-compose.dev.yml`.
+
+### systemd
 
 ```ini
 # /etc/systemd/system/maverick.service

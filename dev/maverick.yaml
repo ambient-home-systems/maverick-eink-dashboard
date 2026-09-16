@@ -1,0 +1,38 @@
+# Config for the `maverick` service in docker-compose.dev.yml — a real Home
+# Assistant and a real Mosquitto broker, both running as the other two
+# services on the same compose network, in place of production credentials.
+#
+# `${HA_TOKEN}` is read from the environment `docker-compose.dev.yml` passes
+# through from the host shell. There is no default: the loop is not useful
+# without a token, and `scripts/dev.sh check` says so if it is missing.
+home_assistant:
+  url: http://homeassistant:8123
+  token: ${HA_TOKEN}
+
+mqtt:
+  enabled: true
+  host: mosquitto
+  port: 1883
+
+server:
+  host: 0.0.0.0
+  port: 5000
+  # What a panel on the host's own network would use to reach this container.
+  # docker-compose.dev.yml publishes the `maverick` service on the host's
+  # port 5000, so from the host machine itself this is correct; pointed at a
+  # physical panel on the LAN, change it to the host's LAN address.
+  base_url: http://localhost:5000
+
+data_dir: /config/data
+log_level: debug
+
+displays:
+  # Renders the demo dashboard dev/homeassistant/ui-lovelace.yaml seeds.
+  - id: dev
+    name: Dev
+    panel: waveshare-7in5-mono
+    dashboard: /lovelace/default_view
+    schedule:
+      every: 5m
+    transport:
+      type: http_pull

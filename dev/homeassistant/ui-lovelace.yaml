@@ -1,0 +1,22 @@
+# The dashboard `dev/maverick.yaml` points at (`dashboard: /lovelace/default_view`).
+# Cards are demo entities from the `demo:` integration in configuration.yaml —
+# nothing here needs a real device.
+title: Maverick dev
+views:
+  - title: Home
+    path: default_view
+    cards:
+      - type: entities
+        title: Climate
+        entities:
+          - climate.heatpump
+          - climate.hvac
+      - type: entities
+        title: Sensors
+        entities:
+          - sensor.outside_temperature
+          - sensor.outside_humidity
+      - type: light
+        entity: light.bed_light
+      - type: light
+        entity: light.ceiling_lights

@@ -430,9 +430,6 @@ assume works.
   is no sidebar panel, no config flow, no HACS listing and no `maverick.*`
   actions. Outside the app, Maverick is a standalone service that talks to
   Home Assistant over its APIs.
-- **There is no standalone Dockerfile.** The app image is built by the
-  Supervisor and expects the app's options; elsewhere, running it means a
-  Python 3.11+ environment and systemd, as the README describes.
 - **There is no control card or tile feature.** [Pages](#pages) and the actions
   that drive them exist, but the Home Assistant end of them is the MQTT select
   and whatever automation you write around it: the tile-card feature, the card

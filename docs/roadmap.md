@@ -32,7 +32,10 @@ different layer.
   as plain Docker plus the integration pointed at its URL. The add-on exists —
   Home Assistant now calls it an *app*, and it lives in
   [`app/`](../app/DOCS.md) — but without ingress: it exposes port 5000 rather
-  than a sidebar entry. A standalone Dockerfile does not exist.
+  than a sidebar entry. The plain-Docker image Container and Core users would
+  need now exists too, as the root [`Dockerfile`](../Dockerfile) — see
+  "Docker" in [README.md](../README.md#docker) — but it is only that: a
+  general-purpose image, with none of ingress's auth handling.
 - **An integration** would be distributed via HACS, provide UI setup with no
   YAML, one device per panel, and `maverick.render` / `set_page` actions —
   **with no MQTT broker required**. That last point is the argument for it:
