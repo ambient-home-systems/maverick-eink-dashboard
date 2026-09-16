@@ -151,11 +151,19 @@ def cmd_check(args: argparse.Namespace) -> int:
     for display in config.displays:
         resolved = display.resolved()
         flag = " " if display.enabled else "-"
+        # A display with pages has no single `dashboard` worth printing: the
+        # attribute still holds its default, which would read as the thing the
+        # panel shows (`DisplayConfig.pages`, `src/maverick/config.py`).
+        if display.pages:
+            pages = ", ".join(f"{p.name} ({p.dashboard})" for p in display.pages)
+            what = f"      pages: {pages}" + (" [rotating]" if display.rotate else "")
+        else:
+            what = f"      dashboard: {display.dashboard}"
         print(
             f"  {flag} {display.id:16s} {resolved.profile.name}\n"
             f"      {resolved.width}x{resolved.height} {resolved.color_scheme.value} "
             f"{resolved.dpi}dpi rot{resolved.rotation} -> {display.transport.type}\n"
-            f"      dashboard: {display.dashboard}"
+            f"{what}"
         )
         try:
             get_transport(display.transport.type, {})

@@ -1,11 +1,13 @@
 # Maverick — Roadmap
 
-> Last reviewed against commit `992fbfc`.
+> Last reviewed against commit `a964f6c`.
 >
-> Every feature proposed here is unbuilt. What does exist is described in
-> [architecture.md](architecture.md), and where a proposal builds on it this
-> page says so and links across. The YAML, entity names and actions below are
-> proposed syntax, not documentation of a working feature.
+> Every feature proposed here is unbuilt, with one exception: the page list
+> under Decision 3 is built, and its syntax has moved to
+> [architecture.md](architecture.md#pages). What else exists is described
+> there too, and where a proposal builds on it this page says so and links
+> across. The YAML, entity names and actions below are proposed syntax, not
+> documentation of a working feature.
 
 The render service works. What it is not yet is an *app*: something you install
 from inside Home Assistant, author dashboards for without guessing, and control
@@ -105,36 +107,25 @@ missing pieces are the templating and the plumbing rather than the capture.
 
 ## Decision 3 — Controlling panels from a dashboard
 
-A control tile is straightforward, but asking for one exposes a gap: **there is
-no concept of pages.** A display renders the one dashboard named in its config.
-That is worth adding on its own merits — it is how a panel shows weather in the
+A control tile is straightforward, but asking for one exposed a gap: **there was
+no concept of pages.** A display rendered the one dashboard named in its config.
+That was worth adding on its own merits — it is how a panel shows weather in the
 morning and a calendar in the evening.
 
-**Backend first.** Each display would gain an ordered `pages` list — a dashboard
-or template per page, with an optional dwell time and rotation — plus
-`next_page`, `previous_page`, `set_page` and `refresh` actions. Automations get
-this for free; the tile is then a thin client over it.
+**The backend is built.** A display now carries an ordered `pages` list with an
+optional dwell time and rotation, plus `set_page`, `next_page` and
+`previous_page` over HTTP and MQTT, and a page picker in the setup UI.
+Automations have it already; the tile is a thin client over it. The syntax, the
+rotation rules and what changes a page are documented in
+[architecture.md](architecture.md#pages) — this page no longer proposes them.
 
-**Proposed syntax — this is not valid configuration today.** `DisplayConfig` is
-`extra="forbid"`, so a config file containing `pages:` is rejected at load with
-an error naming the key.
-
-```yaml
-# PROPOSED — rejected by the current config loader
-displays:
-  - id: kitchen
-    pages:
-      - dashboard: /eink/overview
-        dwell: 30m
-      - dashboard: /eink/calendar
-    rotate: true
-```
-
-**Then the surface.**
+**What is left is the surface.**
 
 - **A tile-card feature** — the control strip under a standard tile. More
   idiomatic for current Home Assistant than a bespoke card, and far less code.
-  Page cycling belongs here.
+  Page cycling belongs here; today it is the `select.<name>_page` entity and
+  whatever automation you write around it
+  ([MQTT reference](reference/mqtt.md#entities)).
 - **A full card** for the live thumbnail of what the panel is showing, refresh
   and full-refresh, a page picker, and status: last render, battery, signal,
   error state. The MQTT `image` entity already carries the thumbnail, so the
@@ -166,14 +157,15 @@ Estimates are re-based on what the repository now contains.
 | 0 | The render service | Done | *was 3–5 weeks* | Pipeline, panel catalogue, five transports, scheduler, HTTP API, CLI, MQTT discovery |
 | 1 | Hardware validation | Not started | 1–2 weeks | One panel per transport path confirms the catalogue, the measured inks and the refresh behaviour |
 | 2 | Add-on, ingress and integration | In progress | 2–3 weeks | The app is built ([`app/`](../app/DOCS.md)), without ingress; the sidebar entry, UI setup, and devices and actions without a broker remain |
-| 3 | Pages and control surface | Not started | 2 weeks | It becomes controllable: rotation, tile feature, card, fleet view |
+| 3 | Pages and rotation | **Done** | *was part of 2 weeks* | An ordered `pages` list per display with dwell times and rotation, page actions over HTTP and MQTT, a Page select in Home Assistant and a picker in the setup UI ([architecture.md](architecture.md#pages)) |
+| 3b | Control surface | Not started | 1–2 weeks | The Home Assistant end of it: tile feature, card, fleet view, over the page actions phase 3 built |
 | 4 | Strategy, live preview and linting | Not started | 1–2 weeks | It becomes authorable by someone who has never thought about dithering. Cheaper than first estimated: the linter and the millimetre type scale exist |
 | 5 | Template source | Not started | 1 week | Power users get precise control for dense layouts. Cheaper than first estimated: the renderer already loads any URL |
 
-**7–10 weeks remaining**, against the three to five the render service was
-estimated at and the 8–12 originally put on phases 2–5. The three questions
-above more than double the project — an argument for sequencing them, not for
-dropping them.
+**6–10 weeks remaining** — phase 3's page list has come off the table since the
+last estimate — against the three to five the render service was estimated at
+and the 8–12 originally put on phases 2–5. The three questions above more than
+double the project: an argument for sequencing them, not for dropping them.
 
 ## Still open
 

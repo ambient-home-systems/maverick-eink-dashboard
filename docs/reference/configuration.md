@@ -224,7 +224,9 @@ One entry per physical panel. `id` is the only required key: the keys beside it 
 | `id` | `str` | **required** | Identifier for this display, unique within the file. It becomes a URL path segment and an MQTT topic level. |
 | `name` | `str` | `""` | Human-readable name, shown in the setup UI and used for the Home Assistant device. Empty derives one from the id. |
 | `panel` | `str` | `"generic-mono"` | Panel id from the catalog, as listed by `maverick panels`. It supplies the resolution, color scheme, dpi, rotation, frame format and refresh behavior that the keys below override. |
-| `dashboard` | `str` | `"/lovelace/0"` | What to render: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as absolute, so `file:///...` renders a local page. |
+| `dashboard` | `str` | `"/lovelace/0"` | What to render: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as absolute, so `file:///...` renders a local page. The single-page shorthand: set this or `pages`, not both. |
+| `pages` | `list` of [section](#displayspages) | `[]` | Several dashboards for one panel, rendered one at a time. The page is changed by `POST /api/displays/{id}/page`, by the Home Assistant Page select, or on its own with `rotate`. Empty leaves the display on `dashboard`. |
+| `rotate` | `bool` | `false` | Advance to the next page on each scheduled render, once the current page's `dwell` has elapsed. Off leaves the page where it was put. |
 | `enabled` | `bool` | `true` | Render and deliver this display. False keeps it configured but idle. |
 | `width` | `int` \| `None` | *unset* | Panel width in pixels. Unset uses the catalog value for `panel`. |
 | `height` | `int` \| `None` | *unset* | Panel height in pixels. Unset uses the catalog value for `panel`. |
@@ -241,7 +243,19 @@ One entry per physical panel. `id` is the only required key: the keys beside it 
 | `pack` | [section](#displayspack) | *section defaults* | Controller quirks for raw-frame transports. |
 | `esphome` | [section](#displaysesphome) | *section defaults* | Inputs for the ESPHome configuration `maverick esphome <id>` generates. |
 
-**Validation.** `id` must be lowercase alphanumeric with `-` or `_`, starting with a letter or digit. `panel` must name a catalog entry, and `rotation` must be 0, 90, 180 or 270.
+**Validation.** `id` must be lowercase alphanumeric with `-` or `_`, starting with a letter or digit. `panel` must name a catalog entry, and `rotation` must be 0, 90, 180 or 270. `dashboard` and `pages` are alternatives, and page names are unique. Both together would leave two answers to "what does this panel show", and nothing to say which wins — so it is rejected at load rather than resolved by a precedence rule nobody would remember. A page is selected by name over MQTT and in the setup UI, so two pages sharing one is rejected too.
+
+## displays[].pages[]
+
+One entry per dashboard a display cycles through. A display sets either `dashboard` or `pages`, and `rotate` is what advances them on the display's own schedule.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `dashboard` | `str` | **required** | What to render for this page: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Read exactly as `displays[].dashboard` is. |
+| `name` | `str` | `""` | Label for this page, shown in the setup UI and offered by the Home Assistant Page select. Empty derives one from the last segment of `dashboard`. Names must be unique within a display, because a page is selected by name. |
+| `dwell` | `"5m"` \| `float` \| `None` | *unset* | How long this page stays on the panel before `rotate` moves to the next one. Unset advances at every scheduled render; the page never changes faster than the schedule that drives it. |
+
+**Validation.** An empty `name` is derived from `dashboard`, and `dwell` must be a duration.
 
 ## displays[].theme
 

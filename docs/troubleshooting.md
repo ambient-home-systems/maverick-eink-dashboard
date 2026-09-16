@@ -142,6 +142,9 @@ Maverick runs under.
 | `display id {v!r} must be lowercase alphanumeric with - or _ (it becomes a URL path and an MQTT topic)` | `displays[].id` fails the slug pattern | Use lowercase letters, digits, `-` and `_`, starting with a letter or digit. |
 | `rotation must be 0, 90, 180 or 270` | `displays[].rotation` set to anything else | One of the four right-angle values only. |
 | `duplicate display id {display.id!r}` | two entries under `displays:` share an `id` | Rename one. |
+| `set either 'dashboard' or 'pages', not both: 'dashboard' is the single-page shorthand, and a display with pages renders those` | a display has both a `dashboard` and a `pages` list | Delete one. `dashboard` is the shorthand for a display with a single page; a display with `pages` renders those and nothing else. |
+| `page names must be unique within a display, because a page is selected by name; repeated: {', '.join(repr(n) for n in duplicates)}` | two of a display's `pages` derived or were given the same `name` | Give each page its own `name:`. An empty one is derived from the last segment of its `dashboard`, so two paths ending in the same word collide. |
+
 
 Also validated at load time but raised as `KeyError`, not `ConfigError`, so it
 is printed by the generic handler as `error: KeyError: ...`:
@@ -772,8 +775,39 @@ nothing else is publishing to `{base_topic}/display/+/command`.
 ```
 
 **Cause:** a recognised topic, but a payload that is none of `refresh`,
-`PRESS`, `press`, `full_refresh`, `schedule_on` or `schedule_off`.
+`PRESS`, `press`, `full_refresh`, `schedule_on`, `schedule_off`,
+`page:<name>`, `next_page` or `previous_page`.
 **Fix:** as above — this is diagnostic, not something to configure around.
+
+```text
+[%s] command %r rejected: %s
+```
+
+**Cause:** a `page:<name>` command naming a page the display does not have —
+usually a retained command from before the page was renamed or removed, or an
+automation publishing a name by hand. The detail is one of the two page
+messages below.
+**Fix:** publish a name the display actually has; `GET /api/displays/{id}`
+lists them under `page.names`
+([HTTP API](reference/http-api.md#get-apidisplaysdisplay_id)).
+**Surfaces:** log only, all three.
+
+```text
+display {self.id!r} has no page named {name!r}; its pages are {known}
+```
+
+```text
+display {display_id!r} has no page {index}: it has {count}, numbered 0 to {count - 1}
+```
+
+**Cause:** a page selected by a name or an index the display does not have,
+from `page:<name>` over MQTT or from `POST /api/displays/{id}/page`
+(`Engine.select_page`, `src/maverick/engine.py`). Pages are numbered from
+zero.
+**Fix:** use a name or index from `page.names` / `page.count` in the display
+summary. Over HTTP this is a **422** naming the mistake; over MQTT it is the
+warning above and the panel stays on the page it was showing.
+**Surfaces:** HTTP 422 and the log.
 
 ```text
 command for unknown display %r
