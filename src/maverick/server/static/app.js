@@ -245,6 +245,28 @@ function requestRender(id, force, button) {
   });
 }
 
+/* A page change costs a whole render, so the request answers as soon as the
+ * page has moved and the render runs behind it — the same bargain as the
+ * Refresh button, and why both mark the display pending here. */
+function postPage(id, body, control) {
+  return act(control, async () => {
+    await authFetch(`api/displays/${encodeURIComponent(id)}/page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    pending.set(id, { at: Date.now(), seen: false });
+  });
+}
+
+function stepPage(id, step, button) {
+  return postPage(id, { step: step }, button);
+}
+
+function selectPage(id, index, control) {
+  return postPage(id, { index: index }, control);
+}
+
 function setSchedule(id, enabled, button) {
   return act(button, () => authFetch(`api/displays/${encodeURIComponent(id)}/schedule`, {
     method: 'POST',
@@ -279,6 +301,11 @@ const CARD = `
   <span class="card-geometry"></span><br>
   <span class="muted card-dashboard"></span><br>
   via <code class="card-transport"></code> <span class="card-schedule"></span>
+</div>
+<div class="page-picker" role="group" aria-label="Page" hidden>
+  <button type="button" class="page-prev" title="Previous page" aria-label="Previous page">&lsaquo;</button>
+  <select class="page-select" aria-label="Page"></select>
+  <button type="button" class="page-next" title="Next page" aria-label="Next page">&rsaquo;</button>
 </div>
 <span class="view-modes" role="group" aria-label="Source or result" hidden>
   <button type="button" class="view-source" aria-pressed="false">Source</button>
@@ -325,6 +352,11 @@ function cardFor(id) {
   });
   button('.act-enable').addEventListener('click', (e) => setEnabled(id, true, e.currentTarget));
   button('.act-edit').addEventListener('click', (e) => openEditor(id, e.currentTarget));
+  button('.page-prev').addEventListener('click', (e) => stepPage(id, -1, e.currentTarget));
+  button('.page-next').addEventListener('click', (e) => stepPage(id, 1, e.currentTarget));
+  button('.page-select').addEventListener('change', (e) => {
+    selectPage(id, Number(e.currentTarget.value), e.currentTarget);
+  });
   button('.view-source').addEventListener('click', () => setViewMode(id, 'source'));
   button('.view-frame').addEventListener('click', () => setViewMode(id, 'frame'));
   // Loads on open, same as every other on-demand fetch here; `paint` below
@@ -375,7 +407,12 @@ function paint(card, display) {
   text(card, '.card-panel', display.panel_name);
   text(card, '.card-geometry', `${display.width}×${display.height} · ` +
     `${display.color_scheme} · ${display.dpi} dpi · rot ${display.rotation}°`);
-  text(card, '.card-dashboard', display.dashboard);
+  // With pages, what the card should name is the page on the panel, not the
+  // `dashboard` shorthand the display does not use.
+  const page = display.page || null;
+  text(card, '.card-dashboard', page && page.count > 1
+    ? `${page.name} · ${page.dashboard}`
+    : display.dashboard);
   text(card, '.card-transport', display.transport);
   text(card, '.card-schedule', scheduleSummary(display.schedule));
 
@@ -384,6 +421,7 @@ function paint(card, display) {
   text(card, '.pill', pillText);
   card.classList.toggle('is-disabled', !display.enabled);
 
+  pagePicker(card, display);
   preview(card, display);
   text(card, '.card-next', nextRun(display));
   attribute(card, '.card-next', 'title', display.next_run_at ? absolute(display.next_run_at) : '');
@@ -421,6 +459,37 @@ function paint(card, display) {
 
   const history = card.querySelector('.history');
   if (history.open) loadHistory(display.id, card);
+}
+
+/** The page picker, for a display that has pages to pick between.
+ *
+ * A display with no `pages` has exactly one page — its `dashboard` — and the
+ * summary says so (`count: 1`), so "has pages" is a count rather than a flag
+ * this has to be told about separately.
+ */
+function pagePicker(card, display) {
+  const box = card.querySelector('.page-picker');
+  const page = display.page || null;
+  if (!page || page.count < 2) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const select = box.querySelector('.page-select');
+  // Rebuilding the options on every poll would drop whatever the keyboard was
+  // doing inside the select, so they are rebuilt only when they change.
+  const names = page.names.join('\n');
+  if (select.dataset.names !== names) {
+    select.dataset.names = names;
+    select.replaceChildren(...page.names.map((name, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = name;
+      return option;
+    }));
+  }
+  const wanted = String(page.index);
+  if (select.value !== wanted) select.value = wanted;
 }
 
 /** Whether this display is rendering, or was asked to and has not started yet. */
@@ -1395,6 +1464,7 @@ function fillEditor(data, summary) {
 
   const parts = [previewSection(summary)];
   parts.push(sectionNode('', 'Display', displayFields(schema, data, summary), true));
+  parts.push(pagesSection(schema, summary));
   for (const [key, title] of sectionOrder(schema)) {
     const fields = key === 'transport'
       ? transportFields(schema, data)
@@ -1471,7 +1541,8 @@ function displayFields(schema, data, summary) {
   const names = Object.keys(schema.properties).filter(
     // `id` is the path a PUT goes to and the key every stored frame is under;
     // it is shown in the header rather than offered as something to change.
-    (key) => key !== 'id' && !isSection(schema, key)
+    // `pages` and `rotate` have a section of their own, below this one.
+    (key) => key !== 'id' && !isSection(schema, key) && !PAGE_FIELDS.has(key)
   );
   const ordered = [
     ...DISPLAY_FIRST.filter((key) => names.includes(key)),
@@ -1496,6 +1567,158 @@ function resolvedFor(summary, name) {
   if (!RESOLVED.includes(name)) return '';
   const value = summary[name];
   return value === null || value === undefined ? '' : String(value);
+}
+
+/* ------------------------------------------------------------- the pages --
+ *
+ * `pages` is a list of models, which is the one shape the generated controls
+ * cannot draw: `specFor` would see an array and offer a comma-separated text
+ * box, and a page is three fields and an order. So `pages` and `rotate` are
+ * lifted out of the Display section into one of their own, built by hand and
+ * registered in `editorFields` like everything else, so `collectBody` and the
+ * dirty check need to know nothing about it.
+ */
+
+/** The two fields the Pages section owns, and so the Display section skips. */
+const PAGE_FIELDS = new Set(['pages', 'rotate']);
+
+/** The rule the schema cannot state in one field's description: it is about
+ *  this field and the Dashboard box in the section above. */
+const PAGES_HELP =
+  'Set these or the Dashboard field above, not both — a display with pages ' +
+  'renders those, and saving with both is refused. A row with no dashboard is ' +
+  'dropped on save, and a page with no name takes one from its dashboard path.';
+
+function pagesSection(schema, summary) {
+  const fields = [
+    pagesField(schema, summary),
+    fieldNode(schema, '', 'rotate', schema.properties.rotate, ''),
+  ];
+  // The section's own help is what the schema says about `pages`, as every
+  // other section shows its model's description.
+  return sectionNode(
+    'pages', 'Pages', fields, false, schema.properties.pages.description || ''
+  );
+}
+
+function pagesField(schema, summary) {
+  const field = document.createElement('div');
+  field.className = 'field';
+  // The path a 422 against the list — or against one page — is put back under
+  // (`applyEditorErrors` walks up from `pages.0.dashboard` to `pages`).
+  field.dataset.path = 'pages';
+
+  const rows = document.createElement('div');
+  rows.className = 'pages-rows';
+  for (const page of (summary.config && summary.config.pages) || []) {
+    rows.appendChild(pageRow(page));
+  }
+
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'palette-add';
+  add.textContent = 'Add a page';
+  add.addEventListener('click', () => {
+    const row = pageRow({});
+    rows.appendChild(row);
+    row.querySelector('.page-dashboard').focus();
+    markDirty();
+  });
+
+  const help = document.createElement('div');
+  help.className = 'help';
+  help.textContent = PAGES_HELP;
+  const error = document.createElement('div');
+  error.className = 'field-error';
+  field.append(rows, add, help, error);
+
+  editorFields.push({
+    path: 'pages',
+    section: '',
+    name: 'pages',
+    spec: { kind: 'pages' },
+    // Undefined for an empty list, the same as every other empty control: the
+    // key is left out of the body rather than sent as `[]`.
+    read: () => {
+      const pages = [...rows.querySelectorAll('.page-row')].map(readPageRow).filter(Boolean);
+      return pages.length ? pages : undefined;
+    },
+    control: rows,
+  });
+  return field;
+}
+
+function pageRow(page) {
+  const row = document.createElement('div');
+  row.className = 'page-row';
+
+  const dashboard = pageInput('page-dashboard', 'dashboard', page.dashboard);
+  // The same picker the Dashboard field above uses, from the drawer's own
+  // datalist.
+  dashboard.setAttribute('list', 'editor-dashboard-list');
+  dashboard.placeholder = '/lovelace-eink/kitchen';
+  const name = pageInput('page-name', 'page name', page.name);
+  name.placeholder = 'from the dashboard path';
+  const dwell = pageInput('page-dwell', 'dwell', page.dwell);
+  dwell.placeholder = 'every render';
+
+  const move = (step) => {
+    const sibling = step < 0 ? row.previousElementSibling : row.nextElementSibling;
+    if (!sibling) return;
+    // Rotation follows the order of the list, so moving a row is a change to
+    // what the panel shows next, not only to how this drawer looks.
+    if (step < 0) sibling.before(row);
+    else sibling.after(row);
+    markDirty();
+  };
+  const up = pageButton('page-up', 'move this page up', '↑', () => move(-1));
+  const down = pageButton('page-down', 'move this page down', '↓', () => move(1));
+  const remove = pageButton('palette-remove', 'remove this page', '×', () => {
+    row.remove();
+    markDirty();
+  });
+
+  row.append(dashboard, name, dwell, up, down, remove);
+  return row;
+}
+
+function pageInput(className, label, value) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = className;
+  input.autocomplete = 'off';
+  input.setAttribute('aria-label', label);
+  input.value = value === undefined || value === null ? '' : String(value);
+  return input;
+}
+
+function pageButton(className, label, glyph, action) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.textContent = glyph;
+  button.addEventListener('click', action);
+  return button;
+}
+
+/** One row as `PageConfig` takes it, or null for a row with no dashboard.
+ *
+ * An empty `name` or `dwell` is left out rather than sent as an empty string:
+ * the name is derived from the dashboard path and the dwell means "every
+ * render" when it is absent (`PageConfig`, `src/maverick/config.py`).
+ */
+function readPageRow(row) {
+  const value = (selector) => row.querySelector(selector).value.trim();
+  const dashboard = value('.page-dashboard');
+  if (!dashboard) return null;
+  const page = { dashboard: dashboard };
+  const name = value('.page-name');
+  if (name) page.name = name;
+  const dwell = value('.page-dwell');
+  if (dwell) page.dwell = dwell;
+  return page;
 }
 
 // ------------------------------------------------------------ the controls --

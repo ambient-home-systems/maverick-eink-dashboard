@@ -241,10 +241,45 @@ class RenderScheduler:
         if trigger in ("schedule", "state") and in_quiet_hours(schedule.quiet_hours):
             log.debug("[%s] in quiet hours, skipping", display_id)
             return
+        if trigger == "schedule":
+            self._rotate(display_id)
         try:
             await self._engine.render(display_id, trigger=trigger)
         except Exception:  # noqa: BLE001 - a failed render must not kill the job
             log.exception("[%s] scheduled render failed", display_id)
+
+    # -------------------------------------------------------------- pages --
+
+    def _rotate(self, display_id: str) -> None:
+        """Advance a rotating display to its next page, if its dwell has elapsed.
+
+        Only scheduled ticks rotate. A render the user asked for shows the page
+        the panel is on rather than moving it on underneath them, and a page
+        cannot change faster than the schedule driving it: a `dwell` shorter
+        than `every` simply means "every tick".
+
+        Time comes from the engine's clock (`Engine.now`), which is also what
+        stamped `page_shown_at`, so a test can drive both by setting one clock.
+        """
+        display = self._config.display(display_id)
+        if not display.rotate or len(display.page_entries) < 2:
+            return
+        shown_at = self._engine.page_shown_at(display_id)
+        if shown_at is None:
+            # Never rendered: the current page has not had its turn yet, so
+            # rotating now would skip it entirely. `Engine.render` stamps it.
+            return
+        # One reading of the clock for both the decision and the stamp that
+        # follows it, so the next page's dwell starts from the instant this one
+        # was judged to have ended.
+        now = self._engine.now()
+        dwell = display.page_at(self._engine.page_index(display_id)).dwell_seconds
+        if dwell is not None and (now - shown_at).total_seconds() < dwell:
+            log.debug("[%s] page dwell has not elapsed; staying put", display_id)
+            return
+        index = self._engine.advance_page(display_id, 1, at=now)
+        log.info("[%s] rotating to page %d (%s)", display_id, index,
+                 display.page_at(index).name)
 
     # ------------------------------------------------------- state triggers --
 

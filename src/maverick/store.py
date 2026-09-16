@@ -37,7 +37,7 @@ from typing import Any
 
 import yaml
 
-from .config import Config, ConfigError, DisplayConfig, expand_env
+from .config import Config, ConfigError, DisplayConfig, expand_env, page_name_for
 
 log = logging.getLogger(__name__)
 
@@ -132,9 +132,25 @@ def dump_display(display: DisplayConfig) -> dict[str, Any]:
     """
     reference = DisplayConfig(id=display.id).model_dump(mode="json")
     written = _prune(display.model_dump(mode="json", exclude_defaults=True), reference)
+    if written.get("pages"):
+        written["pages"] = [_shorten_page(page) for page in written["pages"]]
     # `id` prunes away against a reference built from it; it is also the one key
     # an entry cannot be read without, so it leads.
     return {"id": display.id, **written}
+
+
+def _shorten_page(page: dict[str, Any]) -> dict[str, Any]:
+    """A page without the ``name`` it would derive for itself anyway.
+
+    ``exclude_defaults`` cannot drop it: the validator fills the field in, so a
+    derived name is no longer equal to the field's default (``PageConfig`` in
+    :mod:`maverick.config`). Written out, it would pin a name that was meant to
+    follow the dashboard path — and the setup UI would show it in the Name box
+    rather than as the placeholder saying where it comes from.
+    """
+    if page.get("name") and page["name"] == page_name_for(page.get("dashboard", "")):
+        return {key: value for key, value in page.items() if key != "name"}
+    return page
 
 
 def _prune(data: dict[str, Any], reference: dict[str, Any]) -> dict[str, Any]:

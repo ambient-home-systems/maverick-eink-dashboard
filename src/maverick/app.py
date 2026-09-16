@@ -7,6 +7,7 @@ knows nothing about HTTP — and joins them here.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import tomllib
 from datetime import UTC, datetime
@@ -117,10 +118,23 @@ class Application:
             elif command in ("schedule_on", "schedule_off"):
                 self.scheduler.set_enabled(display_id, command == "schedule_on")
                 await self._publish_state(display_id)
+            elif command.startswith("page:"):
+                # What the Page select sends: its `command_template` wraps the
+                # chosen option, so the payload names a page rather than an
+                # index (`MqttDiscovery.announce_display`).
+                await self.engine.set_page(display_id, command[len("page:"):])
+            elif command == "next_page":
+                await self.engine.next_page(display_id)
+            elif command == "previous_page":
+                await self.engine.previous_page(display_id)
             else:
                 log.warning("[%s] unknown command %r", display_id, command)
         except KeyError:
             log.warning("command for unknown display %r", display_id)
+        except ConfigError as exc:
+            # A page this display does not have: the sender's mistake, not a
+            # fault of ours, so it is a warning rather than a traceback.
+            log.warning("[%s] command %r rejected: %s", display_id, command, exc)
         except Exception:  # noqa: BLE001
             log.exception("[%s] command %r failed", display_id, command)
 
@@ -157,9 +171,19 @@ class Application:
         if outcome is not None and outcome.frame is not None:
             ink = round(outcome.frame.metrics.get("coverage.ink", 0.0) * 100, 1)
 
+        # The Page select reads `page` back as its own state, so a page changed
+        # by any route — MQTT, the API, rotation — shows up on the entity.
+        page = None
+        page_index = None
+        with contextlib.suppress(KeyError):
+            page = self.engine.current_page(display_id).name
+            page_index = self.engine.page_index(display_id)
+
         payload: dict[str, Any] = {
             "status": status,
             "problem": bool(state.consecutive_failures),
+            "page": page,
+            "page_index": page_index,
             "schedule_enabled": self.scheduler.schedule_enabled.get(display_id, True),
             "last_render_at": state.last_render_at or None,
             "last_delivery_at": state.last_delivery_at or None,

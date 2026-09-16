@@ -100,9 +100,10 @@ Every entity also carries `availability: [{"topic": "{base_topic}/status"}]` and
 
 ### Entities
 
-Ten entities per display. Home Assistant builds each entity id from the device
-name and the entity name, so a display named `Kitchen panel` gives
-`button.kitchen_panel_refresh`, `switch.kitchen_panel_scheduled_renders`,
+Ten entities per display, eleven for a display with
+[pages](configuration.md#displayspages). Home Assistant builds each entity id
+from the device name and the entity name, so a display named `Kitchen panel`
+gives `button.kitchen_panel_refresh`, `switch.kitchen_panel_scheduled_renders`,
 `image.kitchen_panel_screen`, and so on.
 
 | Component | Config suffix | `unique_id` | `name` | Category | What it reads or sends |
@@ -110,6 +111,7 @@ name and the entity name, so a display named `Kitchen panel` gives
 | `button` | `refresh` | `maverick_{id}_refresh` | Refresh | `config` | Sends `refresh` to the command topic. Icon `mdi:refresh` |
 | `button` | `full_refresh` | `maverick_{id}_full_refresh` | Full refresh | `config` | Sends `full_refresh` to the command topic. Icon `mdi:television-clean` |
 | `switch` | `scheduled` | `maverick_{id}_scheduled` | Scheduled renders | `config` | Sends `schedule_on` / `schedule_off`; reads `value_json.schedule_enabled` from the state topic, with `state_on: true` and `state_off: false`. Icon `mdi:timer-outline` |
+| `select` | `page` | `maverick_{id}_page` | Page | — | The page on the panel. Options are the page `name`s in order; sends `page:<name>` through `command_template: "page:{{ value }}"`, and reads `value_json.page` from the state topic. **Only for a display with `pages`** — see below. Icon `mdi:book-open-page-variant` |
 | `image` | `screen` | `maverick_{id}_image` | Screen | — | The current frame. [Two modes](#the-image-entity-two-modes). Icon `mdi:image` |
 | `sensor` | `last_render` | `maverick_{id}_last_render` | Last render | `diagnostic` | `value_json.last_render_at`, `device_class: timestamp`. Icon `mdi:clock-outline` |
 | `sensor` | `status` | `maverick_{id}_status` | Status | `diagnostic` | `value_json.status`. Icon `mdi:information-outline` |
@@ -124,8 +126,15 @@ device consistent.
 
 The `config` category puts the buttons and the switch under the device's
 configuration controls; `diagnostic` puts the sensors under diagnostics. The
-image entity has no category, so it is a primary entity and appears on the
-device's main card — which is the point of it.
+image entity and the Page select have no category, so they are primary entities
+and appear on the device's main card — which is the point of both.
+
+**The Page select is conditional.** `announce_display` publishes it only when
+the display has a `pages` list, because a select offering the one dashboard a
+display already renders does nothing. A display without pages gets an empty
+retained payload on the same topic instead, so a display whose pages were
+removed does not keep a select for pages that no longer exist
+(`src/maverick/ha/discovery.py`).
 
 ## Commands
 
@@ -141,6 +150,9 @@ topic, so the id must match a configured display.
 | `full_refresh` | Render now with `force=true`: bypasses the unchanged-checksum shortcut and the lint gate, and asks the panel for a flashing full refresh that clears ghosting. |
 | `schedule_on` | Resume scheduled and state-triggered renders for this display, then republish the state. |
 | `schedule_off` | Pause them. Renders asked for by hand, by the API or by a button still run. |
+| `page:<name>` | Put the page called `<name>` on the panel and render it, `trigger: "page"`. What the Page select sends. A name the display does not have is logged and ignored, and the panel keeps the page it was showing. |
+| `next_page` | Move to the next page and render it, wrapping from the last to the first. |
+| `previous_page` | The same backwards, wrapping from the first to the last. |
 
 The payload is decoded as UTF-8 and stripped of surrounding whitespace. Anything
 else is logged as `unknown command` and ignored; a command for an unknown
@@ -152,6 +164,12 @@ actually did something updates it.
 scheduler's memory, not in the config file, which is the point — pausing the
 bedroom panel overnight should not mean editing YAML.
 
+A page change, by contrast, *does* survive a restart: it is
+`DisplayState.page_index`, persisted with the rest of the per-display state
+(`src/maverick/engine.py`), so a panel an automation moved to the calendar page
+is still on it after Maverick restarts. The three page commands work on a
+display with no `pages` too — it has exactly one page, so they re-render it.
+
 ## The state topic
 
 One retained JSON object per display on `{base_topic}/display/{id}/state`,
@@ -162,6 +180,8 @@ command. Every key that `_publish_state` writes:
 {
   "status": "ok",
   "problem": false,
+  "page": "Overview",
+  "page_index": 0,
   "schedule_enabled": true,
   "last_render_at": "2026-09-14T09:04:11+00:00",
   "last_delivery_at": "2026-09-14T09:04:13+00:00",
@@ -183,6 +203,8 @@ command. Every key that `_publish_state` writes:
 | --- | --- | --- |
 | `status` | string | `error` if the render failed or the display has consecutive failures; `unchanged` if this render was skipped; otherwise `ok`. |
 | `problem` | boolean | True while `consecutive_failures` is above zero — i.e. the last render failed and none has succeeded since. Drives the problem binary sensor. |
+| `page` | string or null | The `name` of the page on the panel; the Page select reads this back as its own state. A display with no `pages` reports the name derived from its `dashboard` path. |
+| `page_index` | integer or null | The same page's position in the list, counting from zero. |
 | `schedule_enabled` | boolean | Whether the scheduler will run this display. Drives the scheduled-renders switch. |
 | `last_render_at` | string or null | ISO 8601 UTC, to the second, of the last successful render. Null until there has been one. |
 | `last_delivery_at` | string or null | The same for the last successful delivery. A skipped render advances neither. |
@@ -194,7 +216,7 @@ command. Every key that `_publish_state` writes:
 | `last_render_s`, `last_total_s` | number or null | The same two durations as `DisplayState.last_render_s`/`last_total_s` (`src/maverick/engine.py`), persisted rather than tied to this one outcome: seconds for the screenshot, and for the whole cycle, of the last render that got as far as one. Unlike `render_duration`, these are **not** null on a state published by a `schedule_on`/`schedule_off` command — they describe the last render, not this publish. Null only before this display has ever rendered. |
 | `ink_coverage` | number or null | Percentage of the panel covered in ink, to one decimal place, from the frame's `coverage.ink` metric. Null on a state published without a frame. |
 | `lint` | string or null | The linter's one-line summary for this frame. |
-| `trigger` | string or null | What caused this render: `schedule`, `startup`, `state` (a watched entity changed), `button` (MQTT), `api`, `cli`, or `manual`. |
+| `trigger` | string or null | What caused this render: `schedule`, `startup`, `state` (a watched entity changed), `button` (MQTT), `page` (a page change, from any of the three routes), `api`, `cli`, or `manual`. |
 | `updated_at` | string | ISO 8601 UTC, to the second, when this message was published. Always present. |
 
 Two things follow from how it is published. No state is published at startup, so
@@ -294,13 +316,17 @@ display from the config and its Home Assistant device stays, permanently
 unavailable, because the broker still holds the retained config payloads.
 
 `MqttDiscovery.remove_display(display_id)` clears them: it publishes an **empty
-retained payload** to each of the display's ten config topics, which is how
-Home Assistant is told to delete an entity. The topics are exactly:
+retained payload** to each of the display's eleven config topics, which is how
+Home Assistant is told to delete an entity. The Page select is in the list
+whether or not the display had pages, for the same reason `announce_display`
+retracts it: an empty payload on a topic nothing is retained on costs nothing,
+and a missed one leaves an entity behind. The topics are exactly:
 
 ```text
 {discovery_prefix}/button/maverick_{id}/refresh/config
 {discovery_prefix}/button/maverick_{id}/full_refresh/config
 {discovery_prefix}/switch/maverick_{id}/scheduled/config
+{discovery_prefix}/select/maverick_{id}/page/config
 {discovery_prefix}/image/maverick_{id}/screen/config
 {discovery_prefix}/sensor/maverick_{id}/last_render/config
 {discovery_prefix}/sensor/maverick_{id}/status/config
@@ -310,14 +336,16 @@ Home Assistant is told to delete an entity. The topics are exactly:
 {discovery_prefix}/binary_sensor/maverick_{id}/problem/config
 ```
 
-Nothing calls `remove_display` automatically today — Maverick announces the
-displays it has and never notices the ones that have gone. Until something does,
-clear a removed display by publishing an empty retained message to each topic
-above yourself:
+`Application.remove_display` calls it (`src/maverick/app.py`), so a display
+deleted through `DELETE /api/displays/{id}` or the setup UI takes its entities
+with it. A display that disappears some other way — removed from the file while
+Maverick was stopped — is not noticed, because Maverick announces the displays
+it has and never looks for the ones that have gone. Clear one of those by
+publishing an empty retained message to each topic above yourself:
 
 ```console
-$ for t in button/refresh button/full_refresh switch/scheduled image/screen \
-           sensor/last_render sensor/status sensor/render_duration \
+$ for t in button/refresh button/full_refresh switch/scheduled select/page \
+           image/screen sensor/last_render sensor/status sensor/render_duration \
            sensor/ink_coverage sensor/frames binary_sensor/problem; do
     mosquitto_pub -h core-mosquitto -r -n \
       -t "homeassistant/${t%%/*}/maverick_kitchen/${t##*/}/config"

@@ -291,6 +291,17 @@ def build_sections() -> list[Section]:
             ),
         )
     )
+    sections.append(
+        Section(
+            "displays[].pages[]",
+            model_of(display["pages"].annotation),
+            intro=(
+                "One entry per dashboard a display cycles through. A display sets "
+                "either `dashboard` or `pages`, and `rotate` is what advances them on "
+                "the display's own schedule."
+            ),
+        )
+    )
     sections.extend(
         Section(f"displays[].{name}", model_of(display[name].annotation))
         for name in nested

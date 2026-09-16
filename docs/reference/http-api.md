@@ -38,6 +38,7 @@ own documentation.
 | `PUT` | `/api/displays/{display_id}` | **yes** | Replace a display's configuration |
 | `DELETE` | `/api/displays/{display_id}` | **yes** | Stop a display and delete its stored frames |
 | `POST` | `/api/displays/{display_id}/schedule` | **yes** | Pause or resume a display's schedule at runtime |
+| `POST` | `/api/displays/{display_id}/page` | **yes** | Put one of a display's pages on the panel |
 | `POST` | `/api/displays/preview` | **yes** | Dry-run render of a candidate config; saves nothing |
 | `POST` | `/api/displays/{display_id}/render` | **yes** | Render one display now, or queue it with `?wait=false` |
 | `POST` | `/api/render` | **yes** | Render every enabled display now |
@@ -346,6 +347,36 @@ MQTT state. This is distinct from the config-level `schedule.enabled` field,
 which goes through `PUT`. **200** with the updated summary, **404** for an
 unknown display.
 
+### `POST /api/displays/{display_id}/page`
+
+**Requires the token.** Puts one of the display's
+[pages](configuration.md#displayspages) on the panel. The body names it one of
+three ways, exactly one per request:
+
+```json
+{"index": 1}
+{"name": "Calendar"}
+{"step": 1}
+```
+
+`index` counts from zero and `name` is the page's `name`; the two are not
+interchangeable, because a page may be *called* "2". `step` is relative — `1`
+for the next page, `-1` for the previous — and wraps at either end, which is
+what the setup UI's arrows and the MQTT `next_page`/`previous_page` commands
+send.
+
+The page moves before the response is written, so the summary it returns
+already names the new one. The render it triggers carries the `page` trigger
+and runs in the background by default, because a page change costs a whole
+render; `?wait=true` holds the response until that render finishes. The
+unchanged-frame skip still applies — a page whose frame is identical to the
+one on the panel delivers nothing, which is the same answer as re-rendering
+the page you were already on.
+
+**200** with the updated summary, **404** for an unknown display, **422** for
+an index outside the display's pages, a name it does not have, or a body that
+does not name exactly one of the three.
+
 ### `POST /api/displays/preview`
 
 **Requires the token.** Renders a candidate `DisplayConfig` body and hands back
@@ -419,6 +450,14 @@ The summary, with every key from `_display_summary`:
   "rotation": 0,
   "frame_format": "png",
   "transport": "http_pull",
+  "page": {
+    "index": 0,
+    "name": "Overview",
+    "dashboard": "/lovelace-eink/overview",
+    "count": 2,
+    "names": ["Overview", "Calendar"],
+    "rotate": true
+  },
   "schedule": {
     "enabled": true,
     "every": "5m",
@@ -444,12 +483,13 @@ The summary, with every key from `_display_summary`:
 | `panel_name` | The panel profile's display name, resolved from `panel`. |
 | `width`, `height`, `color_scheme`, `dpi`, `rotation`, `frame_format` | The **resolved** values: the panel profile's, with any per-display override applied. |
 | `transport` | `transport.type` only; the transport's own options are not echoed. |
+| `page` | Which page is on the panel and what the display has to choose from. `index` counts from zero, `name` and `dashboard` are that page's, `count` and `names` cover all of them and `rotate` is the config flag. Always present: a display with no `pages` has exactly one page, its `dashboard` (`DisplayConfig.page_entries`, `src/maverick/config.py`), so `count` is `1` and `names` holds the name derived from that path. |
 | `schedule.enabled` | The **live** value — the [scheduled-renders switch](mqtt.md#commands) flips this without touching the config file. The other `schedule.*` keys come from the config. |
 | `schedule.every`, `cron`, `quiet_hours`, `on_change` | As configured; `null` or `[]` when unset. |
 | `rendering` | Whether a render for this display is in progress right now (`Engine.is_rendering`), so a caller polling after `POST .../render?wait=false` knows when to stop. |
 | `next_run_at` | ISO 8601, when the scheduler will next run this display (`RenderScheduler.jobs`, `src/maverick/scheduling/scheduler.py`), or `null` for a manual-only display, a disabled one, or one on a `cron` schedule whose next fire APScheduler has not computed yet. |
 | `last_render_s`, `last_total_s` | Seconds for the screenshot and for the whole render-process-deliver cycle of the last render that got as far as one, to three decimal places. `null` before this display has ever rendered — these are `DisplayState.last_render_s`/`last_total_s` (`src/maverick/engine.py`), which is why they survive a restart while `rendering` does not. |
-| `state` | The persisted per-display state, `{}` before the engine has any for this display. Keys: `sequence`, `frames_since_full`, `last_checksum`, `last_render_at`, `last_delivery_at`, `last_error`, `consecutive_failures`, `last_pulled_at`, `render_count`, `skip_count`, `last_render_s`, `last_total_s`. |
+| `state` | The persisted per-display state, `{}` before the engine has any for this display. Keys: `sequence`, `frames_since_full`, `last_checksum`, `last_render_at`, `last_delivery_at`, `last_error`, `consecutive_failures`, `last_pulled_at`, `render_count`, `skip_count`, `page_index`, `page_shown_at`, `last_render_s`, `last_total_s`. |
 | `checksum` | The stored frame's checksum, or `null` if nothing has been rendered yet. |
 | `lint` | `summary`, `issues` (each with `code`, `severity`, `message`, `hint`) and `metrics` from the last render, or `null` if there is no frame. |
 | `last_pulled_at` | When a device last fetched the frame, in this process. It is held in memory, so it is `null` after a restart until the next fetch — unlike `state.last_pulled_at`, which is persisted. |
@@ -492,7 +532,7 @@ unknown display is **404**, the same lookup error as
 | Key | Meaning |
 | --- | --- |
 | `at` | When the render finished, ISO 8601. |
-| `trigger` | What asked for it, whatever the caller named (`Engine.render`'s `trigger` parameter, default `"manual"`): `"schedule"` and `"state"` from `RenderScheduler._run` (`src/maverick/scheduling/scheduler.py`, an interval/cron fire or an `on_change` entity), `"button"` from a Home Assistant button (`src/maverick/app.py`), `"api"` from a REST call, `"cli"` from `maverick render` (`src/maverick/cli.py`). |
+| `trigger` | What asked for it, whatever the caller named (`Engine.render`'s `trigger` parameter, default `"manual"`): `"schedule"` and `"state"` from `RenderScheduler._run` (`src/maverick/scheduling/scheduler.py`, an interval/cron fire or an `on_change` entity), `"button"` from a Home Assistant button (`src/maverick/app.py`), `"api"` from a REST call, `"page"` from a page change (`POST /api/displays/{id}/page`, the MQTT Page select, or rotation), `"cli"` from `maverick render` (`src/maverick/cli.py`). |
 | `ok` | Whether the render succeeded and delivered (or, for a pull transport, was published for collection). |
 | `skipped` | True when nothing was delivered on purpose — a lint block or an unchanged frame — as opposed to `ok=false`, which means a render or delivery error. |
 | `reason` | Empty on an ordinary success; otherwise the lint failure, the delivery error, or `"frame unchanged"`. |

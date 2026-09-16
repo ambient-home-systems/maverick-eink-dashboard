@@ -8,6 +8,31 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Several dashboards per display, with rotation.** A display rendered the one
+  dashboard named in its config, and `DisplayConfig` is `extra="forbid"`, so
+  the `pages:` syntax `docs/roadmap.md` proposed was rejected at load. It is
+  now real: a `PageConfig` (`src/maverick/config.py`) with a `dashboard`, an
+  optional `name` — derived from the last segment of the path when empty — and
+  an optional `dwell` parsed like `schedule.every`, plus `displays[].pages` and
+  `displays[].rotate`. `dashboard` stays the single-page shorthand, and setting
+  both it and `pages` is a load error naming the display; a display with no
+  pages has exactly one, so everything downstream counts pages rather than
+  asking which form it was written in. `DisplayState` gains `page_index` and
+  `page_shown_at`, both persisted, so a restart does not undo what an
+  automation selected, and `Engine.render` resolves the current page's
+  dashboard at render time rather than at load. With `rotate: true`, a
+  *scheduled* tick advances to the next page once the current page's `dwell`
+  has elapsed (`RenderScheduler._rotate`), wrapping at the end and leaving
+  renders someone asked for on the page that is up. Three ways to change it,
+  all rendering under a new `page` trigger: `POST /api/displays/{id}/page` with
+  `{"index": n}`, `{"name": "..."}` or `{"step": 1}` — the page moves before
+  the response and the render runs behind it unless `?wait=true`; a **Page**
+  select per display over MQTT discovery, whose options are the page names,
+  with `page:<name>`, `next_page` and `previous_page` routed by
+  `Application.handle_command`; and a page picker on each card in the setup UI
+  with a Pages section in the editor drawer for adding, removing and
+  reordering. The display summary gains `page` (index, name, dashboard, count,
+  names and `rotate`), and the MQTT state topic gains `page` and `page_index`.
 - **Render history per display.** `DisplayState` (`src/maverick/engine.py`)
   keeps only the *last* error and a failure count, both cleared by the next
   success, so a panel that fails one render in ten had no trace of it
