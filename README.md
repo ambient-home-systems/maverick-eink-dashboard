@@ -21,15 +21,24 @@ today; [docs/roadmap.md](docs/roadmap.md) holds the plan for the rest.
 
 ## Status
 
-Version 0.1.0.
+Version 0.2.7.
 
 The render service is implemented: the panel catalogue, the e-ink theme, the
 image pipeline, the lint gate, five transports, the scheduler, the HTTP API and
 the CLI all work.
 
+A display can now be added, edited, previewed and removed from the setup UI
+with no restart — the panel catalogue, the transport and every field of
+`DisplayConfig` are all drawn from the running schema — and it keeps a bounded
+render history and the pre-quantisation screenshot per display, both visible
+on the card. See [Configuration](#configuration) and
+[docs/architecture.md](docs/architecture.md) for how.
+
 The Home Assistant app under [`app/`](app/DOCS.md) is built by CI on amd64,
-which also launches Chromium inside the image; nobody has yet installed it on a
-Home Assistant OS system. Treat it as a first cut and report what you find.
+which also launches Chromium inside the image and runs it behind ingress, so
+**Open Web UI** embeds the setup UI in Home Assistant with no second login;
+nobody has yet installed the app on a Home Assistant OS system. Treat it as a
+first cut and report what you find.
 
 **Nothing has been tested on a physical panel.** Every panel-side claim in the
 catalogue — resolution, native rotation, refresh behaviour, measured ink values
@@ -62,11 +71,15 @@ repository to the app store; the app itself lives in [`app/`](app/DOCS.md).
 4. Start the app and open **Web UI**. The first start writes `maverick.yaml`,
    with one example display, into the app's configuration folder
    (`/addon_configs/…_maverick/`, reachable with the File editor, Studio Code
-   Server or Samba apps).
-5. Edit `displays:` in that file and restart the app. The Web UI shows what
-   each panel rendered and what the linter found. That first start also copies
-   the list into `data/displays.yaml` beside it, which is the file that counts
-   from then on — see [Configuration](#configuration).
+   Server or Samba apps), and copies its example display into
+   `data/displays.yaml` beside it — the file that counts from then on, see
+   [Configuration](#configuration).
+5. Open the **Web UI** and add a display: **Add display**, pick a panel from
+   the catalogue and a dashboard from the picker, choose a transport, and
+   save. No file to edit and no restart — the Web UI shows what each panel
+   rendered and what the linter found, and an **Edit** action on each card
+   opens every field the display has, including a preview of a change before
+   it is saved.
 
 [app/DOCS.md](app/DOCS.md) is the full page: every option, what the app maps
 and exposes, and what to check when it does not start.
@@ -144,6 +157,13 @@ pip install -e ".[dev]"
 Then install Chromium once, as above.
 
 ## Quick start
+
+Installed [as the Home Assistant app](#install-as-a-home-assistant-app)? Open
+its **Web UI** and use **Add display** — that is steps 1, 2 and 6 below done
+for you, with a picker for the panel and the dashboard instead of YAML. The
+rest of this section is the standalone path: a config file and the CLI loop
+that goes with it, which is also how to iterate on a display's rendering
+before touching a panel.
 
 **1. Write a config.**
 
@@ -437,6 +457,7 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | GET | `/api/ha/dashboards` | yes | Every Lovelace dashboard and its views, for the Dashboard field's picker; `503` when not connected to Home Assistant |
 | GET | `/api/displays` | yes | Every display, with state, checksum and lint findings |
 | GET | `/api/displays/{id}` | yes | One display |
+| GET | `/api/displays/{id}/history` | yes | Past render outcomes for this display, newest first; `?limit=N`, default 20, maximum 50 |
 | POST | `/api/displays` | yes | Create a display and start rendering it; `409` if the id exists |
 | PUT | `/api/displays/{id}` | yes | Replace a display's configuration |
 | DELETE | `/api/displays/{id}` | yes | Stop a display and delete its stored frames |
@@ -449,16 +470,23 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | GET | `/api/displays/{id}/preview.png` | yes | The frame as a viewable PNG |
 | GET | `/api/displays/{id}/screenshot.png` | yes | The pre-quantisation capture, downscaled to panel resolution |
 | GET | `/api/displays/{id}/esphome.yaml` | yes | A ready-to-flash ESPHome config for this display |
+| GET | `/api/auth/status` | no | What Home Assistant credential Maverick currently holds, and whether linking is possible |
+| GET | `/api/auth/start` | yes | The URL to send the browser to, to link a Home Assistant account |
+| GET | `/api/auth/callback` | no* | Where Home Assistant sends the browser back; authenticated by its own single-use nonce instead of the token |
 | GET | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | GET | `/api/display` | no | TRMNL frame pointer |
 | GET | `/` | yes | The setup UI |
 | GET | `/static/{file}` | no | The setup UI's stylesheet and script |
+| GET | `/api/docs` | no | Swagger UI over the OpenAPI schema |
 
 The token column applies only when `server.api_token` is set; leave it empty
 and nothing is gated. Clients may present it as `Authorization: Bearer`, as an
 `Access-Token` header, or as a `?token=` query parameter. The UI asks for the
 token when it needs one and keeps it for the tab, so `/?token=...` is no longer
-the only way in.
+the only way in. `/api/auth/callback` (marked `no*`) can never sit behind the
+token — Home Assistant redirects a browser to it and knows nothing of
+`server.api_token` — so it is authenticated instead by a single-use nonce
+minted by `/api/auth/start`, which is behind the token.
 
 Requests arriving through the Home Assistant app's ingress are exempt, since
 Home Assistant authenticates them before the app sees them; they are recognised
@@ -642,16 +670,20 @@ guide, [CLAUDE.md](CLAUDE.md) the short version for AI-assisted changes, and
 
 From [docs/roadmap.md](docs/roadmap.md):
 
-- **Ingress for the app, and an integration**: a sidebar entry instead of a
-  port, UI setup instead of YAML, one device per panel, and actions that need
-  no MQTT broker.
+- **An integration**: one device per panel and actions that need no MQTT
+  broker, distributed via HACS with a config flow instead of a pasted token.
+  UI setup itself is done — see [Status](#status) — without it; MQTT
+  discovery stays the way a display becomes a Home Assistant device either
+  way.
 - **A control surface for Home Assistant**: a tile feature, a card with a live
   thumbnail and a fleet view. Pages themselves are built — an ordered list of
   dashboards per display with dwell times and rotation, a Page select on each
   device and `POST /api/displays/{id}/page` — and the card would be a client
   over them.
 - **A dashboard strategy and live preview**, so a correct e-ink dashboard is
-  generated for you and you can see the real quantised output while editing.
+  generated for you and you can see the real quantised output while editing a
+  Home Assistant dashboard itself, rather than only in the setup UI's own
+  preview of a display's configuration.
 
 ## Licence
 
