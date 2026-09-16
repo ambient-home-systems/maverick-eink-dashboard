@@ -579,6 +579,44 @@
         }
       }
     },
+    "/api/displays/{display_id}/screenshot.png": {
+      "get": {
+        "summary": "Screenshot",
+        "description": "The pre-quantisation capture, downscaled to panel resolution.\n\nLets the setup UI answer \"did the dashboard render wrong, or did the\npipeline do this\" without Samba or SSH access to `<data_dir>/frames/`.\nStored by `Engine.render` when `render.keep_screenshot` is set\n(`src/maverick/config.py`), independent of the frame a transport\ndelivers, so it exists for every transport once a display has\nrendered \u2014 not only for `http_pull`, the one transport that ever\ncalls `FrameStore.put` (`src/maverick/transports/pull.py`). 404\nbefore the first render, and always when the flag is off.",
+        "operationId": "screenshot_api_displays__display_id__screenshot_png_get",
+        "parameters": [
+          {
+            "name": "display_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Display Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/displays/{display_id}/esphome.yaml": {
       "get": {
         "summary": "Esphome Config",
@@ -1348,6 +1386,12 @@
             "title": "Debug Artifacts",
             "description": "Keep the pre-quantization screenshot next to the frame preview and the lint report, under `<data_dir>/debug/<id>/`.",
             "default": false
+          },
+          "keep_screenshot": {
+            "type": "boolean",
+            "title": "Keep Screenshot",
+            "description": "Keep the pre-quantisation screenshot, downscaled to the panel's resolution, so the setup UI can show the source render next to the quantised frame \u2014 the question `debug_artifacts` otherwise needs Samba or SSH to answer. Stored in memory and under `<data_dir>/frames/<id>.screenshot.png`, one PNG at panel resolution per display; turn it off to save that memory.",
+            "default": true
           }
         },
         "additionalProperties": false,

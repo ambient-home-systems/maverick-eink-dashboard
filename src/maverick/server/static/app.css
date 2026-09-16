@@ -68,6 +68,10 @@ main{padding:24px;display:grid;gap:20px;
    with both the image and the placeholder and hides one of them. */
 .shot[hidden]{display:none}
 .shot-empty{padding:40px;text-align:center;color:#888}
+/* Source/Frame, over the card's image. Shared sizing with `.compare-modes`
+   in the editor's preview pane, which offers the same toggle. */
+.view-modes{padding:8px 16px 0;display:flex;gap:6px}
+.view-modes[hidden]{display:none}
 .row{padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:6px;
        background:var(--bg);color:var(--fg);cursor:pointer;transition:border-color .15s}
@@ -209,8 +213,9 @@ dialog.drawer::backdrop{background:rgba(0,0,0,.45)}
 .editor-preview{margin-bottom:16px}
 .editor-preview .row{padding:0 0 8px}
 .preview-status{font-size:12.5px;color:var(--muted)}
-.compare-modes button{font-size:12px;padding:4px 10px}
-.compare-modes button[aria-pressed=true]{border-color:var(--fg)}
+.compare-modes button,.view-modes button{font-size:12px;padding:4px 10px}
+.compare-modes button[aria-pressed=true],.view-modes button[aria-pressed=true]{
+      border-color:var(--fg)}
 .compare{margin-top:10px;gap:10px}
 .compare[hidden]{display:none}
 .compare figure{margin:0;min-width:0}

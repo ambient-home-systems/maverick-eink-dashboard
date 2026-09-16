@@ -1,6 +1,6 @@
 # Troubleshooting
 
-*Last reviewed against commit `4b892a4`.*
+*Last reviewed against commit `7c6ec4f`.*
 
 Every user-facing failure message Maverick can produce, grouped in the order
 you meet them: loading the config, connecting to Home Assistant, rendering,
@@ -1005,6 +1005,15 @@ This is what a pull-transport device fetches from
 `GET /api/displays/{id}/preview.png` serve — without it, a device restarting
 Maverick soon after would get a 404 instead of its last known-good frame.
 
+A fourth file, `<id>.screenshot.png`, is the pre-quantisation capture
+downscaled to panel resolution, kept when `render.keep_screenshot` is set
+(`src/maverick/config.py`) and served at `GET
+/api/displays/{id}/screenshot.png`. Unlike the other three, `Engine.render`
+writes it directly rather than through a transport's `deliver`, so it exists
+for every transport once a display has rendered — not only `http_pull`, the
+one transport that ever calls `FrameStore.put`
+(`src/maverick/transports/pull.py`).
+
 The same degrade-not-crash pattern applies:
 
 ```text
@@ -1015,20 +1024,30 @@ ignoring unreadable stored frame for %s: %s
 could not persist frame for %s: %s
 ```
 
-**Cause and fix:** identical to the `state.json` pair above — a corrupt or
-unwritable frame is dropped or skipped, not fatal, and the display serves
-`404` (via `/frame`) until its next successful render replaces it.
+```text
+could not persist screenshot for %s: %s
+```
 
-Removing a display deletes the same three files (`FrameStore.remove`), and a
+```text
+could not restore the screenshot for %s: %s
+```
+
+**Cause and fix:** identical to the `state.json` pair above — a corrupt or
+unwritable frame or screenshot is dropped or skipped, not fatal, and the
+display serves `404` (via `/frame` or `/screenshot.png`) until its next
+successful render replaces it.
+
+Removing a display deletes the same four files (`FrameStore.remove`), and a
 file that will not go is logged the same way:
 
 ```text
 could not delete the stored frame %s: %s
 ```
 
-**Cause (log, warning):** one of `<id>.frame`, `<id>.preview.png` or
-`<id>.json` could not be unlinked — a read-only `data_dir`, or the wrong owner.
-The display is gone from the running service regardless.
+**Cause (log, warning):** one of `<id>.frame`, `<id>.preview.png`,
+`<id>.json` or `<id>.screenshot.png` could not be unlinked — a read-only
+`data_dir`, or the wrong owner. The display is gone from the running service
+regardless.
 **Fix:** delete the file by hand, or leave it: nothing reads it unless a new
 display is created with the same id, which would then start by serving that old
 frame until its first render replaces it.

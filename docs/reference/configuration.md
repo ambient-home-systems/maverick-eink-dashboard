@@ -313,6 +313,7 @@ How the browser should capture the dashboard.
 | `crop_to_selector` | `str` \| `None` | *unset* | CSS selector to capture instead of the whole page. A selector that matches nothing fails the render rather than capturing the page. |
 | `wait_for_images` | `bool` | `true` | Wait until every `<img>` has decoded. Weather icons are usually the slowest thing on the page. |
 | `debug_artifacts` | `bool` | `false` | Keep the pre-quantization screenshot next to the frame preview and the lint report, under `<data_dir>/debug/<id>/`. |
+| `keep_screenshot` | `bool` | `true` | Keep the pre-quantisation screenshot, downscaled to the panel's resolution, so the setup UI can show the source render next to the quantised frame — the question `debug_artifacts` otherwise needs Samba or SSH to answer. Stored in memory and under `<data_dir>/frames/<id>.screenshot.png`, one PNG at panel resolution per display; turn it off to save that memory. |
 
 **Validation.** `settle` and `timeout` accept a duration and are stored as seconds.
 

@@ -137,24 +137,35 @@ def _tone(image: Image.Image, opts: PipelineOptions) -> Image.Image:
     return image
 
 
+def fit_to_panel(
+    image: Image.Image, width: int, height: int, rotation: int, fit: FitMode
+) -> Image.Image:
+    """Fit, rotate and resize onto the panel's final geometry — no tone or quantisation.
+
+    The first stage of :func:`process` (`fit → rotate → …`), factored out so
+    `Engine`'s kept screenshot (`render.keep_screenshot`,
+    `src/maverick/config.py`) gets the same geometry the quantised frame will,
+    without duplicating the maths.
+    """
+    # The panel's logical resolution before rotation: a 90/270 rotation means we
+    # fit the screenshot to the transposed size.
+    if rotation in (90, 270):
+        fit_w, fit_h = height, width
+    else:
+        fit_w, fit_h = width, height
+
+    rgb = _fit(image.convert("RGB"), fit_w, fit_h, fit)
+    if rotation:
+        rgb = rgb.rotate(-rotation % 360, expand=True, fillcolor=(255, 255, 255))
+    if (rgb.width, rgb.height) != (width, height):
+        rgb = rgb.resize((width, height), Image.LANCZOS)
+    return rgb
+
+
 def process(image: Image.Image, opts: PipelineOptions) -> Frame:
     """Run a screenshot through the full pipeline."""
     palette = opts.palette()
-    rgb = image.convert("RGB")
-
-    # The panel's logical resolution before rotation: a 90/270 rotation means we
-    # fit the screenshot to the transposed size.
-    if opts.rotation in (90, 270):
-        fit_w, fit_h = opts.height, opts.width
-    else:
-        fit_w, fit_h = opts.width, opts.height
-
-    rgb = _fit(rgb, fit_w, fit_h, opts.fit)
-    if opts.rotation:
-        rgb = rgb.rotate(-opts.rotation % 360, expand=True, fillcolor=(255, 255, 255))
-    if (rgb.width, rgb.height) != (opts.width, opts.height):
-        rgb = rgb.resize((opts.width, opts.height), Image.LANCZOS)
-
+    rgb = fit_to_panel(image, opts.width, opts.height, opts.rotation, opts.fit)
     rgb = _tone(rgb, opts)
 
     if opts.sharpen > 0:
@@ -210,4 +221,4 @@ def _encode(
     return pack(indices, palette, fmt, opts.pack_options)
 
 
-__all__ = ["PipelineOptions", "Frame", "FitMode", "process"]
+__all__ = ["PipelineOptions", "Frame", "FitMode", "process", "fit_to_panel"]

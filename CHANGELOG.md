@@ -8,6 +8,24 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The pre-quantisation screenshot next to the quantised frame.** Answering
+  "did the dashboard render wrong, or did the pipeline do this" used to mean
+  Samba or SSH: `render.debug_artifacts` wrote the raw capture to
+  `<data_dir>/debug/<id>/`, and nothing served it. `RenderConfig` gains
+  `keep_screenshot` (`src/maverick/config.py`, on by default), and
+  `Engine.render` downscales the raw capture to the panel's resolution — with
+  a new `fit_to_panel` (`src/maverick/eink/pipeline.py`), factored out of
+  `process` so both share the same fit-rotate-resize maths — and stores it in
+  `FrameStore` as a fourth file, `<id>.screenshot.png`, written and restored
+  the same way as the other three. Unlike those three, it is written directly
+  by `Engine.render` rather than by a transport's `deliver`, so it exists for
+  every transport once a display has rendered, not only `http_pull`.
+  `GET /api/displays/{id}/screenshot.png` serves it (404 before the first
+  render, or always with the flag off), and `POST /api/displays/preview`
+  returns it too, as `screenshot_png`, so the editor's dry-run preview can
+  show source and result together. The setup UI's cards and the editor's
+  preview pane both gain a Source/Frame toggle over the image, defaulting to
+  Frame.
 - **A Dashboard picker, fed from Home Assistant.** `HomeAssistantClient` gains
   `list_dashboards()` (`src/maverick/ha/client.py`), built on a new private
   `_ws_call`, factored out of `watch_states`, for a one-shot WebSocket command

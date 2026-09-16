@@ -167,6 +167,9 @@ let state = [];
 const cards = new Map();
 /** display id -> {at, seen} for a render this page asked for. */
 const pending = new Map();
+/** display id -> 'frame' or 'source', for the card's Source/Frame toggle. Not
+ *  persisted: every card opens on Frame, same as the editor's preview pane. */
+const viewMode = new Map();
 let order = '';
 let timer = null;
 let stopped = false;
@@ -277,6 +280,10 @@ const CARD = `
   <span class="muted card-dashboard"></span><br>
   via <code class="card-transport"></code> <span class="card-schedule"></span>
 </div>
+<span class="view-modes" role="group" aria-label="Source or result" hidden>
+  <button type="button" class="view-source" aria-pressed="false">Source</button>
+  <button type="button" class="view-frame" aria-pressed="true">Frame</button>
+</span>
 <img class="shot" alt="" loading="lazy" hidden>
 <div class="shot shot-empty" hidden>no frame yet</div>
 <div class="meta card-timing">
@@ -308,8 +315,16 @@ function cardFor(id) {
   });
   button('.act-enable').addEventListener('click', (e) => setEnabled(id, true, e.currentTarget));
   button('.act-edit').addEventListener('click', (e) => openEditor(id, e.currentTarget));
+  button('.view-source').addEventListener('click', () => setViewMode(id, 'source'));
+  button('.view-frame').addEventListener('click', () => setViewMode(id, 'frame'));
   cards.set(id, card);
   return card;
+}
+
+function setViewMode(id, mode) {
+  viewMode.set(id, mode);
+  const display = state.find((d) => d.id === id);
+  if (display) preview(cards.get(id), display);
 }
 
 function paintAll() {
@@ -419,23 +434,36 @@ function status(display, rendering) {
 function preview(card, display) {
   const image = card.querySelector('img.shot');
   const placeholder = card.querySelector('.shot-empty');
+  const toggle = card.querySelector('.view-modes');
   if (!display.checksum) {
     image.hidden = true;
     placeholder.hidden = false;
+    toggle.hidden = true;
     return;
   }
+  toggle.hidden = false;
+  const mode = viewMode.get(display.id) || 'frame';
+  toggle.querySelector('.view-source').setAttribute('aria-pressed', String(mode === 'source'));
+  toggle.querySelector('.view-frame').setAttribute('aria-pressed', String(mode === 'frame'));
   // The preview URL is stable but what it serves is not, so the checksum goes
-  // in the query: the browser re-fetches when the frame changes, and only
-  // then. setAttribute rather than .src, which would resolve to an absolute
-  // URL and lose the ingress prefix.
-  if (image.dataset.checksum !== display.checksum) {
-    image.dataset.checksum = display.checksum;
-    image.setAttribute('src', withToken(
-      `api/displays/${encodeURIComponent(display.id)}/preview.png` +
-      `?c=${encodeURIComponent(display.checksum)}`
-    ));
+  // in the query: the browser re-fetches when the frame or the toggle
+  // changes, and only then. setAttribute rather than .src, which would
+  // resolve to an absolute URL and lose the ingress prefix. Two literal
+  // targets rather than one with the filename interpolated in, so a typo in
+  // either fails the relative-path sweep in tests/test_setup_ui.py by name.
+  const key = `${mode}:${display.checksum}`;
+  if (image.dataset.key !== key) {
+    image.dataset.key = key;
+    const url = mode === 'source'
+      ? `api/displays/${encodeURIComponent(display.id)}/screenshot.png` +
+        `?c=${encodeURIComponent(display.checksum)}`
+      : `api/displays/${encodeURIComponent(display.id)}/preview.png` +
+        `?c=${encodeURIComponent(display.checksum)}`;
+    image.setAttribute('src', withToken(url));
   }
-  image.alt = `current frame for ${display.name}`;
+  image.alt = mode === 'source'
+    ? `source render for ${display.name}`
+    : `current frame for ${display.name}`;
   image.hidden = false;
   placeholder.hidden = true;
 }
@@ -1118,6 +1146,10 @@ const PREVIEW = `
 <div class="row">
   <button type="button" class="act-preview">Preview</button>
   <span class="preview-status"></span>
+  <span class="view-modes" role="group" aria-label="Source or result">
+    <button type="button" class="view-source" aria-pressed="false">Source</button>
+    <button type="button" class="view-frame" aria-pressed="true">Frame</button>
+  </span>
   <span class="spacer"></span>
   <span class="compare-modes" role="group" aria-label="Compare the two frames" hidden>
     <button type="button" class="mode-side" aria-pressed="true">Side by side</button>
@@ -1849,17 +1881,26 @@ function previewSection(summary) {
 
   const now = node.querySelector('.compare-now img');
   if (summary.checksum) {
-    now.setAttribute('src', withToken(
+    now.dataset.framesrc = withToken(
       `api/displays/${encodeURIComponent(summary.id)}/preview.png` +
       `?c=${encodeURIComponent(summary.checksum)}`
-    ));
+    );
+    now.dataset.sourcesrc = withToken(
+      `api/displays/${encodeURIComponent(summary.id)}/screenshot.png` +
+      `?c=${encodeURIComponent(summary.checksum)}`
+    );
     now.alt = `current frame for ${summary.name || summary.id}`;
-    now.hidden = false;
-    node.querySelector('.compare-now .shot-empty').hidden = true;
   }
   node.querySelector('.act-preview').addEventListener(
     'click', (e) => runPreview(e.currentTarget)
   );
+  node.querySelector('.view-source').addEventListener(
+    'click', () => applyEditorPreviewMode(node, 'source')
+  );
+  node.querySelector('.view-frame').addEventListener(
+    'click', () => applyEditorPreviewMode(node, 'frame')
+  );
+  applyEditorPreviewMode(node, 'frame');
   const compare = node.querySelector('.compare');
   const mix = node.querySelector('.compare-mix');
   node.querySelector('.mode-side').addEventListener('click', () => setCompareMode(node, 'side'));
@@ -1870,6 +1911,28 @@ function previewSection(summary) {
     compare.style.setProperty('--mix', String(Number(e.currentTarget.value) / 100));
   });
   return node;
+}
+
+/** Point `.compare-now` and `.compare-new` at the source or the frame, from
+ *  whichever `data-framesrc`/`data-sourcesrc` each image has so far — the
+ *  candidate's only exist once a preview has actually been run. */
+function applyEditorPreviewMode(node, mode) {
+  node.dataset.viewMode = mode;
+  node.querySelector('.view-source').setAttribute('aria-pressed', String(mode === 'source'));
+  node.querySelector('.view-frame').setAttribute('aria-pressed', String(mode === 'frame'));
+  for (const figure of ['.compare-now', '.compare-new']) {
+    const img = node.querySelector(`${figure} img`);
+    const src = mode === 'source' ? img.dataset.sourcesrc : img.dataset.framesrc;
+    const placeholder = node.querySelector(`${figure} .shot-empty`);
+    if (src) {
+      img.setAttribute('src', src);
+      img.hidden = false;
+      placeholder.hidden = true;
+    } else {
+      img.hidden = true;
+      placeholder.hidden = false;
+    }
+  }
 }
 
 function setCompareMode(node, mode) {
@@ -1911,12 +1974,14 @@ async function runPreview(button) {
 
 function showPreview(section, result) {
   const image = section.querySelector('.compare-new img');
-  image.setAttribute('src', 'data:image/png;base64,' + result.preview_png);
+  image.dataset.framesrc = 'data:image/png;base64,' + result.preview_png;
+  image.dataset.sourcesrc = result.screenshot_png
+    ? 'data:image/png;base64,' + result.screenshot_png
+    : '';
   image.alt = 'the frame this configuration would produce';
-  image.hidden = false;
-  section.querySelector('.compare-new .shot-empty').hidden = true;
   section.querySelector('.compare').hidden = false;
   section.querySelector('.compare-modes').hidden = false;
+  applyEditorPreviewMode(section, section.dataset.viewMode || 'frame');
   const lint = result.lint || { summary: '', issues: [] };
   section.querySelector('.preview-status').textContent =
     `${result.width}×${result.height} · rendered in ${result.render_s.toFixed(2)} s · ` +

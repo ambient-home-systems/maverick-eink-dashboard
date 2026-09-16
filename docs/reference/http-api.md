@@ -21,7 +21,7 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Twenty-three routes and one static mount, plus the two FastAPI adds for its
+Twenty-four routes and one static mount, plus the two FastAPI adds for its
 own documentation.
 
 | Method | Path | Token | Purpose |
@@ -42,6 +42,7 @@ own documentation.
 | `POST` | `/api/render` | **yes** | Render every enabled display now |
 | `GET` | `/api/displays/{display_id}/frame` | **yes** | The current frame, for a device that pulls |
 | `GET` | `/api/displays/{display_id}/preview.png` | **yes** | The current frame as a viewable PNG |
+| `GET` | `/api/displays/{display_id}/screenshot.png` | **yes** | The pre-quantisation capture, downscaled to panel resolution |
 | `GET` | `/api/displays/{display_id}/esphome.yaml` | **yes** | A ready-to-flash ESPHome configuration |
 | `GET` | `/api/setup` | no | TRMNL bring-your-own-server handshake |
 | `GET` | `/api/display` | no | TRMNL per-fetch metadata |
@@ -357,6 +358,7 @@ display store. This is what an editor's Preview button calls before Save.
 ```json
 {
   "preview_png": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "screenshot_png": "iVBORw0KGgoAAAANSUhEUgAA...",
   "width": 800,
   "height": 480,
   "lint": {"summary": "ok", "issues": [], "metrics": {"coverage.ink": 0.12}},
@@ -368,6 +370,7 @@ display store. This is what an editor's Preview button calls before Save.
 | Key | Meaning |
 | --- | --- |
 | `preview_png` | The quantised frame as base64-encoded PNG bytes — the same image [`preview.png`](#get-apidisplaysdisplay_idpreviewpng) would serve for a saved display. |
+| `screenshot_png` | The pre-quantisation capture, downscaled to panel resolution the same way [`screenshot.png`](#get-apidisplaysdisplay_idscreenshotpng) would serve it, as base64-encoded PNG bytes — computed regardless of `render.keep_screenshot`, since nothing here is persisted. |
 | `width`, `height` | The candidate's resolved panel geometry. |
 | `lint` | `summary`, `issues` and `metrics`, exactly as in [the display summary](#get-apidisplaysdisplay_id). Findings are reported, never enforced — a blank frame is precisely what Preview exists to catch before it is saved. |
 | `render_s` | Seconds spent screenshotting the dashboard. |
@@ -655,6 +658,21 @@ frame endpoint. `If-None-Match` is **not** honoured here: the ETag is published
 for cache validation by anything that does its own, but this handler always
 sends the body. **404** with `{"detail": "no frame rendered yet"}` when there is
 no frame, or a frame with no preview.
+
+### `GET /api/displays/{display_id}/screenshot.png`
+
+**Token required.** The pre-quantisation capture, downscaled to the panel's
+resolution — the "why does this look wrong" answer that otherwise needs Samba
+or SSH access to `<data_dir>/frames/`. Stored by `Engine.render`
+(`src/maverick/engine.py`) whenever `render.keep_screenshot` is set
+(`src/maverick/config.py`, the default), independent of the frame a transport
+delivers: it exists for every transport once a display has rendered, not only
+`http_pull`, the one transport that ever populates the stored frame itself
+(`src/maverick/transports/pull.py`).
+
+**200** `image/png`, with `Cache-Control: no-cache`. **404** with
+`{"detail": "no screenshot rendered yet"}` before the first render, or always
+when `render.keep_screenshot` is off.
 
 ### `GET /api/displays/{display_id}/esphome.yaml`
 
