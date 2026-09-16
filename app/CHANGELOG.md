@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0
+
+- **Adding a display now asks four things**, not seventeen: a name, which panel
+  it is, which dashboard to show, and how often to refresh. Everything else has
+  moved under *Advanced*.
+- **You no longer pick a transport.** The panel decides it — a BLE shelf label
+  is delivered over Bluetooth, a Waveshare module over HTTP — which is what
+  choosing a panel was always supposed to settle. Displays that name a
+  transport are unaffected, and it is still there under *Advanced* if you want
+  to override it.
+- **One refresh field instead of two.** A dropdown from every five minutes to
+  once a day, rather than an interval box and a crontab box that quietly
+  cancelled each other out. Crontabs still work, under *Advanced*.
+- **New: a dashboard built for your panel.** Maverick shows a Home Assistant
+  dashboard you already have — and the one you already have was built for a
+  phone, which is the commonest reason a first render looks wrong. Every
+  display's card now has a **Dashboard starter** section that hands you a
+  ready-made dashboard sized for that exact panel, using your own entities and
+  only the cards that stay readable after the panel's dithering. Copy it into
+  Home Assistant's raw configuration editor and point the display at it.
+- **Fixed: the panel dropdown was empty** when adding a display, if you had
+  opened an existing display's *Edit* drawer first.
+
 ## 0.3.0
 
 - **Displays can be added, edited and deleted from the web UI**, with no more
