@@ -6,6 +6,17 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The running version is in the header.** Twice in one afternoon a report
+  came in about a feature that had shipped and was not running, and nothing on
+  the page could settle which build was serving it — the version was only in
+  `GET /health` and on the Supervisor's own add-on screen. It now sits beside
+  the display count, read from `maverick.app.VERSION`, which
+  `importlib.metadata` takes off the installed distribution: it describes the
+  package actually answering the request rather than a number written down a
+  second time.
+
 ## [0.4.1] - 2026-09-16
 
 ### Added

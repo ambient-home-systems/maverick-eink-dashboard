@@ -20,6 +20,11 @@ header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;
        align-items:baseline;gap:14px;flex-wrap:wrap}
 h1{margin:0;font-size:20px;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:13px}
+/* The running version, so "is this build the one with X in it" is answerable
+   from the page rather than from the Supervisor. Monospace and tabular so it
+   reads as a version rather than as prose. */
+.version{font:12px ui-monospace,monospace;padding:1px 6px;border-radius:5px;
+      border:1px solid var(--line);background:var(--card);white-space:nowrap}
 .spacer{margin-left:auto}
 .chip{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);
       background:var(--card);white-space:nowrap}

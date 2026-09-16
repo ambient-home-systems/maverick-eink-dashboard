@@ -37,6 +37,11 @@ import html
 import json
 from typing import TYPE_CHECKING, Any
 
+# `maverick.app` imports only `config` and `engine`, never the server package,
+# so this is not the cycle it looks like — `api.py` imports both this module
+# and `..app` the same way.
+from ..app import VERSION
+
 if TYPE_CHECKING:  # pragma: no cover
     from ..app import Application
 
@@ -370,6 +375,13 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
     lede = "" if ha_connected else f'<div class="lede">{_link_card(application)}</div>'
 
     count = len(config.displays)
+    # The version, in the header, because twice in one afternoon a report came
+    # in about a feature that *was* shipped and *was not* running — and there
+    # was no way to tell which build the page came from without reaching
+    # `/health` or the Supervisor's add-on page. `VERSION` is read from the
+    # installed distribution (`src/maverick/app.py`), so this is the package
+    # actually serving the request rather than a number written down twice.
+    version = html.escape(VERSION)
     # `</script>` inside the JSON would end the block early; `<` cannot occur
     # in JSON outside a string, and `\\u003c` is the same string to any parser.
     embedded = json.dumps(displays).replace("<", "\\u003c")
@@ -378,6 +390,8 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
 <body>
 <header>
   <h1>Maverick</h1>
+  <span class="sub version" title="Maverick {version} — the package serving this page">
+    v{version}</span>
   <span class="sub">{count} display{"" if count == 1 else "s"}</span>
   <button type="button" id="add-display-btn" class="add-btn"
           aria-haspopup="dialog">Add display</button>
