@@ -1052,6 +1052,45 @@ regardless.
 display is created with the same id, which would then start by serving that old
 frame until its first render replaces it.
 
+### `data_dir/history/`
+
+One JSON file per display, `<id>.json`, holding up to the last 50 render
+outcomes — trigger, success, timings, lint summary, checksum, full-refresh
+flag and delivery detail — appended by `Engine._notify` on every render and
+served newest-first at `GET /api/displays/{id}/history`. Unlike
+`DisplayState.last_error`, a later success does not erase these rows, which is
+the point: it is where a render that failed, was blocked by lint, or skipped
+an unchanged frame is still visible after the panel recovers.
+
+The same degrade-not-crash pattern applies:
+
+```text
+ignoring unreadable history file %s: %s
+```
+
+```text
+could not persist history for %s: %s
+```
+
+**Cause and fix:** identical to the `state.json` pair above — a corrupt or
+unwritable history file is dropped or skipped, not fatal; the display simply
+starts (or continues) with an empty or shorter history until its next render
+appends to it.
+
+Removing a display deletes its history file, and one that will not go is
+logged the same way:
+
+```text
+could not delete history file %s: %s
+```
+
+**Cause (log, warning):** `<id>.json` under `data_dir/history/` could not be
+unlinked — a read-only `data_dir`, or the wrong owner. The display is gone
+from the running service regardless.
+**Fix:** delete the file by hand, or leave it: nothing reads it unless a new
+display is created with the same id, which would then start by showing that
+old history until its own renders replace it.
+
 ### `data_dir/displays.yaml`
 
 The displays themselves, as `DisplayStore` writes them (`src/maverick/store.py`):

@@ -21,7 +21,7 @@ browsable version at [`/api/docs`](#get-apidocs).
 
 ## Routes at a glance
 
-Twenty-four routes and one static mount, plus the two FastAPI adds for its
+Twenty-five routes and one static mount, plus the two FastAPI adds for its
 own documentation.
 
 | Method | Path | Token | Purpose |
@@ -33,6 +33,7 @@ own documentation.
 | `GET` | `/api/ha/dashboards` | **yes** | Every Lovelace dashboard and its views, for the Dashboard field's picker |
 | `GET` | `/api/displays` | **yes** | Full summary of every configured display |
 | `GET` | `/api/displays/{display_id}` | **yes** | The same summary for one display |
+| `GET` | `/api/displays/{display_id}/history` | **yes** | Past render outcomes for one display, newest first |
 | `POST` | `/api/displays` | **yes** | Create a display and start rendering it |
 | `PUT` | `/api/displays/{display_id}` | **yes** | Replace a display's configuration |
 | `DELETE` | `/api/displays/{display_id}` | **yes** | Stop a display and delete its stored frames |
@@ -452,6 +453,53 @@ The summary, with every key from `_display_summary`:
 | `checksum` | The stored frame's checksum, or `null` if nothing has been rendered yet. |
 | `lint` | `summary`, `issues` (each with `code`, `severity`, `message`, `hint`) and `metrics` from the last render, or `null` if there is no frame. |
 | `last_pulled_at` | When a device last fetched the frame, in this process. It is held in memory, so it is `null` after a restart until the next fetch — unlike `state.last_pulled_at`, which is persisted. |
+
+### `GET /api/displays/{display_id}/history`
+
+**Requires the token.** Past render outcomes for this display, newest first.
+`DisplayState` (`src/maverick/engine.py`) keeps only the *last* error and a
+failure count, both of which a later success clears; this is what still shows
+a render that failed, was blocked by lint, or skipped because the frame was
+unchanged, once something has rendered since. `Engine._notify` appends one
+entry on every outcome `Engine.render` reaches — success, failure, a lint
+block or an unchanged skip — to a buffer capped at 50 per display and
+persisted to `<data_dir>/history/{display_id}.json`. `render_candidate`
+(dry-run previews) never calls it, so previews leave no trace here.
+
+`?limit=N` caps how many entries come back — default 20, maximum 50. An
+unknown display is **404**, the same lookup error as
+[`GET /api/displays/{display_id}`](#get-apidisplaysdisplay_id).
+
+```json
+[
+  {
+    "at": "2026-09-16T08:31:04+00:00",
+    "trigger": "schedule",
+    "ok": true,
+    "skipped": false,
+    "reason": "",
+    "render_s": 1.204,
+    "process_s": 0.31,
+    "total_s": 1.611,
+    "lint_summary": "ok",
+    "checksum": "0123456789abcdef",
+    "full_refresh": false,
+    "delivery": "recorded"
+  }
+]
+```
+
+| Key | Meaning |
+| --- | --- |
+| `at` | When the render finished, ISO 8601. |
+| `trigger` | What asked for it, whatever the caller named (`Engine.render`'s `trigger` parameter, default `"manual"`): `"schedule"` and `"state"` from `RenderScheduler._run` (`src/maverick/scheduling/scheduler.py`, an interval/cron fire or an `on_change` entity), `"button"` from a Home Assistant button (`src/maverick/app.py`), `"api"` from a REST call, `"cli"` from `maverick render` (`src/maverick/cli.py`). |
+| `ok` | Whether the render succeeded and delivered (or, for a pull transport, was published for collection). |
+| `skipped` | True when nothing was delivered on purpose — a lint block or an unchanged frame — as opposed to `ok=false`, which means a render or delivery error. |
+| `reason` | Empty on an ordinary success; otherwise the lint failure, the delivery error, or `"frame unchanged"`. |
+| `render_s`, `process_s`, `total_s` | Seconds for the screenshot, the image pipeline, and the whole render-process-deliver cycle, to three decimal places; `0.0` for a render that failed before reaching that step. |
+| `lint_summary`, `checksum` | From the produced frame; empty when the render never reached one, such as a `RenderError`. |
+| `full_refresh` | Whether this render forced or triggered a flashing full refresh rather than a partial one. |
+| `delivery` | The transport's own detail string (`DeliveryResult.detail`, `src/maverick/transports/base.py`), or empty when delivery never ran. |
 
 ### `POST /api/displays/{display_id}/render`
 
