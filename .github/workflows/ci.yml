@@ -35,8 +35,11 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       # No `playwright install`. Chromium is needed to render a dashboard, not
-      # to run the suite: tests/conftest.py stubs the renderer and the
+      # to run this suite: tests/conftest.py stubs the renderer and the
       # transports, so nothing here opens a browser, a broker or a socket.
+      # `pytest -q` also excludes the `browser` marker by default
+      # (`pyproject.toml`); the `browser` job below covers what these stubs
+      # deliberately do not.
       - name: Install
         run: |
           python -m pip install --upgrade pip
@@ -51,6 +54,34 @@ jobs:
 
       - name: Generated reference is up to date
         run: python scripts/gen_docs.py --check
+
+  browser:
+    name: Browser suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # The only job that opens a real browser: tests/browser/ (excluded from
+      # the `test` job's `pytest -q` by the `browser` marker,
+      # `pyproject.toml`) drives DashboardRenderer and the setup UI against a
+      # real Chromium, one prototype found only by rendering into it.
+      - name: Install Chromium
+        run: playwright install chromium --with-deps
+
+      - name: Test
+        run: pytest -m browser
 
   links:
     name: Markdown links

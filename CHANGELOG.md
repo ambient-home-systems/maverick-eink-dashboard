@@ -8,6 +8,26 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A browser regression suite.** `tests/conftest.py` stubs the renderer and
+  the transports everywhere else, so nothing in `pytest -q` had ever opened a
+  Chromium, and two findings `docs/architecture.md` calls out as needing one
+  to fail in — seeding the Home Assistant auth bundle before the dashboard's
+  own first script runs, and adopting the injected stylesheet into every
+  shadow root, including one attached late — had no regression test. New
+  `tests/browser/`, gated by a `browser` pytest marker
+  (`pyproject.toml`) that `pytest -q` excludes by default so the existing
+  suite stays exactly as fast, drives `DashboardRenderer` with a real
+  `BrowserPool` against static fixture pages
+  (`tests/browser/fixtures/dashboard.html`, `login.html`, served from a local
+  `http.server` thread — no Home Assistant involved) to cover both findings,
+  plus that a login page is rejected and its browser context dropped, and
+  that the returned image is the viewport size times `supersample`. A third
+  test drives the Phase 2 setup UI itself: a real FastAPI app under uvicorn,
+  a display added through the Add display form, and its status pill followed
+  from "rendering" to "ok". `tests/browser/conftest.py` skips the whole
+  directory, rather than failing it, when no Chromium is reachable — the same
+  rule `BrowserPool` uses. CI gains a `browser` job that installs Chromium and
+  runs it for real.
 - **A standalone Docker image, and a local dev loop against a real Home
   Assistant.** The root [`Dockerfile`](Dockerfile) is modelled on
   `app/Dockerfile` — Debian bookworm, a venv, Debian's `chromium` package, the
