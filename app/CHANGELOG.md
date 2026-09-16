@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - **Install on device.** A display on an ESP32 board now has a step-by-step
   hand-off to the ESPHome Device Builder on its card: the secrets the
