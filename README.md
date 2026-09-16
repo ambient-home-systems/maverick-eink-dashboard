@@ -369,9 +369,10 @@ Assistant as a device via MQTT discovery, with no YAML on the Home Assistant
 side. Each device carries a **Refresh** button and a **Full refresh** button
 (press either from an automation, a script, a dashboard or a voice assistant),
 a **Scheduled renders** switch to pause the timeline without editing config, a
-**Screen** image entity showing what the panel is currently displaying, and
-diagnostic sensors for last render, status, render duration, ink coverage,
-frames delivered and a problem flag. Entities are published retained so they
+**Screen** image entity showing what the panel is currently displaying, a
+**Page** select for a display with several
+[pages](docs/architecture.md#pages), and diagnostic sensors for last render,
+status, render duration, ink coverage, frames delivered and a problem flag. Entities are published retained so they
 survive a Home Assistant restart, and a last will marks them unavailable if
 Maverick dies. This is `src/maverick/ha/discovery.py`.
 
@@ -440,6 +441,7 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | PUT | `/api/displays/{id}` | yes | Replace a display's configuration |
 | DELETE | `/api/displays/{id}` | yes | Stop a display and delete its stored frames |
 | POST | `/api/displays/{id}/schedule` | yes | Pause or resume a display's schedule at runtime |
+| POST | `/api/displays/{id}/page` | yes | Put one of a display's pages on the panel: `{"index": n}`, `{"name": "..."}` or `{"step": 1}` |
 | POST | `/api/displays/preview` | yes | Dry-run render of a candidate config; saves nothing |
 | POST | `/api/displays/{id}/render` | yes | Render one display now; `?force=true` ignores the unchanged and lint gates; `?wait=false` returns `202` and renders in the background |
 | POST | `/api/render` | yes | Render every enabled display |
@@ -643,8 +645,11 @@ From [docs/roadmap.md](docs/roadmap.md):
 - **Ingress for the app, and an integration**: a sidebar entry instead of a
   port, UI setup instead of YAML, one device per panel, and actions that need
   no MQTT broker.
-- **Pages and a control surface**: an ordered list of dashboards per display
-  with rotation and dwell times, plus a tile feature and a card to drive it.
+- **A control surface for Home Assistant**: a tile feature, a card with a live
+  thumbnail and a fleet view. Pages themselves are built — an ordered list of
+  dashboards per display with dwell times and rotation, a Page select on each
+  device and `POST /api/displays/{id}/page` — and the card would be a client
+  over them.
 - **A dashboard strategy and live preview**, so a correct e-ink dashboard is
   generated for you and you can see the real quantised output while editing.
 

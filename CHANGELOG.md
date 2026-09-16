@@ -24,6 +24,31 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   builds the root image on pull requests (amd64) and runs the same smoke
   commands the `app` job runs. See "Docker" in README.md and "Running against
   a real Home Assistant" in CONTRIBUTING.md.
+- **Several dashboards per display, with rotation.** A display rendered the one
+  dashboard named in its config, and `DisplayConfig` is `extra="forbid"`, so
+  the `pages:` syntax `docs/roadmap.md` proposed was rejected at load. It is
+  now real: a `PageConfig` (`src/maverick/config.py`) with a `dashboard`, an
+  optional `name` — derived from the last segment of the path when empty — and
+  an optional `dwell` parsed like `schedule.every`, plus `displays[].pages` and
+  `displays[].rotate`. `dashboard` stays the single-page shorthand, and setting
+  both it and `pages` is a load error naming the display; a display with no
+  pages has exactly one, so everything downstream counts pages rather than
+  asking which form it was written in. `DisplayState` gains `page_index` and
+  `page_shown_at`, both persisted, so a restart does not undo what an
+  automation selected, and `Engine.render` resolves the current page's
+  dashboard at render time rather than at load. With `rotate: true`, a
+  *scheduled* tick advances to the next page once the current page's `dwell`
+  has elapsed (`RenderScheduler._rotate`), wrapping at the end and leaving
+  renders someone asked for on the page that is up. Three ways to change it,
+  all rendering under a new `page` trigger: `POST /api/displays/{id}/page` with
+  `{"index": n}`, `{"name": "..."}` or `{"step": 1}` — the page moves before
+  the response and the render runs behind it unless `?wait=true`; a **Page**
+  select per display over MQTT discovery, whose options are the page names,
+  with `page:<name>`, `next_page` and `previous_page` routed by
+  `Application.handle_command`; and a page picker on each card in the setup UI
+  with a Pages section in the editor drawer for adding, removing and
+  reordering. The display summary gains `page` (index, name, dashboard, count,
+  names and `rotate`), and the MQTT state topic gains `page` and `page_index`.
 - **Render history per display.** `DisplayState` (`src/maverick/engine.py`)
   keeps only the *last* error and a failure count, both cleared by the next
   success, so a panel that fails one render in ten had no trace of it
@@ -236,6 +261,32 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The Home Assistant app's options are read by the service, not by
+  `run.sh`.** The options reached Maverick through bashio until now: `run.sh`
+  read each one, exported it, and the starter `maverick.yaml` substituted it
+  back. Three of the seven 0.2.x fixes were that chain rather than Maverick —
+  `bashio::config key ''` handing back the *string* `"null"` for an unset
+  option (0.2.4), `${VAR:-default}` not standing in for a variable exported
+  empty (0.2.1), and `maverick serve -c file` being an argparse error (0.2.2)
+  — and none of them could be reproduced outside a Supervisor. A new
+  `src/maverick/ha/options.py` reads `/data/options.json` itself and sets the
+  same environment variable names, so the starter config and every file a user
+  has already edited are unchanged: a missing key, a JSON `null` and an empty
+  string are all "unset", and the two derived values keep their old rules —
+  `base_url` from the host's first IPv4 address (`GET /network/info`, prefix
+  length stripped) and MQTT from the explicit `mqtt_host` or else the
+  Mosquitto broker app (`GET /services/mqtt`), both through `api_get` in
+  `src/maverick/ha/supervisor.py`, both degrading to the documented fallback
+  when the Supervisor will not answer. The module's docstring records which
+  permission grants each call, `hassio_api` being only one of the two.
+  `cli._load` applies them whenever `SUPERVISOR_TOKEN` is set and the file
+  exists (`src/maverick/cli.py`), which also retires the
+  `/data/options.json` entry in `DEFAULT_CONFIG_PATHS` and the "The add-on
+  should have generated one" error that entry existed to raise. `app/run.sh`
+  is down to copying the starter config and starting the service, and CI now
+  runs the built image against an `options.json` with nothing in the
+  environment (`.github/workflows/ci.yml`) — the local reproduction the 0.2.x
+  cycle did without.
 - **The setup UI's stylesheet and script are files now, not strings in Python.**
   `_CSS` and `_JS` lived in `src/maverick/server/ui.py`, which also rendered
   every card server-side; they are now `src/maverick/server/static/app.css` and

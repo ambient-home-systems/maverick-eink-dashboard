@@ -1,15 +1,27 @@
 """The Home Assistant app under ``app/`` must stay consistent with the package.
 
 Nothing here builds the image — CI does that on amd64 — but the pieces that can
-drift silently are checked: the option keys ``run.sh`` reads exist in the
-schema, every variable the starter config substitutes is exported by ``run.sh``,
-the starter config loads through the real config loader, the app version is the
-package version, and the package at ``MAVERICK_REF`` — which is what the image
-installs, not the working tree — accepts the starter config this commit ships.
+drift silently are checked: the options the service reads are the ones the
+schema declares, every variable the starter config substitutes is one the
+service sets, the starter config loads through the real config loader, the app
+version is the package version, and the package at ``MAVERICK_REF`` — which is
+what the image installs, not the working tree — accepts the starter config this
+commit ships.
+
+The options half of that used to be a contract on ``run.sh``, checked by
+re-reading the shell script and by running its helper under stubbed bashio
+functions. The service reads ``/data/options.json`` itself now
+(``src/maverick/ha/options.py``), so the same questions are asked of the module:
+which keys it reads, what it treats as unset, and what it derives when an option
+is empty. The Supervisor is never called — every test that needs an answer from
+it provides one through the ``supervisor`` fixture — so this file opens no
+socket.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import shlex
@@ -18,17 +30,45 @@ import sys
 import tarfile
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
 
-from maverick.cli import build_parser
+from maverick.cli import _load, build_parser
 from maverick.config import load_config
+from maverick.ha import options as options_module
+from maverick.ha.options import (
+    DERIVED_VARIABLES,
+    OPTION_VARIABLES,
+    apply_app_options,
+    load_app_options,
+)
+from maverick.ha.supervisor import SupervisorError
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
 RUN_SH = (APP / "run.sh").read_text(encoding="utf-8")
 TEMPLATE = APP / "rootfs" / "usr" / "share" / "maverick" / "maverick.yaml"
+
+#: What the module sets for an app nobody has configured yet — every option
+#: unset, no Supervisor answering. It is the state a fresh install is in, and
+#: the table the starter config's ``${VAR:-default}`` fallbacks are written
+#: against, so several tests below share it.
+FIRST_START = {
+    "HA_URL": "http://homeassistant:8123",  # config.yaml ships this default
+    "HA_TOKEN": "",
+    "HA_REFRESH_TOKEN": "",
+    "HA_CLIENT_ID": "",
+    "MAVERICK_LOG_LEVEL": "info",  # ditto
+    "MAVERICK_API_TOKEN": "",
+    "MAVERICK_BASE_URL": "",
+    "MQTT_ENABLED": "false",  # always one of true/false, never empty
+    "MQTT_HOST": "core-mosquitto",
+    "MQTT_PORT": "1883",
+    "MQTT_USERNAME": "",
+    "MQTT_PASSWORD": "",
+}
 
 
 def _manifest() -> dict:
@@ -39,12 +79,38 @@ def _project() -> dict:
     return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
 
-def _exported() -> set[str]:
-    names: set[str] = set()
-    for line in RUN_SH.splitlines():
-        if line.startswith("export "):
-            names.update(line.split()[1:])
-    return names
+def _variables() -> set[str]:
+    """Every environment variable the app's options become."""
+    return set(OPTION_VARIABLES.values()) | set(DERIVED_VARIABLES)
+
+
+def _options_file(tmp_path: Path, **options: Any) -> Path:
+    """An ``options.json`` as the Supervisor writes one into ``/data``."""
+    path = tmp_path / "options.json"
+    path.write_text(json.dumps(options), encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def supervisor(monkeypatch) -> dict[str, Any]:
+    """Answer the Supervisor's read-only endpoints from a mapping.
+
+    A path the test has not filled in raises ``SupervisorError``, which is what
+    the real Supervisor produces for ``/services/mqtt`` whenever no app
+    provides the service — ``400 Service not enabled``
+    (``supervisor/api/services.py``, ``get_service``) — and so is the ordinary
+    "Mosquitto is not installed" case rather than an exotic one. An empty
+    mapping is therefore a host with no broker and no readable address.
+    """
+    answers: dict[str, Any] = {}
+
+    async def fake_get(path: str) -> Any:
+        if path not in answers:
+            raise SupervisorError(f"Supervisor GET {path} failed (400): Service not enabled")
+        return answers[path]
+
+    monkeypatch.setattr(options_module, "api_get", fake_get)
+    return answers
 
 
 def test_repository_manifest_points_at_this_repository() -> None:
@@ -102,82 +168,357 @@ def test_run_sh_invokes_the_cli_the_way_the_cli_parses() -> None:
             )
 
 
-def test_every_option_run_sh_reads_is_declared() -> None:
-    read = set(
-        re.findall(r"(?:bashio::config(?:\.has_value)?|config_or_empty) '([a-z_]+)'", RUN_SH)
-    )
-    assert read, "run.sh reads no options"
-    assert read <= set(_manifest()["schema"])
+def test_run_sh_leaves_the_options_to_the_service() -> None:
+    """Reading the options in two places is how the two readings drift apart.
 
-
-def test_an_unset_option_is_never_read_with_an_empty_bashio_default() -> None:
-    """`bashio::config key ''` yields the string "null", not an empty string.
-
-    bashio reads its own fallback as ``${2:-null}``, and ``:-`` substitutes on
-    an empty argument too, so an empty default becomes the literal ``null``
-    (bashio ``lib/config.sh``). Nothing downstream catches it: ``"null"`` is a
-    non-empty string, so it passes every ``${VAR:-default}`` in the starter
-    config and is stored as the value. The visible damage is a credential that
-    does not exist — ``refresh_token`` and ``client_id`` both ``"null"`` build
-    a linked account (`src/maverick/ha/auth.py`, `build_token_source`) whose
-    every refresh is answered `400 Invalid client id` — plus a ``base_url``
-    that blocks linking and an ``api_token`` gating the pull endpoints.
+    ``run.sh`` translated them until 0.2.7, and three of the seven fixes that
+    release needed were bashio's semantics rather than Maverick's (see
+    ``CHANGELOG.md`` and the module docstring of
+    ``src/maverick/ha/options.py``). The script keeps the container's own two
+    jobs — put a config file where the user can edit it, start the service —
+    and reads no options at all.
     """
-    offenders = re.findall(r"bashio::config '([a-z_]+)' ''", RUN_SH)
-    assert not offenders, (
-        f"{offenders} are read with an empty bashio default, which yields the "
-        "string 'null'. Read optional options through config_or_empty instead."
+    assert "bashio::config" not in RUN_SH, (
+        "run.sh reads an option again; the service reads /data/options.json itself"
+    )
+    assert "\nexport " not in RUN_SH, (
+        "run.sh exports a variable again; load_app_options sets them into os.environ"
     )
 
 
-def test_config_or_empty_turns_an_unset_option_into_an_empty_string() -> None:
-    """The helper itself, run against bashio's real contract.
+def test_the_module_reads_exactly_the_options_the_schema_declares() -> None:
+    """The two halves of one contract, and nothing checks it but this.
 
-    The stubs below reproduce ``bashio::config`` and ``bashio::config.has_value``
-    from bashio ``lib/config.sh``, including the ``${2:-null}`` fallback that
-    causes the problem, so this fails if the helper is rewritten to call
-    ``bashio::config`` with a default again.
+    A key in the schema that the module never reads is an option the
+    Configuration tab offers and the service ignores; a key the module reads
+    that the schema does not declare is an option the Supervisor will never
+    write, so it is permanently unset. Both are silent.
     """
-    body = re.search(r"^config_or_empty\(\) \{.*?^\}$", RUN_SH, re.M | re.S)
-    assert body, "run.sh no longer defines config_or_empty"
+    assert set(OPTION_VARIABLES) == set(_manifest()["schema"])
 
-    script = f"""
-    bashio::config() {{
-        local default_value=${{2:-null}}
-        case "${{1}}" in
-            set_option) printf '%s' 'a-value' ;;
-            *) echo "${{default_value}}" ;;
-        esac
-    }}
-    bashio::config.has_value() {{
-        [[ "$(bashio::config "${{1}}")" != "null" && -n "$(bashio::config "${{1}}")" ]]
-    }}
-    {body.group(0)}
-    printf '[%s][%s]' "$(config_or_empty 'unset_option')" "$(config_or_empty 'set_option')"
+
+def test_every_option_the_module_reads_is_translated() -> None:
+    translations = yaml.safe_load((APP / "translations" / "en.yaml").read_text(encoding="utf-8"))
+    assert set(OPTION_VARIABLES) <= set(translations["configuration"])
+
+
+def test_template_variables_are_set_by_the_options_module() -> None:
+    """Every ``${VAR}`` in the starter config is one the service sets.
+
+    ``${HA_URL}`` carries no ``:-`` default, so a variable that stopped being
+    set would fail the load outright (``expand_env`` in
+    ``src/maverick/config.py``); the rest would silently take their written
+    fallback instead of the user's option.
     """
-    result = subprocess.run(
-        ["bash", "-o", "errexit", "-o", "pipefail", "-c", script],
-        capture_output=True,
-        text=True,
-        check=True,
+    # Comment lines are skipped: the header explains `${VAR}` substitution in words.
+    body = "\n".join(
+        line for line in TEMPLATE.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
     )
-    assert result.stdout == "[][a-value]", result.stdout
+    referenced = set(re.findall(r"\$\{([A-Z_]+)", body))
+    assert referenced, "the starter config substitutes nothing"
+    assert referenced <= _variables()
 
 
-def test_the_manifest_can_reach_the_api_run_sh_derives_base_url_from() -> None:
+@pytest.mark.parametrize("spelling", ["missing", "null", "empty"])
+def test_missing_null_and_an_empty_string_all_mean_unset(
+    tmp_path, supervisor, spelling: str
+) -> None:
+    """The three spellings the Supervisor produces for "not filled in".
+
+    A key with no default in ``app/config.yaml`` is absent until it is set; the
+    setup UI clears one by writing JSON ``null`` through
+    ``/addons/self/options`` (``save_options`` in
+    ``src/maverick/ha/supervisor.py``); a field emptied by hand is ``""``. The
+    fix 0.2.4 shipped was exactly this question answered wrongly one level
+    down: ``bashio::config key ''`` returns the *string* ``"null"``, which
+    passes every ``${VAR:-default}`` in the config and is stored as a value —
+    ``client_id: "null"`` looks like a linked account and every render then
+    fails with ``Invalid client id``.
+    """
+    schema = _manifest()["schema"]
+    if spelling == "missing":
+        options: dict[str, Any] = {}
+    elif spelling == "null":
+        options = dict.fromkeys(schema, None)
+    else:
+        options = dict.fromkeys(schema, "")
+
+    assert load_app_options(_options_file(tmp_path, **options)) == FIRST_START
+
+
+def test_an_unreadable_options_file_leaves_every_option_unset(tmp_path, supervisor, caplog) -> None:
+    """Refusing to start would leave the user with nothing but a log line.
+
+    The service can be configured from its own web UI, so it has to be running
+    to be fixed — the same reason a missing credential is a warning below.
+    """
+    with caplog.at_level(logging.WARNING, logger="maverick.ha.options"):
+        values = load_app_options(tmp_path / "there-is-no-such-file.json")
+
+    assert values == FIRST_START
+    assert "Could not read the app's options" in caplog.text
+
+
+def test_every_option_reaches_its_variable(tmp_path, supervisor) -> None:
+    """One filled-in option per schema key, end to end.
+
+    ``mqtt_port`` is an integer in ``options.json`` — the schema's ``port?``
+    type — and the config file substitutes text, so the conversion happens here
+    or nowhere.
+    """
+    options = {
+        "home_assistant_url": "https://ha.example.com",
+        "home_assistant_token": "a-long-lived-token",
+        "home_assistant_refresh_token": "a-refresh-token",
+        "home_assistant_client_id": "http://192.168.1.10:5000/",
+        "log_level": "debug",
+        "api_token": "an-api-token",
+        "base_url": "http://192.168.1.10:5000",
+        "mqtt_host": "broker.lan",
+        "mqtt_port": 8883,
+        "mqtt_username": "maverick",
+        "mqtt_password": "a-secret",
+    }
+    assert set(options) == set(OPTION_VARIABLES), "one value per schema key, or this proves less"
+
+    assert load_app_options(_options_file(tmp_path, **options)) == {
+        "HA_URL": "https://ha.example.com",
+        "HA_TOKEN": "a-long-lived-token",
+        "HA_REFRESH_TOKEN": "a-refresh-token",
+        "HA_CLIENT_ID": "http://192.168.1.10:5000/",
+        "MAVERICK_LOG_LEVEL": "debug",
+        "MAVERICK_API_TOKEN": "an-api-token",
+        "MAVERICK_BASE_URL": "http://192.168.1.10:5000",
+        "MQTT_ENABLED": "true",
+        "MQTT_HOST": "broker.lan",
+        "MQTT_PORT": "8883",
+        "MQTT_USERNAME": "maverick",
+        "MQTT_PASSWORD": "a-secret",
+    }
+
+
+def test_no_credential_is_a_warning_and_not_a_refusal(tmp_path, supervisor, caplog) -> None:
+    """Starting without one is deliberate: linking happens in the web UI.
+
+    The UI has to be running to be reached, so refusing to start would make the
+    supported way of configuring the app unreachable.
+    """
+    with caplog.at_level(logging.WARNING, logger="maverick.ha.options"):
+        values = load_app_options(_options_file(tmp_path))
+    assert values["HA_URL"] == "http://homeassistant:8123"
+    assert "No Home Assistant credential yet" in caplog.text
+
+    # A refresh token alone is a credential: that is what linking writes, and
+    # `build_token_source` (`src/maverick/ha/auth.py`) accepts it in its own
+    # right, so warning then would be telling the user to redo what they did.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="maverick.ha.options"):
+        load_app_options(
+            _options_file(
+                tmp_path,
+                home_assistant_refresh_token="a-refresh-token",
+                home_assistant_client_id="http://192.168.1.10:5000/",
+            )
+        )
+    assert "No Home Assistant credential yet" not in caplog.text
+
+
+def test_base_url_is_derived_from_the_hosts_first_ipv4_address(tmp_path, supervisor) -> None:
+    """What the option's own description promises when it is left empty.
+
+    The Supervisor reports each address with its prefix length, as
+    ``address.with_prefixlen`` (``supervisor/api/network.py``,
+    ``ip4config_struct``), hence the strip. The app network's own
+    ``172.30.32.0/23`` is in the same payload under ``docker`` and is not a
+    candidate: no panel on the LAN can reach it.
+    """
+    supervisor["/network/info"] = {
+        "interfaces": [
+            {"interface": "eth0", "enabled": False, "ipv4": None},
+            {
+                "interface": "wlan0",
+                "primary": True,
+                "ipv4": {"address": ["192.168.1.10/24", "10.9.9.9/8"], "gateway": "192.168.1.1"},
+            },
+        ],
+        "docker": {"interface": "hassio", "address": "172.30.32.0/23"},
+    }
+
+    values = load_app_options(_options_file(tmp_path))
+
+    assert values["MAVERICK_BASE_URL"] == "http://192.168.1.10:5000"
+
+
+def test_an_explicit_base_url_is_never_second_guessed(tmp_path, supervisor) -> None:
+    """The option exists for the host whose first address is the wrong one."""
+    supervisor["/network/info"] = {
+        "interfaces": [{"interface": "eth0", "ipv4": {"address": ["192.168.1.10/24"]}}]
+    }
+
+    values = load_app_options(_options_file(tmp_path, base_url="http://panels.example.com:5000"))
+
+    assert values["MAVERICK_BASE_URL"] == "http://panels.example.com:5000"
+
+
+def test_base_url_stays_empty_when_the_host_address_cannot_be_read(
+    tmp_path, supervisor, caplog
+) -> None:
+    """Empty rather than wrong: `${MAVERICK_BASE_URL:-}` then leaves it unset.
+
+    A guess would be worse than nothing — a panel told to fetch from an address
+    that is not the host's simply never refreshes again, and nothing says why.
+    """
+    with caplog.at_level(logging.WARNING, logger="maverick.ha.options"):
+        values = load_app_options(_options_file(tmp_path))
+
+    assert values["MAVERICK_BASE_URL"] == ""
+    assert "base_url is not set and the host address could not be read" in caplog.text
+    assert "panels that pull frames will not know where to fetch from" in caplog.text
+
+
+def test_an_explicit_broker_wins_over_the_mosquitto_app(tmp_path, supervisor) -> None:
+    supervisor["/services/mqtt"] = {
+        "host": "core-mosquitto",
+        "port": 1883,
+        "username": "addons",
+        "password": "from-mosquitto",
+    }
+
+    values = load_app_options(
+        _options_file(
+            tmp_path, mqtt_host="broker.lan", mqtt_username="maverick", mqtt_password="a-secret"
+        )
+    )
+
+    assert values["MQTT_ENABLED"] == "true"
+    assert values["MQTT_HOST"] == "broker.lan"
+    # The option's own default, not the Mosquitto app's port: a broker named by
+    # hand is a different broker, and borrowing one value from the other's
+    # credentials is how a connection fails in a way nobody can read.
+    assert values["MQTT_PORT"] == "1883"
+    assert values["MQTT_USERNAME"] == "maverick"
+    assert values["MQTT_PASSWORD"] == "a-secret"
+
+
+def test_the_mosquitto_app_is_used_when_no_broker_is_configured(tmp_path, supervisor) -> None:
+    """The hand-off the ``services: mqtt:want`` declaration exists for."""
+    supervisor["/services/mqtt"] = {
+        "host": "core-mosquitto",
+        "port": 1883,
+        "ssl": False,
+        "username": "addons",
+        "password": "from-mosquitto",
+        "protocol": "3.1.1",
+    }
+
+    values = load_app_options(_options_file(tmp_path))
+
+    assert values["MQTT_ENABLED"] == "true"
+    assert values["MQTT_HOST"] == "core-mosquitto"
+    assert values["MQTT_PORT"] == "1883"
+    assert values["MQTT_USERNAME"] == "addons"
+    assert values["MQTT_PASSWORD"] == "from-mosquitto"
+
+
+def test_no_broker_at_all_is_allowed_and_says_so(tmp_path, supervisor, caplog) -> None:
+    """Displays simply do not appear as Home Assistant devices; rendering works."""
+    with caplog.at_level(logging.INFO, logger="maverick.ha.options"):
+        values = load_app_options(_options_file(tmp_path))
+
+    assert values["MQTT_ENABLED"] == "false"
+    assert values["MQTT_HOST"] == "core-mosquitto"
+    assert "the Mosquitto broker app is not installed" in caplog.text
+    assert "Set mqtt_host to change that." in caplog.text
+
+
+def test_applying_the_options_is_what_the_config_file_reads(
+    tmp_path, supervisor, monkeypatch
+) -> None:
+    """The join between the two halves: ``os.environ`` and ``${VAR}``.
+
+    ``monkeypatch.setenv`` first for every variable, so that whatever
+    ``apply_app_options`` writes directly into ``os.environ`` is restored when
+    the test ends.
+    """
+    for name in _variables():
+        monkeypatch.setenv(name, "leftover")
+
+    applied = apply_app_options(
+        _options_file(
+            tmp_path,
+            home_assistant_token="from-the-options-tab",
+            base_url="http://192.168.1.10:5000",
+        )
+    )
+
+    assert os.environ["HA_TOKEN"] == "from-the-options-tab"
+    assert applied["HA_TOKEN"] == "from-the-options-tab"
+    config = load_config(TEMPLATE, use_display_store=False)
+    assert config.home_assistant.token == "from-the-options-tab"
+    assert config.server.base_url == "http://192.168.1.10:5000"
+    assert config.mqtt.enabled is False
+
+
+def test_the_cli_reads_the_options_before_it_loads_the_config(
+    tmp_path, supervisor, monkeypatch
+) -> None:
+    """The whole path, as the app's entrypoint reaches it.
+
+    ``run.sh`` runs ``maverick -c /config/maverick.yaml serve``, and nothing
+    between the Configuration tab and the loaded config runs except ``_load``
+    (``src/maverick/cli.py``). It reads the options only under the Supervisor —
+    a ``SUPERVISOR_TOKEN`` in the environment (``running_under_supervisor``) —
+    so a bare ``maverick serve`` on a laptop that happens to have a
+    ``/data/options.json`` is unaffected.
+    """
+    options = _options_file(
+        tmp_path, home_assistant_token="from-the-options-tab", log_level="debug"
+    )
+    config_file = tmp_path / "maverick.yaml"
+    config_file.write_text(
+        "home_assistant:\n"
+        "  url: ${HA_URL}\n"
+        "  token: ${HA_TOKEN:-}\n"
+        f"data_dir: {tmp_path / 'data'}\n"
+        "log_level: ${MAVERICK_LOG_LEVEL:-info}\n",
+        encoding="utf-8",
+    )
+    for name in _variables():
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "a-supervisor-token")
+    monkeypatch.setattr(options_module, "DEFAULT_OPTIONS_PATH", options)
+
+    args = build_parser().parse_args(["-c", str(config_file), "serve"])
+    try:
+        config = _load(args)
+    finally:
+        for name in _variables():
+            os.environ.pop(name, None)
+
+    assert config.home_assistant.url == "http://homeassistant:8123"
+    assert config.home_assistant.token == "from-the-options-tab"
+    assert config.log_level == "debug"
+
+
+def test_the_manifest_can_reach_the_api_base_url_is_derived_from() -> None:
     """`base_url`'s own description promises a fallback the Supervisor gates.
 
-    Left empty, ``run.sh`` derives it from ``bashio::network.ipv4_address``,
-    which calls ``GET /network/info`` (bashio ``lib/network.sh``). The
-    Supervisor's ``api_bypass`` list covers ``/addons/self/...`` — which is why
-    writing the app's own options needs no permission — but not ``/network/...``,
-    so without ``hassio_api`` the call is refused and every app left on the
-    default `base_url` gets none. The setup UI then refuses to offer *Link with
-    Home Assistant*, because Home Assistant has nowhere to redirect back to.
+    Left empty, the service derives it from ``GET /network/info``
+    (``_host_ipv4`` in ``src/maverick/ha/options.py``). An app is allowed that
+    call by its *role*: the default role reaches ``^/.+/info$`` and nothing
+    else (``supervisor/api/middleware/security.py``,
+    ``_V1_PATTERNS.role_access[ROLE_DEFAULT]``), and the role is consulted only
+    because the app asked for ``hassio_api``. The ``api_bypass`` list in the
+    same file covers ``/addons/self/...``, which is why writing the app's own
+    options needs no permission, but not ``/network/...`` — so without
+    ``hassio_api`` the call is refused and every app left on the default
+    `base_url` gets none. The setup UI then refuses to offer *Link with Home
+    Assistant*, because Home Assistant has nowhere to redirect back to.
     """
     manifest = _manifest()
     assert manifest.get("hassio_api") is True, (
-        "run.sh reads the host address from the Supervisor to fill base_url; "
+        "the service reads the host address from the Supervisor to fill base_url; "
         "without hassio_api that request is refused and the link cannot start"
     )
     # The default role reaches `/.+/info` and nothing more, which is all this
@@ -193,20 +534,19 @@ def test_the_manifest_can_reach_the_api_run_sh_derives_base_url_from() -> None:
     )
 
 
-def test_every_schema_key_is_translated() -> None:
-    translations = yaml.safe_load((APP / "translations" / "en.yaml").read_text(encoding="utf-8"))
-    assert set(_manifest()["schema"]) <= set(translations["configuration"])
+def test_the_manifest_declares_the_service_the_broker_hand_off_needs() -> None:
+    """``/services/mqtt`` is granted by the declaration, not by ``hassio_api``.
 
-
-def test_template_variables_are_exported_by_run_sh() -> None:
-    # Comment lines are skipped: the header explains `${VAR}` substitution in words.
-    body = "\n".join(
-        line for line in TEMPLATE.read_text(encoding="utf-8").splitlines()
-        if not line.lstrip().startswith("#")
-    )
-    referenced = set(re.findall(r"\$\{([A-Z_]+)", body))
-    assert referenced, "the starter config substitutes nothing"
-    assert referenced <= _exported()
+    ``/services.*`` is on the ``api_bypass`` list
+    (``supervisor/api/middleware/security.py``), which is tested before the
+    role, so no role would help. What decides is ``_check_access`` in
+    ``supervisor/api/services.py``: it answers ``403 No access to mqtt
+    service!`` unless the calling app declared the service. Dropping
+    ``mqtt:want`` would leave the Mosquitto hand-off silently refused — and
+    refused looks exactly like "not installed" to ``_mqtt``, which would then
+    disable MQTT on a machine that has a broker.
+    """
+    assert "mqtt:want" in _manifest()["services"]
 
 
 @pytest.mark.parametrize("mqtt", ["true", "false"])
@@ -234,7 +574,7 @@ def test_starter_config_loads(monkeypatch, mqtt: str) -> None:
         "MQTT_USERNAME": "addons",
         "MQTT_PASSWORD": "secret",
     }
-    assert set(values) == _exported(), "keep this table in step with the exports in run.sh"
+    assert set(values) == _variables(), "keep this table in step with load_app_options"
     for name, value in values.items():
         monkeypatch.setenv(name, value)
 
@@ -253,29 +593,16 @@ def test_starter_config_loads(monkeypatch, mqtt: str) -> None:
 def test_starter_config_loads_with_no_credential_yet(monkeypatch) -> None:
     """The state an app is in the moment it is installed, before anything is set.
 
-    ``run.sh`` warns rather than refusing to start without a credential, because
-    linking happens in the web UI and the UI has to be running to be reached.
-    That is only true if the starter config loads with the credential, base URL
-    and MQTT substitutions empty — what ``bashio::config`` hands ``run.sh`` for
-    options that carry no default in ``config.yaml``, and what the host address
-    lookup leaves behind when it cannot read one.
+    The service warns rather than refusing to start without a credential,
+    because linking happens in the web UI and the UI has to be running to be
+    reached. That is only true if the starter config loads with the credential,
+    base URL and MQTT substitutions empty — which is exactly what
+    ``load_app_options`` returns for options that carry no default in
+    ``config.yaml``, and what the host address lookup leaves behind when it
+    cannot read one.
     """
-    first_start = {
-        "HA_URL": "http://homeassistant:8123",  # config.yaml ships this default
-        "HA_TOKEN": "",
-        "HA_REFRESH_TOKEN": "",
-        "HA_CLIENT_ID": "",
-        "MAVERICK_LOG_LEVEL": "info",  # ditto
-        "MAVERICK_API_TOKEN": "",
-        "MAVERICK_BASE_URL": "",
-        "MQTT_ENABLED": "false",  # run.sh always writes one of true/false
-        "MQTT_HOST": "core-mosquitto",
-        "MQTT_PORT": "1883",
-        "MQTT_USERNAME": "",
-        "MQTT_PASSWORD": "",
-    }
-    assert set(first_start) == _exported(), "keep this table in step with the exports in run.sh"
-    for name, value in first_start.items():
+    assert set(FIRST_START) == _variables(), "keep this table in step with load_app_options"
+    for name, value in FIRST_START.items():
         monkeypatch.setenv(name, value)
 
     config = load_config(TEMPLATE, use_display_store=False)
@@ -299,7 +626,7 @@ def test_the_display_store_lands_beside_the_frames(monkeypatch) -> None:
     as the app's ``addon_configs`` share, so the file can be read, backed up and
     edited like the config next to it.
     """
-    for name in _exported():
+    for name in _variables():
         monkeypatch.setenv(name, "false" if name == "MQTT_ENABLED" else "")
     monkeypatch.setenv("HA_URL", "http://homeassistant:8123")
 
@@ -390,23 +717,8 @@ def test_pinned_ref_accepts_the_starter_config(tmp_path) -> None:
         [sys.executable, "-c", program, str(TEMPLATE)],
         capture_output=True,
         text=True,
-        env={
-            **os.environ,
-            "PYTHONPATH": str(pinned_src),
-            # What run.sh exports on a first start, per the table above.
-            "HA_URL": "http://homeassistant:8123",
-            "HA_TOKEN": "",
-            "HA_REFRESH_TOKEN": "",
-            "HA_CLIENT_ID": "",
-            "MAVERICK_LOG_LEVEL": "info",
-            "MAVERICK_API_TOKEN": "",
-            "MAVERICK_BASE_URL": "",
-            "MQTT_ENABLED": "false",
-            "MQTT_HOST": "core-mosquitto",
-            "MQTT_PORT": "1883",
-            "MQTT_USERNAME": "",
-            "MQTT_PASSWORD": "",
-        },
+        # What the options module sets on a first start, per the table above.
+        env={**os.environ, "PYTHONPATH": str(pinned_src), **FIRST_START},
     )
 
     imported = result.stdout.splitlines()[0] if result.stdout else ""

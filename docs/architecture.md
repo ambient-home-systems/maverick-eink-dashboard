@@ -1,10 +1,10 @@
 # Maverick — Architecture
 
-> Last reviewed against commit `4b892a4`.
+> Last reviewed against commit `a964f6c`.
 >
 > This page describes the service as it is built. Everything proposed but not
-> written — ingress for the app, the integration, pages, the authoring tools —
-> lives in [roadmap.md](roadmap.md).
+> written — ingress for the app, the integration, the control card, the
+> authoring tools — lives in [roadmap.md](roadmap.md).
 
 Maverick loads a Home Assistant dashboard in headless Chromium, restyles it for
 ink, quantises it against a panel's measured pigments, refuses to ship a frame
@@ -241,6 +241,72 @@ and drops it beyond that, because a render from more than a minute ago is not
 the frame anyone wanted. `max_instances=1` keeps a slow render from stacking on
 itself.
 
+## Pages
+
+A display renders one **page** at a time out of an ordered list. `dashboard` is
+the single-page shorthand and `pages` is the list; a display sets one or the
+other, and both together is a load error naming the display
+(`DisplayConfig._pages`, `src/maverick/config.py`), because nothing would say
+which of the two wins.
+
+```yaml
+displays:
+  - id: kitchen
+    pages:
+      - dashboard: /eink/overview
+        dwell: 30m
+      - dashboard: /eink/calendar
+    rotate: true
+```
+
+A page with no `name` takes one from the last segment of its dashboard path, so
+`/eink/calendar` becomes "Calendar" (`page_name_for`, `src/maverick/config.py`);
+names have to be unique within a display, because a page is selected by name as
+well as by index. A display with no `pages` still has exactly one page — its
+`dashboard` — so everything downstream counts pages rather than asking which
+form the display was written in (`DisplayConfig.page_entries`).
+
+**The page is resolved per render, not per config load.** `Engine.render` reads
+`DisplayState.page_index` and renders that page's dashboard
+(`DisplayConfig.for_page`), so every trigger — a schedule, a button, an
+automation — renders whichever page is on the panel now. The index is persisted
+with the rest of `DisplayState`, or a restart would undo whatever an automation
+had selected; `page_shown_at` rides with it, because that is what `dwell` is
+measured from.
+
+**Rotation belongs to the timeline.** With `rotate: true`, a *scheduled* tick
+advances to the next page before rendering, if the current page's `dwell` has
+elapsed — `RenderScheduler._rotate` in `scheduling/scheduler.py` — and a page
+with no `dwell` advances at every tick. Three consequences are deliberate. A
+render someone asked for shows the page that is up rather than moving it on
+underneath them. A page cannot change faster than the schedule driving it, so a
+`dwell` shorter than `every` means "every tick" rather than a second timer. And
+a page that has never been rendered is not rotated past, so the first page gets
+its turn.
+
+**Three ways to change it**, all landing in `Engine.set_page`, `next_page` or
+`previous_page` and rendering under the `page` trigger:
+
+- `POST /api/displays/{id}/page` with `{"index": n}`, `{"name": "..."}` or
+  `{"step": 1}` (`src/maverick/server/api.py`). The page moves before the
+  response, and the render runs in the background unless `?wait=true`.
+- The Home Assistant `select.<name>_page` entity, published for a display with
+  pages (`ha/discovery.py`), whose options are the page names; the commands
+  `page:<name>`, `next_page` and `previous_page` are routed by
+  `Application.handle_command` (`src/maverick/app.py`).
+- The setup UI's page picker on each card, and the Pages section of the editor
+  drawer (`src/maverick/server/static/app.js`).
+
+**The unchanged-frame skip still applies.** A page change is not forced: a page
+that renders differently beats the checksum on its own, and one that renders
+identically is one there was nothing to deliver for.
+
+*Verified: [`tests/test_pages.py`](../tests/test_pages.py) — the config rules,
+the name derivation, rotation against a clock the test drives (including a
+dwell spanning several ticks and the wrap back to the first page), selection by
+name and by index with the out-of-range error, the HTTP route, the select's
+discovery payload and the MQTT commands.*
+
 ## The Home Assistant surface today
 
 Two surfaces, and only two. There is no custom integration and no `maverick.*`
@@ -252,6 +318,8 @@ each display a real device rather than a URL to curl. Per display it publishes:
 - `button.<name>_refresh` and `button.<name>_full_refresh` — press from an
   automation, a script, a dashboard or a voice assistant.
 - `switch.<name>_scheduled_renders` — pause the timeline without editing YAML.
+- `select.<name>_page` — which [page](#pages) is on the panel, for a display
+  that has any; its options are the page names.
 - `image.<name>` — what the panel is currently showing, visible in the HA UI and
   invaluable when the panel is in another room.
 - `sensor.<name>_last_render`, `_status`, `_render_duration`, `_ink_coverage`,
@@ -362,10 +430,11 @@ assume works.
   is no sidebar panel, no config flow, no HACS listing and no `maverick.*`
   actions. Outside the app, Maverick is a standalone service that talks to
   Home Assistant over its APIs.
-- **A display renders one dashboard.** There is no page list, no dwell time and
-  no rotation: a display names one `dashboard:` and renders that. The setting
-  itself can be changed while the service runs (`Application.update_display`,
-  `src/maverick/app.py`), but nothing cycles a panel through several.
+- **There is no control card or tile feature.** [Pages](#pages) and the actions
+  that drive them exist, but the Home Assistant end of them is the MQTT select
+  and whatever automation you write around it: the tile-card feature, the card
+  with a live thumbnail and the fleet view in [roadmap.md](roadmap.md#decision-3--controlling-panels-from-a-dashboard)
+  are unbuilt.
 - **Chromium is bundled only in the app.** The app image installs Debian's
   `chromium` package and sets `MAVERICK_CHROMIUM_PATH` itself. Standalone,
   Playwright ships no aarch64 Linux build, so a Raspberry Pi needs the distro

@@ -237,18 +237,32 @@ add-on — and `repository.yaml` at the root is what makes this repository
 installable from the app store. The app does not vendor the package: its
 `Dockerfile` installs `maverick-eink-dashboard` from this repository at the
 commit named by `MAVERICK_REF`, on a Debian base image with the distro
-`chromium` package, and `run.sh` turns the app's options into the environment
-variables that the starter `maverick.yaml` substitutes.
+`chromium` package.
 
-Five things keep it honest, all in `tests/test_app.py`: every option `run.sh`
-reads is declared in `config.yaml`'s schema, every `${VAR}` in the starter
-config is exported by `run.sh`, the starter config loads with no credential set
-— the state a freshly installed app is in — the app's `version` equals the
-package version, and the package at `MAVERICK_REF` accepts the starter config
-this commit ships. CI (`.github/workflows/ci.yml`, job `app`) lints the
-manifest, builds the image on amd64, launches Chromium inside it and loads the
-starter config with the package the image installed — the one place the image
-is built, since nothing else in the suite touches Docker.
+`run.sh` does not translate the options. The service reads them itself, from
+`/data/options.json`, and sets the environment variables that the starter
+`maverick.yaml` substitutes — `load_app_options` in
+`src/maverick/ha/options.py`, called by `_load` in `src/maverick/cli.py`
+whenever `SUPERVISOR_TOKEN` is in the environment. That module is also where
+the two derived values live (`base_url` from the host's address, MQTT from the
+Mosquitto app) and where the Supervisor permissions each of them needs are
+written down. The script keeps the two jobs that are the container's: copy the
+starter config to `/config/maverick.yaml` if it is not there, and `exec
+maverick ... serve`.
+
+Five things keep it honest, all in `tests/test_app.py`: the options the module
+reads are exactly `config.yaml`'s schema keys, every `${VAR}` in the starter
+config is a variable the module sets, the starter config loads with no
+credential set — the state a freshly installed app is in — the app's `version`
+equals the package version, and the package at `MAVERICK_REF` accepts the
+starter config this commit ships. The derivations are tested with the
+Supervisor's two endpoints stubbed, so nothing in the suite reaches for one.
+CI (`.github/workflows/ci.yml`, job `app`) lints the manifest, builds the image
+on amd64, launches Chromium inside it, loads the starter config with the
+package the image installed, and runs that image once more with an
+`options.json` and no environment variables at all — the local reproduction the
+0.2.x fixes were made without. It is the one place the image is built, since
+nothing else in the suite touches Docker.
 
 The last two exist because the starter config and the package reach a user's
 machine by different routes. `app/rootfs/usr/share/maverick/maverick.yaml` is
@@ -269,8 +283,8 @@ user's first start actually asks. It skips in a shallow clone, where the pinned
 commit is not present; CI's `app` job then covers it from inside the image.
 
 To change the app: `app/config.yaml` for options (add a translation in
-`app/translations/en.yaml` and read the key in `run.sh`), `app/run.sh` for
-start-up behaviour, `app/rootfs/usr/share/maverick/maverick.yaml` for the
+`app/translations/en.yaml` and read the key in `src/maverick/ha/options.py`),
+`app/run.sh` for start-up behaviour, `app/rootfs/usr/share/maverick/maverick.yaml` for the
 starter config, and `app/DOCS.md` for what users see on the app's Documentation
 tab. `app/CHANGELOG.md` is the app's own changelog tab; keep it to the app.
 

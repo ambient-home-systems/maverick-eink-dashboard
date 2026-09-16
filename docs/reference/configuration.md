@@ -21,16 +21,16 @@ explicitly, and a path that does not exist is an error rather than a fallback.
 With no flag, the first of these that exists wins:
 
 1. `config.yaml`, relative to the working directory
-2. `/config/maverick.yaml` — the Home Assistant add-on's `/config` share
-3. `/data/options.json` — the add-on's own options
-4. `~/.config/maverick/config.yaml`
+2. `/config/maverick.yaml` — the Home Assistant app's `/config` share
+3. `~/.config/maverick/config.yaml`
 
 If nothing is found, Maverick lists those paths and suggests `maverick init`.
 
-The third entry is a diagnostic rather than a usable format: `/data/options.json`
-is the add-on's schema, which the add-on's run script is supposed to translate
-into `/config/maverick.yaml` before starting the service. Reaching it means that
-translation did not happen, and Maverick says so instead of trying to read it.
+The app's own options (`/data/options.json`) are not one of them. They are not a
+configuration file in this format and never were: they are the Configuration
+tab's values, which Maverick reads separately and turns into the environment
+variables the file substitutes (`load_app_options` in
+`src/maverick/ha/options.py`), before looking for the file itself.
 
 ## Where the displays live
 
@@ -89,8 +89,9 @@ to the empty string**, which is what `:-` means in a shell (`expand_env` in
 `src/maverick/config.py`). An empty default (`${MQTT_PASSWORD:-}`) is therefore
 the way to say "optional, usually empty", and `${MQTT_PORT:-1883}` still gives
 you 1883 when something upstream exported `MQTT_PORT=`. That matters under the
-Home Assistant app, whose `run.sh` exports a value for every substitution in
-the starter config, empty for the options you have not filled in.
+Home Assistant app, which sets a value for every substitution in the starter
+config, empty for the options you have not filled in (`load_app_options` in
+`src/maverick/ha/options.py`).
 
 `${VAR}` without a default is the only form that cares whether a variable is
 set at all: unset fails the load, set-and-empty yields the empty string, since
@@ -224,7 +225,9 @@ One entry per physical panel. `id` is the only required key: the keys beside it 
 | `id` | `str` | **required** | Identifier for this display, unique within the file. It becomes a URL path segment and an MQTT topic level. |
 | `name` | `str` | `""` | Human-readable name, shown in the setup UI and used for the Home Assistant device. Empty derives one from the id. |
 | `panel` | `str` | `"generic-mono"` | Panel id from the catalog, as listed by `maverick panels`. It supplies the resolution, color scheme, dpi, rotation, frame format and refresh behavior that the keys below override. |
-| `dashboard` | `str` | `"/lovelace/0"` | What to render: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as absolute, so `file:///...` renders a local page. |
+| `dashboard` | `str` | `"/lovelace/0"` | What to render: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Any scheme counts as absolute, so `file:///...` renders a local page. The single-page shorthand: set this or `pages`, not both. |
+| `pages` | `list` of [section](#displayspages) | `[]` | Several dashboards for one panel, rendered one at a time. The page is changed by `POST /api/displays/{id}/page`, by the Home Assistant Page select, or on its own with `rotate`. Empty leaves the display on `dashboard`. |
+| `rotate` | `bool` | `false` | Advance to the next page on each scheduled render, once the current page's `dwell` has elapsed. Off leaves the page where it was put. |
 | `enabled` | `bool` | `true` | Render and deliver this display. False keeps it configured but idle. |
 | `width` | `int` \| `None` | *unset* | Panel width in pixels. Unset uses the catalog value for `panel`. |
 | `height` | `int` \| `None` | *unset* | Panel height in pixels. Unset uses the catalog value for `panel`. |
@@ -241,7 +244,19 @@ One entry per physical panel. `id` is the only required key: the keys beside it 
 | `pack` | [section](#displayspack) | *section defaults* | Controller quirks for raw-frame transports. |
 | `esphome` | [section](#displaysesphome) | *section defaults* | Inputs for the ESPHome configuration `maverick esphome <id>` generates. |
 
-**Validation.** `id` must be lowercase alphanumeric with `-` or `_`, starting with a letter or digit. `panel` must name a catalog entry, and `rotation` must be 0, 90, 180 or 270.
+**Validation.** `id` must be lowercase alphanumeric with `-` or `_`, starting with a letter or digit. `panel` must name a catalog entry, and `rotation` must be 0, 90, 180 or 270. `dashboard` and `pages` are alternatives, and page names are unique. Both together would leave two answers to "what does this panel show", and nothing to say which wins — so it is rejected at load rather than resolved by a precedence rule nobody would remember. A page is selected by name over MQTT and in the setup UI, so two pages sharing one is rejected too.
+
+## displays[].pages[]
+
+One entry per dashboard a display cycles through. A display sets either `dashboard` or `pages`, and `rotate` is what advances them on the display's own schedule.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `dashboard` | `str` | **required** | What to render for this page: a Home Assistant dashboard path such as `/lovelace-eink/kitchen`, or a fully qualified URL. Read exactly as `displays[].dashboard` is. |
+| `name` | `str` | `""` | Label for this page, shown in the setup UI and offered by the Home Assistant Page select. Empty derives one from the last segment of `dashboard`. Names must be unique within a display, because a page is selected by name. |
+| `dwell` | `"5m"` \| `float` \| `None` | *unset* | How long this page stays on the panel before `rotate` moves to the next one. Unset advances at every scheduled render; the page never changes faster than the schedule that drives it. |
+
+**Validation.** An empty `name` is derived from `dashboard`, and `dwell` must be a duration.
 
 ## displays[].theme
 

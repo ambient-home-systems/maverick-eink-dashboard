@@ -1,6 +1,6 @@
 # Connecting Maverick to Home Assistant
 
-*Last reviewed against commit `71ea13f`.*
+*Last reviewed against commit `a964f6c`.*
 
 Maverick talks to Home Assistant over its public APIs, whether it runs as the
 Home Assistant app ([`app/DOCS.md`](../../app/DOCS.md)) or standalone. There is
@@ -255,6 +255,14 @@ against a real panel's geometry, palette and dithering before building the
 dashboard for real. Pair it with `maverick render <id> --no-deliver -o out/`
 and you have a fast loop that never touches Home Assistant.
 
+### Several dashboards on one panel
+
+One `dashboard` per display is the common case and the shorthand. A display
+that should cycle — weather in the morning, the calendar in the evening — takes
+a `pages` list instead, and moves between them on command or on its own. That
+is [Rotating between pages](#rotating-between-pages) below, and the keys are in
+[the configuration reference](../reference/configuration.md#displayspages).
+
 ### Pages that are not Home Assistant
 
 Two `render` keys matter as soon as the page is not a Home Assistant dashboard.
@@ -366,7 +374,8 @@ mqtt: disabled (displays will not appear as Home Assistant entities)
 
 One device per enabled display, named after the display's `name`, carrying ten
 entities: two buttons, a switch, an image of the current frame, five diagnostic
-sensors and a problem binary sensor. They are published retained, so they
+sensors and a problem binary sensor. A display with
+[pages](#rotating-between-pages) gets an eleventh, a **Page** select. They are published retained, so they
 survive a Home Assistant restart, and a last will marks them unavailable if
 Maverick dies.
 
@@ -654,6 +663,7 @@ Both the switch and `quiet_hours` are checked in one place, against the
 | `schedule` | `every` or `cron` coming round | **Yes** |
 | `state` | An `on_change` entity changing | **Yes** |
 | `button` | The Refresh or Full refresh button over MQTT | No |
+| `page` | A page change: the Page select, `POST /api/displays/{id}/page`, or rotation moving on | **Only rotation**, which happens inside a `schedule` tick |
 | `api` | `POST /api/displays/{id}/render` | No |
 | `cli` | `maverick render <id>` | No |
 | `manual` | The engine's default, for a render nothing else labelled | No |
@@ -667,6 +677,66 @@ refreshes at 2am.
 One consequence worth planning for: `render_on_start` defaults to `true`, so
 restarting Maverick during quiet hours renders immediately anyway. If that
 matters in a bedroom, set `render_on_start: false` on that display.
+
+### Rotating between pages
+
+The other way a panel stops being one fixed view: give the display several
+dashboards and let it move between them.
+
+```yaml
+displays:
+  - id: kitchen
+    panel: waveshare-7in5-mono
+    pages:
+      - dashboard: /lovelace-eink/overview
+        dwell: 30m
+      - dashboard: /lovelace-eink/calendar
+        name: Week ahead
+        dwell: 10m
+    rotate: true
+    schedule:
+      every: 5m
+```
+
+`pages` replaces `dashboard` — a display sets one or the other, and both
+together fails the load with an error naming the display
+(`src/maverick/config.py`). Each page may carry a `name`; leave it out and one
+is derived from the last segment of the path, so `/lovelace-eink/overview`
+becomes "Overview".
+
+**`rotate` rides on the schedule.** The page advances on a *scheduled* render,
+and only once the current page's `dwell` has elapsed
+(`RenderScheduler._rotate`, `src/maverick/scheduling/scheduler.py`). With the
+config above the panel renders every five minutes and changes page every thirty:
+the overview holds for six renders, the calendar for two, then round again. A
+page with no `dwell` changes at every scheduled render, and a `dwell` shorter
+than `every` means the same thing — a page cannot change faster than the
+schedule driving it. Quiet hours stop rotation as well as rendering, because
+they stop the scheduled render that would have done both.
+
+**Anything can change the page, not just the clock.** With MQTT on, the device
+gains a **Page** select whose options are the page names, and an automation can
+set it like any other select:
+
+```yaml
+action: select.select_option
+target:
+  entity_id: select.kitchen_panel_page
+data:
+  option: Week ahead
+```
+
+`select.select_next` and `select.select_previous` work too, and reach the same
+place as publishing `next_page` or `previous_page` to the display's command
+topic ([the command words](../reference/mqtt.md#commands)). Without a broker,
+`POST /api/displays/kitchen/page` takes `{"index": 1}`, `{"name": "Week
+ahead"}` or `{"step": 1}`
+([HTTP API](../reference/http-api.md#post-apidisplaysdisplay_idpage)). Either
+way the page change is remembered across a restart, and the render it triggers
+is labelled `page` in the state topic and the render history.
+
+Leave `rotate` off for a display you only ever move by hand: the pages are
+still there, and nothing advances them on its own.
 
 ## OpenDisplay tags through Home Assistant's Bluetooth
 
@@ -837,10 +907,10 @@ and none of them exists today:
   configuration is the YAML file described here.
 * **No `maverick.*` actions.** Automations reach Maverick through the MQTT
   entities or a `rest_command`, not through native Home Assistant actions.
-* **No pages.** A display renders the one dashboard named in its config. There
-  is no ordered page list, no dwell time and no rotation, and nothing can
-  change a display's dashboard at runtime, so "weather in the morning, calendar
-  in the evening" is not something you can automate today.
+* **No control card.** A display's pages, its refresh and its status are all
+  reachable — the entities above, and
+  [Rotating between pages](#rotating-between-pages) — but the tile feature and
+  the card that would gather them into one place on a dashboard are not built.
 
 ## Where to go next
 

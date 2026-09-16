@@ -34,7 +34,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from ..app import VERSION, Application
 from ..config import DisplayConfig
@@ -61,6 +61,33 @@ class ScheduleToggle(BaseModel):
     """Body of `POST /api/displays/{id}/schedule`."""
 
     enabled: bool
+
+
+class PageSelect(BaseModel):
+    """Body of `POST /api/displays/{id}/page`: which page to put on the panel.
+
+    Three ways to say it, exactly one per request. `index` and `name` are
+    absolute and `step` is relative — `1` for the next page and `-1` for the
+    previous, wrapping at either end. They are separate fields rather than one
+    polymorphic value because an index and a name are not interchangeable: a
+    page may be called "2" (`Engine.select_page`, `src/maverick/engine.py`).
+    """
+
+    index: int | None = None
+    name: str | None = None
+    step: int | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> PageSelect:
+        given = [
+            key for key in ("index", "name", "step") if getattr(self, key) is not None
+        ]
+        if len(given) != 1:
+            raise ValueError(
+                "send exactly one of 'index', 'name' or 'step'"
+                + (f", not {', '.join(given)}" if given else "")
+            )
+        return self
 
 
 #: TRMNL firmware carries its API key in its own header rather than in
@@ -235,6 +262,9 @@ def create_app(application: Application) -> FastAPI:
         state = application.engine.states.get(display_id)
         frame = application.engine.frames.get(display_id)
         pulled = application.engine.frames.last_pulled(display_id)
+        pages = display.page_entries
+        page_index = application.engine.page_index(display_id)
+        page = pages[page_index]
         return {
             "id": display.id,
             "name": display.name,
@@ -254,6 +284,18 @@ def create_app(application: Application) -> FastAPI:
             "rotation": resolved.rotation,
             "frame_format": resolved.frame_format.value,
             "transport": display.transport.type,
+            # Always present, `pages` or not: a display with none has exactly
+            # one page — its `dashboard` — so a client counts pages rather than
+            # asking which form the display was written in
+            # (`DisplayConfig.page_entries`, `src/maverick/config.py`).
+            "page": {
+                "index": page_index,
+                "name": page.name,
+                "dashboard": page.dashboard,
+                "count": len(pages),
+                "names": [entry.name for entry in pages],
+                "rotate": display.rotate,
+            },
             "schedule": {
                 "enabled": application.scheduler.schedule_enabled.get(display_id, True),
                 "every": display.schedule.every,
@@ -368,6 +410,37 @@ def create_app(application: Application) -> FastAPI:
         await application.handle_command(
             display_id, "schedule_on" if body.enabled else "schedule_off"
         )
+        return _display_summary(display_id)
+
+    @api.post("/api/displays/{display_id}/page", dependencies=[auth])
+    async def set_page(
+        display_id: str, body: PageSelect, wait: bool = False
+    ) -> dict[str, Any]:
+        """Put one of a display's pages on the panel and render it.
+
+        The page moves before this returns, so the summary it answers with
+        already names the new one; the render it triggers carries the `page`
+        trigger and, by default, runs as a background task — a page change
+        costs a whole render, and a picker that waits out `render.timeout` is
+        a picker nobody uses. `wait=true` holds the response until the render
+        finishes, for a caller that wants the outcome.
+        """
+        _lookup(application, display_id)
+        try:
+            if body.step is not None:
+                application.engine.advance_page(display_id, body.step)
+            else:
+                application.engine.select_page(
+                    display_id, body.index if body.name is None else body.name
+                )
+        except ValueError as exc:
+            # `ConfigError` is a `ValueError` (`src/maverick/config.py`): an
+            # index outside the list, or a name the display does not have.
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if wait:
+            await application.render(display_id, trigger="page")
+        else:
+            _fire_and_forget(application.render(display_id, trigger="page"))
         return _display_summary(display_id)
 
     @api.post("/api/displays/preview", dependencies=[auth])

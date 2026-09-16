@@ -30,7 +30,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from .config import Config, DisplayConfig, ResolvedDisplay
+from .config import Config, ConfigError, DisplayConfig, PageConfig, ResolvedDisplay
 from .eink import Frame, FrameFormat, PipelineOptions, fit_to_panel, process
 from .eink.dither import DitherMode
 from .eink.pipeline import FitMode
@@ -68,6 +68,13 @@ class DisplayState:
     last_pulled_at: str = ""
     render_count: int = 0
     skip_count: int = 0
+    #: Which of the display's pages is on the panel (`DisplayConfig.pages`,
+    #: `src/maverick/config.py`), and when it went up. Persisted for the same
+    #: reason `last_checksum` is: a restart that silently reset a rotating
+    #: panel to page one would undo whatever an automation had selected, and
+    #: `page_shown_at` is what the scheduler measures `dwell` from.
+    page_index: int = 0
+    page_shown_at: str = ""
     #: Durations from the last render that got as far as a screenshot, in
     #: seconds. Left at 0.0 until `render_count` is non-zero, which is what
     #: distinguishes "never rendered" from "rendered in under a millisecond".
@@ -351,8 +358,16 @@ def _media_type(fmt: str) -> str:
 class Engine:
     """Owns every long-lived resource and renders displays on demand."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self, config: Config, clock: Callable[[], datetime] | None = None
+    ) -> None:
         self.config = config
+        #: What "now" means for page dwell. One clock, here rather than in the
+        #: scheduler, because `RenderScheduler` decides a page is due by
+        #: comparing its own now against `DisplayState.page_shown_at`, which
+        #: this class wrote: two clocks could disagree and a test driving one
+        #: would be measuring against the other.
+        self.clock = clock or (lambda: datetime.now(UTC))
         self.data_dir = Path(config.data_dir)
         self.frames = FrameStore(self.data_dir / "frames")
         self.states: dict[str, DisplayState] = {}
@@ -638,6 +653,105 @@ class Engine:
             display if d.id == display.id else d for d in self.config.displays
         ]
 
+    # ---------------------------------------------------------------- pages --
+
+    def now(self) -> datetime:
+        """The engine's clock. Everything about pages measures time through it."""
+        return self.clock()
+
+    def page_index(self, display_id: str) -> int:
+        """Which page this display is on, normalised against its page list.
+
+        The stored index outlives the config it was recorded against, so a
+        display whose pages have since been edited down still answers with one
+        of the pages it has now. A display with no state entry yet is on its
+        first page — read without creating one, because the setup UI asks this
+        of every display on every poll.
+        """
+        display = self.config.display(display_id)
+        state = self.states.get(display_id)
+        index = state.page_index if state is not None else 0
+        return index % len(display.page_entries)
+
+    def current_page(self, display_id: str) -> PageConfig:
+        """The page on the panel now, the single-page shorthand included."""
+        display = self.config.display(display_id)
+        return display.page_at(self.page_index(display_id))
+
+    def page_shown_at(self, display_id: str) -> datetime | None:
+        """When the current page went up, or None if it never has.
+
+        The scheduler measures `dwell` from this, which is why it is read back
+        through the engine rather than parsed from `DisplayState` by hand: one
+        place decides what the stored stamp means.
+        """
+        state = self.states.get(display_id)
+        if state is None or not state.page_shown_at:
+            return None
+        try:
+            return datetime.fromisoformat(state.page_shown_at)
+        except ValueError:  # a hand-edited or truncated state file
+            return None
+
+    def select_page(
+        self, display_id: str, index_or_name: int | str, *, at: datetime | None = None
+    ) -> int:
+        """Point a display at one of its pages without rendering.
+
+        An `int` is an index and a `str` is a page name — deliberately not
+        interchangeable, so a page called "2" is still reachable by name and an
+        index never silently matches one. Raises `ConfigError` for a name the
+        display does not have or an index outside its list.
+        """
+        display = self.config.display(display_id)
+        if isinstance(index_or_name, str):
+            index = display.page_index_for(index_or_name)
+        else:
+            index = int(index_or_name)
+            count = len(display.page_entries)
+            if not 0 <= index < count:
+                raise ConfigError(
+                    f"display {display_id!r} has no page {index}: it has {count}, "
+                    f"numbered 0 to {count - 1}"
+                )
+        return self._show_page(display_id, index, at)
+
+    def advance_page(self, display_id: str, step: int = 1, *, at: datetime | None = None) -> int:
+        """Move `step` pages along, wrapping past either end. Renders nothing."""
+        display = self.config.display(display_id)
+        state = self.states.setdefault(display_id, DisplayState())
+        count = len(display.page_entries)
+        return self._show_page(display_id, (state.page_index + step) % count, at)
+
+    def _show_page(self, display_id: str, index: int, at: datetime | None = None) -> int:
+        """Record the page and when it went up, and persist both."""
+        state = self.states.setdefault(display_id, DisplayState())
+        state.page_index = index
+        state.page_shown_at = _stamp(at or self.now())
+        self._save_state()
+        return index
+
+    async def set_page(self, display_id: str, index_or_name: int | str) -> RenderOutcome:
+        """Select a page and render it, under the `page` trigger.
+
+        Not forced: the unchanged-frame skip still compares against the last
+        delivered checksum, and a page that renders to a different frame beats
+        it on its own. A page that renders to the same frame is one there is
+        nothing to deliver for.
+        """
+        self.select_page(display_id, index_or_name)
+        return await self.render(display_id, trigger="page")
+
+    async def next_page(self, display_id: str) -> RenderOutcome:
+        """Move to the next page and render it, wrapping to the first."""
+        self.advance_page(display_id, 1)
+        return await self.render(display_id, trigger="page")
+
+    async def previous_page(self, display_id: str) -> RenderOutcome:
+        """Move to the previous page and render it, wrapping to the last."""
+        self.advance_page(display_id, -1)
+        return await self.render(display_id, trigger="page")
+
     # --------------------------------------------------------------- render --
 
     async def render(
@@ -657,8 +771,17 @@ class Engine:
         rebuilding the transport and the state entry that were just removed.
         """
         async with self._render_slot(display_id):
-            display = self.config.display(display_id).resolved()
+            configured = self.config.display(display_id)
             state = self.states.setdefault(display_id, DisplayState())
+            # The page is resolved here rather than at the call site because
+            # every trigger — a schedule, a button, an automation — renders
+            # whichever page is on the panel now; `for_page` is what turns the
+            # page list back into the single `dashboard` the renderer reads.
+            page_index = state.page_index % len(configured.page_entries)
+            state.page_index = page_index
+            if not state.page_shown_at:
+                state.page_shown_at = _stamp(self.now())
+            display = configured.for_page(page_index).resolved()
             started = time.perf_counter()
             outcome = RenderOutcome(display_id=display_id, ok=False, trigger=trigger)
 
@@ -829,7 +952,10 @@ class Engine:
         # A key of its own, under the display's prefix so that removing the
         # display still catches it if anything goes wrong on the way out.
         candidate_id = f"{display.id}:preview-{uuid.uuid4().hex[:8]}"
-        candidate = display.model_copy(update={"id": candidate_id})
+        # A candidate with pages previews its first one: it has no state entry
+        # to hold a page index, and the first page is what a fresh display
+        # would render.
+        candidate = display.for_page(0).model_copy(update={"id": candidate_id})
         resolved = candidate.resolved()
         started = time.perf_counter()
         try:
@@ -1038,7 +1164,13 @@ def _transport_options(display: Any) -> dict[str, Any]:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return _stamp(datetime.now(UTC))
+
+
+def _stamp(moment: datetime) -> str:
+    """One format for every timestamp in `DisplayState`, and the one
+    `Engine.page_shown_at` reads back."""
+    return moment.isoformat(timespec="seconds")
 
 
 def _env_int(name: str, default: int) -> int:
