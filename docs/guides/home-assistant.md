@@ -1,6 +1,6 @@
 # Connecting Maverick to Home Assistant
 
-*Last reviewed against commit `da2ed9a`.*
+*Last reviewed against commit `71ea13f`.*
 
 Maverick talks to Home Assistant over its public APIs, whether it runs as the
 Home Assistant app ([`app/DOCS.md`](../../app/DOCS.md)) or standalone. There is
@@ -225,6 +225,16 @@ you will recognise (`lovelace-eink` above is just a name), and design it for
 the panel's size and palette. The e-ink theme Maverick injects will flatten and
 restyle whatever it finds, but it cannot turn a three-column phone dashboard
 into something readable at 800×480 in one ink.
+
+Typing that path by hand means a typo is only caught after a render, which is
+why the setup UI's Dashboard field offers a picker instead: with a working
+Home Assistant connection, `GET /api/ha/dashboards`
+(`src/maverick/ha/client.py`) lists every dashboard and view over the
+WebSocket API, and the Add display form and the per-display editor turn that
+into suggestions for the field, each one labelled with the dashboard's and
+view's title. It is a `<datalist>`, not a closed list — an absolute URL or a
+`file://` page, both below, still work by typing them in — and it fails
+quietly to a plain text field with no connection.
 
 ### A full URL
 

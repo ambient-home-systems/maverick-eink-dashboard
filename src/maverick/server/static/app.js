@@ -519,6 +519,7 @@ async function openAddDialog(opener) {
   dialog.showModal();
   document.getElementById('add-name').focus();
   await ensureAddDialogData();
+  populateDashboardList(document.getElementById('add-dashboard-list'));
 }
 
 function resetAddForm() {
@@ -555,6 +556,42 @@ async function ensureFormData() {
     schema: await schemaRes.json(),
   };
   return formData;
+}
+
+/** Cached once per page load: `GET /api/ha/dashboards`, or `[]` when it is
+ *  unavailable (no Home Assistant connection, or an old server without the
+ *  route). Either way the Dashboard field stays a plain text input — this
+ *  only ever adds suggestions to it, never replaces it. */
+let dashboardsCache = null;
+
+async function ensureDashboards() {
+  if (dashboardsCache) return dashboardsCache;
+  try {
+    const response = await authFetch('api/ha/dashboards');
+    dashboardsCache = await response.json();
+  } catch (error) {
+    dashboardsCache = [];
+  }
+  return dashboardsCache;
+}
+
+/** Fills a `<datalist>` with one option per view — the paths a Dashboard
+ *  field can actually be pointed at — labelled with the dashboard and view
+ *  titles so a user picks "Home — Kitchen" rather than "/lovelace/1". Fails
+ *  quietly: an empty datalist leaves the field exactly the plain text input
+ *  it already is. */
+async function populateDashboardList(datalist) {
+  if (!datalist) return;
+  const dashboards = await ensureDashboards();
+  datalist.replaceChildren();
+  for (const dashboard of dashboards) {
+    for (const view of dashboard.views || []) {
+      const option = document.createElement('option');
+      option.value = view.path;
+      option.label = `${dashboard.title} — ${view.title}`;
+      datalist.appendChild(option);
+    }
+  }
 }
 
 async function ensureAddDialogData() {
@@ -1061,6 +1098,7 @@ const EDITOR = `
   <button type="button" class="drawer-close" aria-label="Close the editor">&times;</button>
 </div>
 <p class="dialog-error editor-error" role="alert" hidden></p>
+<datalist id="editor-dashboard-list"></datalist>
 <div class="drawer-body"></div>
 <div class="drawer-actions">
   <div class="editor-confirm" role="alert" hidden>
@@ -1148,6 +1186,7 @@ async function openEditor(id, opener) {
   try {
     const [data, summary] = await Promise.all([ensureFormData(), loadDisplay(id)]);
     fillEditor(data, summary);
+    populateDashboardList(dialog.querySelector('#editor-dashboard-list'));
   } catch (error) {
     // A modal dialog makes the header's token field inert, so a 401 has to
     // close the drawer to leave the field it just revealed reachable.
@@ -1369,6 +1408,9 @@ function fieldNode(schema, section, name, node, placeholder) {
   const built = spec.kind === 'palette'
     ? paletteControl(id, current)
     : plainControl(spec, id, current, placeholder, TEXTAREAS.has(path));
+  // Same picker as the Add dialog's Dashboard field, fed by the datalist in
+  // the drawer's own markup (`EDITOR` above) rather than the add dialog's.
+  if (path === 'dashboard') built.control.setAttribute('list', 'editor-dashboard-list');
 
   const help = document.createElement('div');
   help.className = 'help';

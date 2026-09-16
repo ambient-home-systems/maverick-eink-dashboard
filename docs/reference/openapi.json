@@ -73,6 +73,30 @@
         }
       }
     },
+    "/api/ha/dashboards": {
+      "get": {
+        "summary": "Ha Dashboards",
+        "description": "Every Lovelace dashboard and its views, for the Dashboard field's picker.\n\n`HomeAssistantClient.list_dashboards` (`src/maverick/ha/client.py`) is\nwhat actually asks Home Assistant; this just gates it behind a working\nconnection, since a WebSocket call against no client or a broken one\nis not something a picker should surface as a 500.",
+        "operationId": "ha_dashboards_api_ha_dashboards_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Ha Dashboards Api Ha Dashboards Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/schema/display": {
       "get": {
         "summary": "Display Schema",

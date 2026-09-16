@@ -347,7 +347,10 @@ def test_the_add_display_form_only_calls_routes_this_app_serves(app: Application
     """
     api = create_app(app)
     targets = _script_targets()
-    for expected in ("api/panels", "api/transports", "api/schema/display", "api/displays"):
+    for expected in (
+        "api/panels", "api/transports", "api/schema/display", "api/displays",
+        "api/ha/dashboards",
+    ):
         assert expected in targets, f"app.js no longer references {expected}"
         assert _resolves(api, "/" + expected), f"{expected} resolves to no route"
 

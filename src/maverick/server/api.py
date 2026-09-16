@@ -40,6 +40,7 @@ from ..app import VERSION, Application
 from ..config import DisplayConfig
 from ..devices import all_panels
 from ..ha import auth as ha_auth
+from ..ha import client as ha_client
 from ..ha import supervisor
 from ..store import dump_display
 from ..transports import available_transports
@@ -176,6 +177,25 @@ def create_app(application: Application) -> FastAPI:
             {"name": name, "pushes": cls.pushes, "description": cls.description}
             for name, cls in sorted(available_transports().items())
         ]
+
+    @api.get("/api/ha/dashboards", dependencies=[auth])
+    async def ha_dashboards() -> list[dict[str, Any]]:
+        """Every Lovelace dashboard and its views, for the Dashboard field's picker.
+
+        `HomeAssistantClient.list_dashboards` (`src/maverick/ha/client.py`) is
+        what actually asks Home Assistant; this just gates it behind a working
+        connection, since a WebSocket call against no client or a broken one
+        is not something a picker should surface as a 500.
+        """
+        if not application.engine.ha_ok or application.engine.ha is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Not connected to Home Assistant, so its dashboards cannot be listed.",
+            )
+        try:
+            return await application.engine.ha.list_dashboards()
+        except ha_client.HomeAssistantError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     # ----------------------------------------------------------- displays --
 

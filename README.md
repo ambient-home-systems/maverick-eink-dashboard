@@ -433,6 +433,7 @@ Interactive documentation is served at `/api/docs`, and the OpenAPI schema at
 | GET | `/api/panels` | no | The panel catalogue as JSON |
 | GET | `/api/transports` | no | Registered transports |
 | GET | `/api/schema/display` | yes | The display config JSON Schema, for a form to render |
+| GET | `/api/ha/dashboards` | yes | Every Lovelace dashboard and its views, for the Dashboard field's picker; `503` when not connected to Home Assistant |
 | GET | `/api/displays` | yes | Every display, with state, checksum and lint findings |
 | GET | `/api/displays/{id}` | yes | One display |
 | POST | `/api/displays` | yes | Create a display and start rendering it; `409` if the id exists |
