@@ -310,8 +310,10 @@ const CARD = `
 <span class="view-modes" role="group" aria-label="Source or result" hidden>
   <button type="button" class="view-source" aria-pressed="false">Source</button>
   <button type="button" class="view-frame" aria-pressed="true">Frame</button>
+  <button type="button" class="view-full" title="See it at the panel's own size">Full size</button>
 </span>
-<img class="shot" alt="" loading="lazy" hidden>
+<img class="shot is-clickable" alt="" loading="lazy" role="button" tabindex="0"
+     title="See it at the panel's own size" hidden>
 <div class="shot shot-empty" hidden>no frame yet</div>
 <div class="meta card-timing">
   <span class="card-next"></span> <span class="card-duration"></span>
@@ -384,6 +386,18 @@ function cardFor(id) {
   });
   button('.view-source').addEventListener('click', () => setViewMode(id, 'source'));
   button('.view-frame').addEventListener('click', () => setViewMode(id, 'frame'));
+  button('.view-full').addEventListener('click', (e) => openFullSize(id, e.currentTarget));
+  // The thumbnail is the obvious thing to click, so it does what the button
+  // does. `role`/`tabindex` rather than wrapping it in a <button>, which would
+  // put a second focus stop on every card for the same action.
+  const shot = button('img.shot');
+  shot.addEventListener('click', (e) => openFullSize(id, e.currentTarget));
+  shot.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openFullSize(id, e.currentTarget);
+    }
+  });
   // Loads on open, same as every other on-demand fetch here; `paint` below
   // refreshes it again on every poll while it stays open.
   card.querySelector('.history').addEventListener('toggle', (e) => {
@@ -466,6 +480,93 @@ async function copyText(box, button) {
     box.focus();
     done('Selected — press Ctrl+C');
   }
+}
+
+// ------------------------------------------------------ the full-size view --
+
+/* A card is one column of a responsive grid — about 345px wide on a laptop —
+ * so an 800×480 frame is shown at well under half size and a 1872×1404 one at
+ * a fifth. That is fine for "did it render", and useless for the question this
+ * page exists to answer: is the result legible. Worse, a thumbnail that small
+ * makes a frame whose *content* runs off the panel look identical to one that
+ * fits, because both are just small.
+ *
+ * So: the same image, at the panel's own pixel size, with the window as the
+ * only limit. `image-rendering: pixelated` matters here — at 1:1 a browser's
+ * smoothing invents grey between two inks the panel cannot print, which is the
+ * opposite of what someone checking a dithered frame needs to see.
+ */
+let fullDialog = null;
+let fullOpener = null;
+
+function ensureFullDialog() {
+  if (fullDialog) return fullDialog;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'fullsize';
+  dialog.innerHTML = `
+<div class="full-bar">
+  <span class="full-title"></span>
+  <span class="full-meta"></span>
+  <span class="full-actions">
+    <button type="button" class="full-fit" aria-pressed="false">Fit to window</button>
+    <a class="full-open" target="_blank" rel="noopener">Open PNG</a>
+    <button type="button" class="full-close">Close</button>
+  </span>
+</div>
+<div class="full-body"><img class="full-img" alt=""></div>`;
+  document.body.appendChild(dialog);
+  dialog.querySelector('.full-close').addEventListener('click', () => dialog.close());
+  dialog.querySelector('.full-fit').addEventListener('click', (e) => {
+    const on = dialog.classList.toggle('is-fit');
+    e.currentTarget.setAttribute('aria-pressed', String(on));
+  });
+  // Clicking the backdrop closes it: the click lands on the <dialog> itself
+  // rather than on anything inside, which is what distinguishes the two.
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) dialog.close();
+  });
+  dialog.addEventListener('close', () => {
+    if (fullOpener && document.body.contains(fullOpener)) fullOpener.focus();
+    fullOpener = null;
+  });
+  fullDialog = dialog;
+  return dialog;
+}
+
+/** Open the frame this card is showing, at 1:1.
+ *
+ *  Reuses the card's own `<img>` src rather than re-deriving the URL, so the
+ *  Source/Frame toggle and the checksum cache-buster carry over and the
+ *  browser serves it from cache instead of re-fetching. */
+function openFullSize(id, opener) {
+  const card = cards.get(id);
+  const display = state.find((d) => d.id === id);
+  if (!card || !display || !display.checksum) return;
+  const source = card.querySelector('img.shot');
+  if (!source || !source.getAttribute('src')) return;
+
+  const dialog = ensureFullDialog();
+  fullOpener = opener || document.activeElement;
+  const mode = viewMode.get(id) || 'frame';
+  const image = dialog.querySelector('.full-img');
+  image.setAttribute('src', source.getAttribute('src'));
+  image.alt = source.alt;
+  setText(dialog.querySelector('.full-title'), display.name);
+  // What the panel is, so the pixel size on screen means something. The
+  // `source` capture is downscaled to panel resolution before it is stored
+  // (`GET /api/displays/{id}/screenshot.png`), so both modes are this size.
+  setText(
+    dialog.querySelector('.full-meta'),
+    `${mode === 'source' ? 'source render' : 'panel frame'} · ` +
+    `${display.width}×${display.height} · ${display.color_scheme} · ${display.dpi} dpi`
+  );
+  const link = dialog.querySelector('.full-open');
+  link.setAttribute('href', source.getAttribute('src'));
+  // Start at 1:1 every time: "fit" is the fallback for a frame bigger than the
+  // window, not the default, because 1:1 is the whole point.
+  dialog.classList.remove('is-fit');
+  dialog.querySelector('.full-fit').setAttribute('aria-pressed', 'false');
+  if (!dialog.open) dialog.showModal();
 }
 
 function setViewMode(id, mode) {

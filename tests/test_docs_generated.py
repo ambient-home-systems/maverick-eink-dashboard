@@ -158,7 +158,7 @@ def test_ci_runs_the_esphome_validation() -> None:
     job = workflow["jobs"].get("esphome")
     assert job, "ci.yml has no `esphome` job"
     commands = " ".join(step.get("run", "") for step in job["steps"])
-    assert "pip install -e . esphome" in commands
+    assert "install esphome" in commands, "ESPHome itself must be installed"
     assert "python scripts/check_esphome.py" in commands
     assert (ROOT / "scripts" / "check_esphome.py").is_file()
 

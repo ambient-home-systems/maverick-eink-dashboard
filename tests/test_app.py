@@ -119,9 +119,47 @@ def test_repository_manifest_points_at_this_repository() -> None:
     assert manifest["url"] == _project()["urls"]["Homepage"]
 
 
-def test_app_version_is_the_package_version() -> None:
-    assert _manifest()["version"] == _project()["version"], (
-        "app/config.yaml `version` must equal pyproject.toml's: the image installs the package"
+def test_the_manifest_version_is_the_version_the_image_would_install() -> None:
+    """The store's version and the code behind it, checked against each other.
+
+    This is the invariant a user actually experiences, and the one that broke.
+    `app/config.yaml` is what the add-on store reads off the default branch;
+    the package comes from ``MAVERICK_REF``. Between the two commits a release
+    is made of, `main` briefly carried a bumped manifest and the *previous*
+    release's ref — so the Supervisor offered 0.4.1 and built 0.4.0. Anyone
+    updating in that window got an add-on labelled with a version it did not
+    contain, and no later update to correct it, because the version number was
+    already right.
+
+    This replaces `test_app_version_is_the_package_version`, which compared
+    the manifest to the *working tree's* `pyproject.toml` and said nothing
+    about any of it: in that window both read 0.4.1 and the image still
+    installed 0.4.0. Its own docstring gave the reason — "the image installs
+    the package" — which is the thing it was not checking. It also has to go
+    rather than sit alongside: the release procedure in CONTRIBUTING.md now
+    bumps `app/config.yaml` in the same commit that moves `MAVERICK_REF`, so
+    the commit before it deliberately carries a manifest one version behind
+    `pyproject.toml`, and the old test would fail that by design.
+    """
+    ref = _pinned_ref()
+    try:
+        pinned = subprocess.run(
+            ["git", "show", f"{ref}:pyproject.toml"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        # A shallow clone has the working tree but not the pinned commit, the
+        # same gap `test_pinned_ref_accepts_the_starter_config` skips for.
+        pytest.skip(f"MAVERICK_REF {ref} is not in this checkout: {error}")
+
+    installed = tomllib.loads(pinned.decode("utf-8"))["project"]["version"]
+    assert _manifest()["version"] == installed, (
+        f"app/config.yaml advertises {_manifest()['version']} but MAVERICK_REF "
+        f"({ref[:7]}) installs {installed}. The store would offer a version the "
+        "image does not contain, and no later update would correct it. Move "
+        "`MAVERICK_REF` and the manifest version together."
     )
 
 

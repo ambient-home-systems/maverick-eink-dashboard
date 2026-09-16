@@ -18,16 +18,17 @@ FROM ${BUILD_FROM}
 # an older release writes keys that release rejects and the app dies on its
 # first start; tests/test_app.py loads the one through the other.
 #
-# 8ea37c7 is the 0.4.0 release commit (PR #63's merge into main).
+# b85defa is the 0.4.1 release commit (PR #66's merge into main).
 #
-# Deliberately NOT v0.4.0, for the same reason 0.3.0 was not v0.3.0: pushing a
-# tag to origin is refused from these sessions — `git push origin v0.4.0`
-# answers 403 while a branch push on the same credential succeeds, and the
-# remote carries no tag past v0.2.7 — so this names the release commit's own
-# SHA instead, per CONTRIBUTING.md's documented fallback. It installs the same
-# tree. Repointing it at v0.4.0 once someone can push that tag is a one-line
-# change with no behavioural difference.
-ARG MAVERICK_REF=8ea37c780d5e62b8f0313d4729a350278ee11ccf
+# Deliberately NOT v0.4.1, for the same reason 0.3.0 and 0.4.0 were not tags:
+# pushing one to origin is refused from these sessions — `git push origin
+# v0.4.1` disconnects mid-send-pack while a branch push on the same credential
+# succeeds, and the remote still carries no tag past v0.2.7 — so this names the
+# release commit's own SHA instead, per CONTRIBUTING.md's documented fallback.
+# It installs the same tree. Repointing it at v0.4.1 once someone with
+# tag-push rights creates that tag is a one-line change with no behavioural
+# difference.
+ARG MAVERICK_REF=b85defa27e3e55ba346582c0b4e494b56d795659
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \

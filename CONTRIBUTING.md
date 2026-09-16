@@ -370,17 +370,17 @@ release has actually gone wrong.
 1. **Bump** `version` in `pyproject.toml`.
 2. **Changelog**: move the `[Unreleased]` entries in `CHANGELOG.md` under a new
    `## [x.y.z] - YYYY-MM-DD` heading, leaving an empty `[Unreleased]` section
-   above it for what comes next.
-3. **App version, same commit**: set `version` in `app/config.yaml` to the same
-   number and add the entry to `app/CHANGELOG.md`.
-   `tests/test_app.py::test_app_version_is_the_package_version` requires the
-   two version numbers to match, so they have to move together or the commit
-   in between fails its own tests. Leave `MAVERICK_REF` alone here.
-4. **Reinstall, then regenerate**: `pip install -e .`, then
+   above it for what comes next. Add the entry to `app/CHANGELOG.md` too.
+3. **Reinstall, then regenerate**: `pip install -e .`, then
    `python scripts/gen_docs.py`, and commit what it writes.
-5. **Tag** that commit `vx.y.z` and push the tag.
-6. **Point `MAVERICK_REF`** in `app/Dockerfile` at the tag, as a second commit.
-   Between releases it is a full commit SHA;
+
+   **Leave `app/config.yaml` and `MAVERICK_REF` alone here.** They move
+   together, in the second commit, and the reason is in
+   [Why the manifest version moves with the ref](#why-the-manifest-version-moves-with-the-ref).
+4. **Tag** that commit `vx.y.z` and push the tag.
+5. **Second commit**: set `version` in `app/config.yaml` to the new number
+   **and** point `MAVERICK_REF` in `app/Dockerfile` at the tag, in the same
+   commit. Between releases the ref is a full commit SHA;
    `tests/test_app.py::test_dockerfile_pins_a_ref_and_uses_the_distro_chromium`
    accepts either form.
 
@@ -390,8 +390,39 @@ release has actually gone wrong.
    behind is what breaks a fresh install's first start rather than merely
    mislabelling it.
 
-`maverick --version` and the HTTP API's `/` route (`src/maverick/server/api.py`)
-both report `maverick.app.VERSION`, so either is how to check the bump landed.
+`maverick --version`, the HTTP API's `/` route (`src/maverick/server/api.py`) and
+the setup UI's own header all report `maverick.app.VERSION`, so any of the three
+is how to check the bump landed — the header one is what tells a user which
+build is actually serving them.
+
+### Why the manifest version moves with the ref
+
+The add-on store reads `app/config.yaml` off the default branch to decide what
+version to offer; the image it then builds installs the package from
+`archive/${MAVERICK_REF}.tar.gz`. Those two have to name the same code, and for
+one release they did not.
+
+0.4.1 bumped `app/config.yaml` in its first commit and moved `MAVERICK_REF` in
+its second, four minutes later. In between, the default branch advertised
+**0.4.1** while the image still installed **0.4.0**. Someone who updated in
+that window got an add-on labelled 0.4.1 containing 0.4.0 — and no later update
+ever corrected it, because the version number was already right. It took a bug
+report about a missing feature, and a look at what each commit advertised
+against what it built, to find it.
+
+So the manifest version and the ref move together. The commit before that one
+deliberately carries a manifest one version behind `pyproject.toml`, and
+`tests/test_app.py::test_the_manifest_version_is_the_version_the_image_would_install`
+is what holds the invariant that matters: the version the store offers equals
+the version of the package at `MAVERICK_REF`. It fails the 0.4.1 window, which
+is what the old `test_app_version_is_the_package_version` — comparing the
+manifest to the *working tree* — could not do, since in that window both files
+read 0.4.1.
+
+**If it happens anyway**, the remedy is not an update: the version number is
+already the new one, so the Supervisor offers nothing. Reload the repository
+(**⋮ → Check for updates** in the add-on store) and then **Rebuild** the add-on
+from its own ⋮ menu, which re-runs the build against the current `MAVERICK_REF`.
 
 ### Why `MAVERICK_REF` moves after the tag, not with it
 
@@ -403,19 +434,19 @@ pushed. Setting `MAVERICK_REF` to `vx.y.z` in the same commit that cuts the
 release fails the build with a 404 from codeload, because the tag does not
 exist yet.
 
-Splitting it also leaves a window worth closing promptly. Between step 3
-landing and step 6 landing, the default branch advertises the new version
-while still naming the previous commit — and the app store reads
-`app/config.yaml` from the default branch, so the Supervisor will offer an
-update to an image built from the *old* code. Land step 6 straight after the
-tag rather than leaving it for later.
+Splitting the commits is therefore forced. What is *not* forced — and what
+went wrong once — is splitting the **manifest version** from the ref: that is
+why step 5 moves both together, and
+[Why the manifest version moves with the ref](#why-the-manifest-version-moves-with-the-ref)
+is the incident. Land step 5 straight after the tag regardless; a default
+branch whose ref lags its own code is still worth not leaving overnight.
 
 If the tag cannot be pushed at all, `MAVERICK_REF` may name the release
 commit's own SHA instead: it installs the same tree, and the test above accepts
 it. Repointing it at the tag afterwards is then a one-line change with no
 behavioural difference.
 
-### Why the reinstall in step 4 matters
+### Why the reinstall in step 3 matters
 
 `docs/reference/openapi.json` carries the version, because `create_app` passes
 `maverick.app.VERSION` to FastAPI (`src/maverick/server/api.py`). That value

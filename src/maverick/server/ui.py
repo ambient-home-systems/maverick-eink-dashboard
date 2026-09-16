@@ -37,6 +37,11 @@ import html
 import json
 from typing import TYPE_CHECKING, Any
 
+# `maverick.app` imports only `config` and `engine`, never the server package,
+# so this is not the cycle it looks like — `api.py` imports both this module
+# and `..app` the same way.
+from ..app import VERSION
+
 if TYPE_CHECKING:  # pragma: no cover
     from ..app import Application
 
@@ -50,6 +55,35 @@ if TYPE_CHECKING:  # pragma: no cover
 # and never reaches the app at all. A relative one resolves against the
 # page's base, which is the prefix under ingress and `/` on the published
 # port, so the same markup works through both.
+#: Where the written documentation lives. Absolute, and the only absolute URLs
+#: on the page — everything else is document-relative so it survives Home
+#: Assistant's ingress prefix (see the note above). These cannot be relative:
+#: the docs are not served by this app, they are files in the repository, and a
+#: panel on a LAN with no internet simply gets a link that does not open, which
+#: is better than no link at all. `api/docs` below is different — that one is
+#: this app's own OpenAPI page and stays relative.
+_REPO = "https://github.com/ambient-home-systems/maverick-eink-dashboard"
+_DOCS_URL = f"{_REPO}/blob/main/docs/README.md"
+_DESIGN_GUIDE_URL = f"{_REPO}/blob/main/docs/design-guide.md"
+_TROUBLESHOOTING_URL = f"{_REPO}/blob/main/docs/troubleshooting.md"
+
+# The header's documentation links. Until now the only thing here was
+# `api/docs`, which is the machine-readable route reference — useful to
+# somebody writing a client, and no help at all to somebody asking how to build
+# a dashboard that survives being printed in two inks. That question has a
+# 1,100-line answer in the repository that the tool never pointed at, so it is
+# named here, first.
+_DOC_LINKS = f"""<span class="sub spacer doclinks">
+    <a href="{_DESIGN_GUIDE_URL}" target="_blank" rel="noopener"
+       title="How to build a dashboard that stays legible on e-ink">Design guide</a>
+    <a href="{_DOCS_URL}" target="_blank" rel="noopener"
+       title="Every page: guides, recipes per device, and the generated reference">Docs</a>
+    <a href="{_TROUBLESHOOTING_URL}" target="_blank" rel="noopener"
+       title="The failures people actually hit, keyed to the message Maverick prints"
+       >Troubleshooting</a>
+    <a href="api/docs" title="This server's own OpenAPI reference">API</a>
+  </span>"""
+
 _HEAD = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -375,6 +409,13 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
     lede = "" if ha_connected else f'<div class="lede">{_link_card(application)}</div>'
 
     count = len(config.displays)
+    # The version, in the header, because twice in one afternoon a report came
+    # in about a feature that *was* shipped and *was not* running — and there
+    # was no way to tell which build the page came from without reaching
+    # `/health` or the Supervisor's add-on page. `VERSION` is read from the
+    # installed distribution (`src/maverick/app.py`), so this is the package
+    # actually serving the request rather than a number written down twice.
+    version = html.escape(VERSION)
     # `</script>` inside the JSON would end the block early; `<` cannot occur
     # in JSON outside a string, and `\\u003c` is the same string to any parser.
     embedded = json.dumps(displays).replace("<", "\\u003c")
@@ -383,12 +424,14 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
 <body>
 <header>
   <h1>Maverick</h1>
+  <span class="sub version" title="Maverick {version} — the package serving this page">
+    v{version}</span>
   <span class="sub">{count} display{"" if count == 1 else "s"}</span>
   <button type="button" id="add-display-btn" class="add-btn"
           aria-haspopup="dialog">Add display</button>
   {ha_chip}
   {mqtt_chip}
-  <span class="sub spacer"><a href="api/docs">API docs</a></span>
+  {_DOC_LINKS}
   <!-- Hidden until a fetch comes back 401. With no `server.api_token` set
        that never happens and the page looks exactly as it did before. -->
   {_TOKEN_FORM}

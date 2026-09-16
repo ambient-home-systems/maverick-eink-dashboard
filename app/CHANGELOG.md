@@ -25,6 +25,17 @@
 - `mode: ble` for a tag is refused inside the app, with a message saying why,
   instead of failing on every schedule; the app has no Bluetooth of its own.
 
+## 0.4.1
+
+- **The documentation is linked from the web UI at last.** *Design guide*,
+  *Docs* and *Troubleshooting* in the header. The design guide is the one that
+  answers "why does my dashboard look like that on the panel".
+- **See a frame at full size.** Click a display's preview image, or the new
+  *Full size* button, to see exactly what the panel will show at its own
+  resolution — the thumbnail on the card is far too small to judge whether
+  anything is legible.
+- **Fixed: the Add display dialog had two scrollbars.**
+
 ## 0.4.0
 
 - **Adding a display now asks four things**, not seventeen: a name, which panel

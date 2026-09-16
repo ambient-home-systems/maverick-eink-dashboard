@@ -6,8 +6,33 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The add-on store could offer a version the image did not contain.** It
+  reads `app/config.yaml` off the default branch; the image installs the
+  package from `MAVERICK_REF`. 0.4.1 bumped the manifest in one commit and
+  moved the ref in the next, four minutes later, and in between `main`
+  advertised 0.4.1 while building 0.4.0. Anyone who updated in that window got
+  an add-on labelled 0.4.1 containing 0.4.0 — with no later update to correct
+  it, because the version number was already right. The release procedure now
+  moves the manifest version and the ref in the same commit, and
+  `test_the_manifest_version_is_the_version_the_image_would_install` holds the
+  invariant that matters: the version the store offers equals the version of
+  the package at `MAVERICK_REF`. It fails the 0.4.1 window; the test it
+  replaces compared the manifest to the working tree and could not, since in
+  that window both files read 0.4.1. **If you are on such a build, an update
+  will not fix it** — reload the repository and use **Rebuild** on the add-on.
+
 ### Added
 
+- **The running version is in the header.** Twice in one afternoon a report
+  came in about a feature that had shipped and was not running, and nothing on
+  the page could settle which build was serving it — the version was only in
+  `GET /health` and on the Supervisor's own add-on screen. It now sits beside
+  the display count, read from `maverick.app.VERSION`, which
+  `importlib.metadata` takes off the installed distribution: it describes the
+  package actually answering the request rather than a number written down a
+  second time.
 - **A guided ESPHome hand-off instead of a link.** Each card for a panel an
   ESP32 drives now carries an **Install on device** step: the `secrets.yaml`
   entries the generated configuration expects (with Maverick's own token
@@ -69,6 +94,36 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`mode: ble` is refused in the Home Assistant app**, up front and in words:
   the app asks for no Bluetooth access, so an adapter is never visible to it.
   `auto` resolves to `ha` there, and the setup UI leaves the mode out.
+
+## [0.4.1] - 2026-09-16
+
+### Added
+
+- **The header links the documentation.** It offered `api/docs` and nothing
+  else — the OpenAPI page, which is the right answer for someone writing a
+  client and no answer at all for someone asking how to build a dashboard for
+  ink. The design guide, the docs index and the troubleshooting catalogue are
+  named there now, and `tests/test_setup_ui.py` resolves each URL against the
+  working tree so a renamed page cannot leave the UI pointing at a 404 —
+  `scripts/check_links.py` checks relative Markdown links and never sees these.
+- **A full-size view for the frame.** A card is one column of a responsive
+  grid, so an 800×480 frame is shown at well under half size and a 1872×1404
+  one at a fifth: enough to answer "did it render", useless for "is it
+  legible", which is what the page is for. **Full size** beside Source/Frame —
+  or clicking the thumbnail — opens the frame at the panel's own pixel size
+  with `image-rendering: pixelated`, because a browser interpolating a
+  dithered two-ink frame invents greys the panel cannot print. *Fit to window*
+  is there for a frame larger than the screen, and *Open PNG* for a closer
+  look still.
+
+### Fixed
+
+- **The Add display dialog had two scrollbars.** A `<dialog>` is
+  `overflow:auto` in the UA stylesheet, so with a `max-height` it scrolls on
+  its own, and the form inside took `max-height:inherit` — the dialog's
+  *border-box* height — leaving it 2px taller than the content box holding it.
+  Both scrolled, side by side. The dialog is now a flex column that does not
+  scroll, and the form is sized to the space that exists.
 
 ## [0.4.0] - 2026-09-16
 
