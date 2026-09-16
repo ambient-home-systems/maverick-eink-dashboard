@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Plain words everywhere.** Every setting in the Add dialog and the Edit
+  drawer now has a short, plain label and one line of help, instead of the
+  reference text it used to show.
+- **Fewer settings in the way.** Adding a display shows four extra settings
+  under *More settings*, not twelve. The Edit drawer shows what people
+  actually change — the dashboard, the schedule, the look, the image, the
+  delivery — and an **Expert settings** switch reveals everything else.
+
 ## 0.5.0
 
 - **Install on device.** A display on an ESP32 board now has a step-by-step

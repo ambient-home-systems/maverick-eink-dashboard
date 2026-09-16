@@ -6,6 +6,35 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The setup UI speaks plainly.** Every label and line of help in the Add
+  dialog and the Edit drawer now comes from `src/maverick/server/copy.py` —
+  a short label a person would say out loud and one sentence of help — served
+  under `ui` by `GET /api/schema/display`. The `Field(description=...)` text
+  the reference is generated from stays where it was and is no longer what
+  the form shows; with *Expert settings* on it is one click away under
+  **More**. `tests/test_ui_copy.py` holds every setting to an entry and every
+  line of help to under 110 characters.
+- **The Add dialog's fold is four settings, not twelve.** *More settings*
+  holds rotation, quiet hours, the entities that trigger a refresh and a
+  different delivery method. The geometry overrides, the crontab, the enabled
+  switch and the wire format moved to the Edit drawer, where they were
+  already, under Expert settings.
+- **The Edit drawer shows what people change.** Display, Pages, Schedule,
+  Look, Image and Delivery, with only the everyday settings in each. An
+  **Expert settings** switch in the header — remembered per browser — shows
+  the rest: Panel overrides, Browser, Checks, Controller quirks and Board
+  wiring, and the expert-level settings inside the everyday sections.
+  Sections were renamed to say what they are for (Theme → Look, Render →
+  Browser, Lint → Checks, Pack → Controller quirks, ESPHome → Board wiring).
+
+### Fixed
+
+- **A "Delivery" label with nothing under it** appeared in the Add dialog for
+  a transport with no required options: `[hidden]` on a flex container needs
+  restating in the stylesheet.
+
 ## [0.5.0] - 2026-09-16
 
 ### Fixed

@@ -49,6 +49,7 @@ from ..ha import client as ha_client
 from ..ha import supervisor
 from ..store import dump_display
 from ..transports import available_transports
+from .copy import ui_copy
 from .ui import render_token_prompt, render_ui
 
 log = logging.getLogger(__name__)
@@ -267,6 +268,10 @@ def create_app(application: Application) -> FastAPI:
             }
             for name, cls in sorted(available_transports().items())
         }
+        # What the form calls each setting: a short label, one line of help
+        # and whether it is an expert setting (`src/maverick/server/copy.py`).
+        # The reference descriptions above stay for the *More* disclosure.
+        schema["ui"] = ui_copy()
         return schema
 
     #: `dashboard_url` asks the Supervisor for the ESPHome add-on; once a

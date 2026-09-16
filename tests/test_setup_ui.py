@@ -432,11 +432,15 @@ def test_the_page_contains_the_add_display_dialog(app: Application) -> None:
     assert 'id="add-display-btn"' in page, "no button to open it from the header"
     for field in (
         "add-name", "add-id", "add-panel", "add-dashboard", "add-transport",
-        "add-refresh", "add-cron", "add-quiet-hours", "add-on-change", "add-enabled",
-        "add-width", "add-height", "add-color-scheme", "add-dpi", "add-rotation",
-        "add-frame-format", "add-submit",
+        "add-refresh", "add-quiet-hours", "add-on-change", "add-rotation", "add-submit",
     ):
         assert f'id="{field}"' in page, f"the add-display dialog is missing #{field}"
+    # The geometry overrides, the crontab and the wire format left this dialog
+    # for the Edit drawer's Expert settings: a dozen boxes with reference prose
+    # under each was the part of it people called confusing.
+    for gone in ("add-cron", "add-enabled", "add-width", "add-height", "add-color-scheme",
+                 "add-dpi", "add-frame-format"):
+        assert f'id="{gone}"' not in page, f"#{gone} is back in the add-display dialog"
 
 
 def test_only_three_fields_sit_above_the_advanced_fold(app: Application) -> None:
@@ -464,11 +468,9 @@ def test_only_three_fields_sit_above_the_advanced_fold(app: Application) -> None
     assert 'id="add-delivery"' in above, "the Delivery block should sit above the fold"
     assert 'id="add-test"' in dialog, "the dialog should offer Test delivery"
     for field in (
-        "add-id", "add-transport", "add-cron", "add-quiet-hours", "add-on-change",
-        "add-enabled", "add-width", "add-height", "add-color-scheme", "add-dpi",
-        "add-rotation", "add-frame-format",
+        "add-id", "add-transport", "add-quiet-hours", "add-on-change", "add-rotation",
     ):
-        assert f'id="{field}"' in below, f"#{field} should be under Advanced"
+        assert f'id="{field}"' in below, f"#{field} should be under the fold"
 
 
 def test_nothing_under_the_fold_carries_a_browser_constraint(app: Application) -> None:
