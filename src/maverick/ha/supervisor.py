@@ -1,11 +1,12 @@
 """What Maverick needs from the Supervisor: its options, and its ingress proxy.
 
 When Maverick runs as a Home Assistant app, its connection settings live in
-the app's Configuration tab, not in ``maverick.yaml``: ``run.sh`` turns them
-into environment variables that the config file reads through ``${VAR}``
-substitution. That is deliberately one source of truth, so a credential the
-setup UI obtains has to go back to the same place rather than being written
-into the YAML alongside it.
+the app's Configuration tab, not in ``maverick.yaml``: the service reads them
+from ``/data/options.json`` at startup and turns them into the environment
+variables the config file reads through ``${VAR}`` substitution
+(``src/maverick/ha/options.py``). That is deliberately one source of truth, so
+a credential the setup UI obtains has to go back to the same place rather than
+being written into the YAML alongside it.
 
 The Supervisor allows this without any extra permission. Its security
 middleware checks an ``api_bypass`` list *before* it checks whether an app
@@ -116,6 +117,17 @@ async def _request(method: str, path: str, json: dict[str, Any] | None = None) -
     return payload.get("data") if isinstance(payload, dict) else payload
 
 
+async def api_get(path: str) -> Any:
+    """Read a Supervisor endpoint, returning the ``data`` half of its answer.
+
+    The read-only counterpart of :func:`save_options`, for the endpoints that
+    describe the host rather than this app: ``/network/info`` and
+    ``/services/mqtt``, both read by ``src/maverick/ha/options.py``, which also
+    records what grants each of them.
+    """
+    return await _request("GET", path)
+
+
 async def current_options() -> dict[str, Any]:
     """The app's options as the Supervisor currently holds them."""
     data = await _request("GET", "/addons/self/info")
@@ -139,6 +151,7 @@ async def save_options(updates: dict[str, Any]) -> None:
 __all__ = [
     "INGRESS_PEER",
     "SupervisorError",
+    "api_get",
     "current_options",
     "request_is_from_ingress",
     "running_under_supervisor",

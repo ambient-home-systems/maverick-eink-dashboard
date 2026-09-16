@@ -31,6 +31,7 @@ SOURCE_FILES = [
     "src/maverick/config.py",
     "src/maverick/store.py",
     "src/maverick/ha/client.py",
+    "src/maverick/ha/options.py",
     "src/maverick/render/browser.py",
     "src/maverick/render/dashboard.py",
     "src/maverick/scheduling/scheduler.py",

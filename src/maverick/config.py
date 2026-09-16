@@ -58,11 +58,12 @@ def expand_env(value: Any) -> Any:
 
     ``:-`` means what it means in a shell: the default stands in when the
     variable is unset *or* set to the empty string. The distinction is not
-    academic here, because the Home Assistant app's ``run.sh`` exports a value
-    for every substitution in the starter config, empty for the options a user
-    has not filled in — so treating empty as "set" would push an empty string
-    past defaults like ``${MQTT_PORT:-1883}`` and fail validation on a field
-    that has a perfectly good fallback written next to it.
+    academic here, because under the Home Assistant app a value is set for
+    every substitution in the starter config, empty for the options a user has
+    not filled in (``load_app_options`` in ``src/maverick/ha/options.py``) — so
+    treating empty as "set" would push an empty string past defaults like
+    ``${MQTT_PORT:-1883}`` and fail validation on a field that has a perfectly
+    good fallback written next to it.
 
     ``${VAR}`` without a default still requires the variable to be set, and
     still yields the empty string when it is set and empty: with no default
