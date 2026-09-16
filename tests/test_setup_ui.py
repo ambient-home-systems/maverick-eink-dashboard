@@ -321,6 +321,39 @@ def test_mqtt_off_says_what_turning_it_on_would_give(app: Application) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# The running version
+# --------------------------------------------------------------------------- #
+
+def test_the_header_names_the_running_version(app: Application) -> None:
+    """Which build is serving this page, on the page.
+
+    Twice in one afternoon a report came in about a feature that had shipped
+    and was not running, and nothing on the page could settle it: the version
+    was only in `GET /health` and on the Supervisor's own add-on screen. It
+    comes from `maverick.app.VERSION`, which `importlib.metadata` reads off
+    the installed distribution, so it describes the package actually answering
+    the request rather than a number written down a second time.
+    """
+    from maverick.app import VERSION
+
+    page = _page(app)
+    header = page[page.index("<header>"):page.index("</header>")]
+    assert f"v{VERSION}" in header, "the header does not name the running version"
+
+
+def test_the_version_in_the_header_is_the_package_version() -> None:
+    """And it is the same number `pyproject.toml` carries, which is what the
+    add-on manifest is checked against (`tests/test_app.py`)."""
+    import tomllib
+
+    from maverick.app import VERSION
+
+    root = Path(__file__).resolve().parent.parent
+    with (root / "pyproject.toml").open("rb") as handle:
+        assert tomllib.load(handle)["project"]["version"] == VERSION
+
+
+# --------------------------------------------------------------------------- #
 # The documentation links
 # --------------------------------------------------------------------------- #
 
