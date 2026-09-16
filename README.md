@@ -74,12 +74,15 @@ repository to the app store; the app itself lives in [`app/`](app/DOCS.md).
    Server or Samba apps), and copies its example display into
    `data/displays.yaml` beside it — the file that counts from then on, see
    [Configuration](#configuration).
-5. Open the **Web UI** and add a display: **Add display**, pick a panel from
-   the catalogue and a dashboard from the picker, choose a transport, and
-   save. No file to edit and no restart — the Web UI shows what each panel
-   rendered and what the linter found, and an **Edit** action on each card
-   opens every field the display has, including a preview of a change before
-   it is saved.
+5. Open the **Web UI** and add a display: **Add display**, give it a name,
+   pick a panel from the catalogue and a dashboard from the picker, and save.
+   The panel supplies the transport and everything else has a default, so
+   there is nothing else to answer; *Advanced* is there when you want to
+   disagree with one. No file to edit and no restart — the Web UI shows what
+   each panel rendered and what the linter found, an **Edit** action on each
+   card opens every field the display has, including a preview of a change
+   before it is saved, and **Dashboard starter** hands you a Lovelace
+   dashboard already sized for that panel.
 
 [app/DOCS.md](app/DOCS.md) is the full page: every option, what the app maps
 and exposes, and what to check when it does not start.
