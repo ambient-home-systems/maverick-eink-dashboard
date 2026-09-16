@@ -79,8 +79,34 @@ scattering `# noqa`.
 The suite runs in a bare checkout because every external thing is stubbed —
 `tests/conftest.py` has a `FakeRenderer` that hands the engine a Pillow image
 and a `FakeTransport` that records frames instead of reaching a panel. Use them
-rather than reaching for a real browser: a test that needs Chromium is a test CI
-will not run.
+rather than reaching for a real browser for anything outside `tests/browser/`.
+
+### The browser suite
+
+`tests/browser/` is the one place a real Chromium is worth it: two findings in
+`docs/architecture.md`, "What a prototype proved" — seeding the auth bundle
+before the dashboard's first script runs, and adopting the injected
+stylesheet into every shadow root — only fail inside an actual browser, and a
+Phase 2 setup-UI flow (the Add display form, a render followed through the
+status pill) only fails inside one too. These tests carry the `browser`
+pytest marker (`pyproject.toml`), which `pytest -q`'s default `addopts`
+excludes, so the four checks above stay exactly as fast and as install-free as
+they read above. Run them explicitly, after installing Chromium the same way
+`cmd_serve` needs it (`playwright install chromium`, or `MAVERICK_CHROMIUM_PATH`
+on aarch64 — see "Development setup" above):
+
+```bash
+pytest -m browser
+```
+
+`tests/browser/conftest.py` skips the whole directory, rather than failing it,
+when no Chromium is reachable — the same rule `BrowserPool` uses
+(`src/maverick/render/browser.py`) — so a bare checkout with no Chromium still
+runs this and reports skips, not errors. CI's `browser` job
+(`.github/workflows/ci.yml`) is the one place that installs Chromium
+(`playwright install chromium --with-deps`) and always runs these for real.
+`tests/browser/fixtures/` are static pages served from a local `http.server`
+thread; no Home Assistant is involved.
 
 ## The documentation workflow
 

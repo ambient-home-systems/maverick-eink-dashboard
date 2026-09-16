@@ -54,6 +54,11 @@ maverick = ["devices/*.yaml", "config.example.yaml", "server/static/*"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
+# `browser` (tests/browser/) drives a real Chromium and is excluded by
+# default so `pytest -q` stays fast and needs no browser install; run it with
+# `pytest -m browser` (CONTRIBUTING.md, "Running the checks").
+markers = ["browser: needs a real Chromium, see tests/browser/conftest.py"]
+addopts = "-m 'not browser'"
 
 [tool.ruff]
 line-length = 100

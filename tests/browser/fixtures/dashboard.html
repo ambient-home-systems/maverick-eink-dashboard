@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+  Stands in for a Home Assistant dashboard for tests/browser/test_renderer.py.
+  No Home Assistant is involved: this is a static page that reproduces the two
+  shapes the renderer has to cope with (docs/architecture.md, "What a
+  prototype proved") — a custom element that opens a shadow root, a card
+  inside it that opens a second one late, and an <img> that is slow to load.
+-->
+<html>
+<head><meta charset="utf-8"><title>fixture dashboard</title></head>
+<body>
+<script>
+  // The renderer seeds `localStorage.hassTokens` via a Playwright *init
+  // script*, which runs before any script on the page — this one included.
+  // Recording what was already there, before this line does anything else,
+  // is how the test proves the seeding happened pre-navigation rather than
+  // being a race it got lucky on.
+  window.__maverickSeenAuth = window.localStorage.getItem('hassTokens');
+</script>
+<home-assistant></home-assistant>
+<script>
+  class HomeAssistant extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({ mode: 'open' });
+      root.innerHTML =
+        '<p>Fixture dashboard</p><ha-card></ha-card><img src="slow.png" alt="">';
+      // A card that attaches its own shadow root well after load, the way a
+      // lazily-rendered Lovelace card does — attachShadow is patched by the
+      // renderer's init script before this page loads, so it has to catch a
+      // root created this late too.
+      const card = root.querySelector('ha-card');
+      window.setTimeout(() => {
+        card.attachShadow({ mode: 'open' }).innerHTML = '<p>Late card content</p>';
+      }, 500);
+    }
+  }
+  customElements.define('home-assistant', HomeAssistant);
+</script>
+</body>
+</html>

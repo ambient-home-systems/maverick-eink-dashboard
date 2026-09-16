@@ -291,7 +291,15 @@ silently redirects to the login page, which then screenshots as a blank frame.
 *In the code: `build_auth_bundle` and the init script in
 `render/dashboard.py` seed the bundle pre-navigation from
 `home_assistant.render_url`; `_verify_authenticated` blocks delivery by raising
-on the login page. No test reproduces this yet — it needs a browser.*
+on the login page.*
+
+*Verified: [`tests/browser/test_renderer.py`](../tests/browser/test_renderer.py)
+— `test_the_auth_bundle_is_seeded_before_the_page_s_first_script` reads back a
+global the fixture dashboard's own first script set from
+`localStorage.hassTokens`, and asserts it was already there with `hassUrl`
+matching; `test_the_login_page_is_rejected_and_its_context_dropped` renders
+`tests/browser/fixtures/login.html` and asserts `RenderError` and that
+`BrowserPool` dropped the context.*
 
 ### Shadow DOM
 
@@ -301,8 +309,13 @@ reaches almost nothing. Styles must be adopted into every shadow root, and
 
 *In the code: `_STYLE_SCRIPT` in `render/dashboard.py`. What the injected sheet
 contains is covered by
-[`tests/test_theme_palette_overrides.py`](../tests/test_theme_palette_overrides.py);
-the adoption itself needs a browser and is not yet tested.*
+[`tests/test_theme_palette_overrides.py`](../tests/test_theme_palette_overrides.py).*
+
+*Verified: [`tests/browser/test_renderer.py`](../tests/browser/test_renderer.py)
+— `test_the_stylesheet_is_adopted_into_every_shadow_root` renders
+`tests/browser/fixtures/dashboard.html` (a `<home-assistant>` element with a
+card that attaches its own shadow root 500ms after load) and asserts the sheet
+is in `adoptedStyleSheets` of the document and of both shadow roots.*
 
 ### Physical type size
 
@@ -344,8 +357,10 @@ a 0.001 speckle ratio — where
 does not.*
 
 The last two findings are reproducible from the project code alone, and the
-tests named beside each one do that. The first two are not: both need a browser
-to fail in, and nothing in the suite stands in for one.
+tests named beside each one do that. The first two are not: both need a
+browser to fail in, which is what `tests/browser/` — excluded from a plain
+`pytest -q`, run explicitly with `pytest -m browser` (CONTRIBUTING.md) —
+stands in for.
 
 ## Known limitations
 

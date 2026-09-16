@@ -1,0 +1,13 @@
+<!doctype html>
+<!--
+  What the renderer sees when Home Assistant rejects the credential: the
+  frontend's login form, `<ha-authorize>`. `_verify_authenticated`
+  (src/maverick/render/dashboard.py) looks for exactly that element and
+  raises rather than shipping the screenshot of it.
+-->
+<html>
+<head><meta charset="utf-8"><title>fixture login</title></head>
+<body>
+<ha-authorize></ha-authorize>
+</body>
+</html>
