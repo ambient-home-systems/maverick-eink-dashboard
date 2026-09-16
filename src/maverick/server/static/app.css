@@ -101,11 +101,23 @@ button[aria-busy=true]{cursor:progress}
 
 /* A per-card disclosure, same free-disclosure pattern as the MQTT chip and
    the editor's field-group sections. */
-.card details.history{border-top:1px solid var(--line)}
-.card details.history>summary{padding:10px 16px;font-size:12.5px;font-weight:600;
-      cursor:pointer;list-style:none}
-.card details.history>summary::-webkit-details-marker{display:none}
-.card details.history[open]>summary{border-bottom:1px solid var(--line)}
+.card details.history,.card details.starter{border-top:1px solid var(--line)}
+.card details.history>summary,.card details.starter>summary{padding:10px 16px;
+      font-size:12.5px;font-weight:600;cursor:pointer;list-style:none}
+.card details.history>summary::-webkit-details-marker,
+.card details.starter>summary::-webkit-details-marker{display:none}
+.card details.history[open]>summary,
+.card details.starter[open]>summary{border-bottom:1px solid var(--line)}
+
+/* The generated dashboard. The <pre> is capped and scrolls rather than
+   growing the card past the panel preview above it, which is the thing on
+   this page people are actually watching. */
+.starter-body{padding:10px 16px 14px}
+.starter-intro{margin:0 0 10px}
+.starter-yaml{margin:10px 0 0;padding:10px 12px;max-height:22em;overflow:auto;
+      background:var(--bg);border:1px solid var(--line);border-radius:6px;
+      font:11.5px/1.5 ui-monospace,monospace;white-space:pre;tab-size:2}
+.starter-download,.starter-guide{font-size:12.5px;align-self:center}
 .history-body{padding:8px 16px 14px;overflow-x:auto}
 .history-empty{margin:0;font-size:12.5px;padding:4px 0}
 .history-table{width:100%;border-collapse:collapse;font-size:12px}
@@ -171,6 +183,17 @@ details.field-group[open]>summary{margin-bottom:10px}
       background:rgba(163,39,31,.12);color:var(--err)}
 .dialog-error:empty{display:none}
 .dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+/* Sticky, because Advanced is a dozen fields long and the form itself is what
+   scrolls: without this, opening the fold puts Add display below the fold in
+   the literal sense. The negative offset and the padding cancel the form's own
+   20px, so the bar sits flush against the bottom edge rather than floating
+   above a strip of scrolled content. */
+dialog#add-dialog .dialog-actions{position:sticky;bottom:-20px;z-index:1;
+      background:var(--card);padding:12px 0 20px;margin-bottom:-20px;
+      border-top:1px solid var(--line)}
+@media (max-width:480px){
+  dialog#add-dialog .dialog-actions{bottom:-16px;padding-bottom:16px;margin-bottom:-16px}
+}
 @media (max-width:480px){
   dialog#add-dialog{width:calc(100vw - 32px);border-radius:8px}
   dialog#add-dialog form{padding:16px}

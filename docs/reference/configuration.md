@@ -363,7 +363,7 @@ its own options and forbidding them would mean restating every field here.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `type` | `str` | `"http_pull"` | Registry name of the transport that delivers the frame. Every other key in this section is that transport's own option; see [Transport options](#transport-options). |
+| `type` | `str` \| `None` | *unset* | Registry name of the transport that delivers the frame. Unset uses the panel's own `default_transport` from the catalogue — a BLE shelf label delivers over `opendisplay` and a Waveshare module over `http_pull` without being told. Every other key in this section is that transport's own option; see [Transport options](#transport-options). |
 
 ## displays[].pack
 

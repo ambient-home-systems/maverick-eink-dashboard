@@ -150,6 +150,21 @@ class HomeAssistantClient:
         response.raise_for_status()
         return response.json()
 
+    async def list_states(self) -> list[dict[str, Any]]:
+        """Every entity and its current state, from `GET /api/states`.
+
+        The REST endpoint rather than the WebSocket `get_states`, because this
+        is a one-shot read and `_http` already carries the credential and the
+        base URL. Used to pick the entities a starter dashboard is built from
+        (`src/maverick/lovelace/generator.py`) — a picker that offered
+        `sensor.REPLACE_ME` would be a worse answer than no picker.
+        """
+        client = await self._http()
+        response = await client.get("/api/states")
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
+
     async def set_state(
         self, entity_id: str, state: str, attributes: dict[str, Any] | None = None
     ) -> None:

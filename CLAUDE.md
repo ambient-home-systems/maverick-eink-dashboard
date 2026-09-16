@@ -11,7 +11,7 @@ everything below is [CONTRIBUTING.md](CONTRIBUTING.md).
 
 | Package | Owns |
 | --- | --- |
-| `src/maverick/eink/` | Palettes, dithering, the image pipeline, the e-ink CSS theme, the lint gate, wire-format packing. No I/O. |
+| `src/maverick/eink/` | Palettes, dithering, the image pipeline, the e-ink CSS theme, the layout budget, the lint gate, wire-format packing. No I/O. |
 | `src/maverick/devices/` | The panel catalogue: `panels.yaml` and the `PanelProfile` that loads it. |
 | `src/maverick/render/` | Chromium: browser pool, dashboard URL, injected theme, screenshot. |
 | `src/maverick/transports/` | Getting a finished frame onto a panel, and the registry naming them. |
@@ -19,6 +19,7 @@ everything below is [CONTRIBUTING.md](CONTRIBUTING.md).
 | `src/maverick/server/` | The FastAPI app and the setup UI. |
 | `src/maverick/ha/` | The Home Assistant REST/WebSocket client and MQTT discovery. |
 | `src/maverick/esphome/` | Generating ESPHome device configuration for a display. |
+| `src/maverick/lovelace/` | Generating a starter Lovelace dashboard sized for a panel. No I/O; the caller supplies the entity states. |
 | `engine.py`, `config.py` | The orchestrator and `FrameStore`; every pydantic model, and the source the reference is generated from. |
 | `app/`, `repository.yaml` | The Home Assistant app: manifest, Dockerfile, `run.sh`, the starter config it writes, and the store manifest. It installs the package at the commit `MAVERICK_REF` names; `tests/test_app.py` keeps it in step. |
 
@@ -74,6 +75,11 @@ python scripts/check_links.py     # relative Markdown links only, offline
 - **`serpentine` is ignored on the fast dither path**
   (`src/maverick/eink/dither.py:286`). Pillow's Floyd–Steinberg is always
   left-to-right, so the option is dropped rather than silently promised.
+- **The starter dashboard is not regenerated when the panel changes**
+  (`src/maverick/server/static/app.js`, the `.starter` toggle). It is fetched
+  once per card and kept: it depends on the panel and the entity list, neither
+  of which changes while the page is open, and refetching under a user who is
+  mid-copy is worse than stale.
 - **Attribute-only state changes do not trigger a render**
   (`src/maverick/scheduling/scheduler.py:177-179`). Home Assistant fires
   `state_changed` for attribute updates too; a ticking timestamp attribute would

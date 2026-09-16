@@ -236,7 +236,7 @@ def generate_all(config: Config) -> dict[str, str]:
     out: dict[str, str] = {}
     for display in config.enabled_displays:
         resolved = display.resolved()
-        if display.transport.type in ("http_pull", "mqtt", "file"):
+        if display.transport_type in ("http_pull", "mqtt", "file"):
             out[display.id] = generate_esphome_config(resolved, config)
     return out
 

@@ -17,12 +17,13 @@ reading a real dashboard and controllable from inside Home Assistant.
 1. [The setup UI](#the-setup-ui)
 2. [The credential](#the-credential)
 3. [Which dashboard URL to use](#which-dashboard-url-to-use)
-4. [Making it a device: MQTT discovery](#making-it-a-device-mqtt-discovery)
-5. [Without MQTT: a rest_command](#without-mqtt-a-rest_command)
-6. [Rendering when data changes](#rendering-when-data-changes)
-7. [OpenDisplay tags through Home Assistant's Bluetooth](#opendisplay-tags-through-home-assistants-bluetooth)
-8. [What the API token protects](#what-the-api-token-protects)
-9. [What is not there yet](#what-is-not-there-yet)
+4. [Building a dashboard for e-ink](#building-a-dashboard-for-e-ink)
+5. [Making it a device: MQTT discovery](#making-it-a-device-mqtt-discovery)
+6. [Without MQTT: a rest_command](#without-mqtt-a-rest_command)
+7. [Rendering when data changes](#rendering-when-data-changes)
+8. [OpenDisplay tags through Home Assistant's Bluetooth](#opendisplay-tags-through-home-assistants-bluetooth)
+9. [What the API token protects](#what-the-api-token-protects)
+10. [What is not there yet](#what-is-not-there-yet)
 
 ## The setup UI
 
@@ -33,11 +34,24 @@ by hand in `config.yaml`, but the setup UI at `/` (or **Open Web UI** in the
 Home Assistant app, which embeds the same page through ingress) is where most
 of it happens day to day.
 
-**Add display** builds a display from what the running service already knows.
-`GET /api/panels` fills a panel picker grouped by vendor and shows the
-profile's own notes once one is chosen; `GET /api/transports` fills a
-transport picker, with each transport's own option fields drawn underneath
-from its `options_doc`; and the Dashboard field's suggestions come from
+**Add display** asks four things: a name, which panel it is, which dashboard
+to put on it, and how often to refresh. Everything else is under **Advanced**,
+because everything else has a defensible default. The panel supplies the
+transport — `PanelProfile.default_transport` (`src/maverick/devices/panels.yaml`)
+is what a display gets when it names none, so a BLE shelf label is delivered
+over `opendisplay` and a Waveshare module over `http_pull` with nothing to
+choose (`DisplayConfig.transport_type`, `src/maverick/config.py`). Refresh is
+one picker of intervals rather than the `every`/`cron` pair the model takes;
+those two are mutually exclusive (`ScheduleConfig._exclusive`), so a crontab
+lives under Advanced and replaces the interval rather than competing with it.
+The id is derived from the name.
+
+The rest is filled in from what the running service already knows. `GET
+/api/panels` fills the panel picker, grouped by vendor, and shows the
+profile's own notes and the geometry, palette and transport it settles once
+one is chosen; `GET /api/transports` fills the transport picker under
+Advanced, with each transport's own option fields drawn underneath from its
+`options_doc`; and the Dashboard field's suggestions come from
 [the dashboard picker](#a-dashboard-path) below. Submitting posts to `POST
 /api/displays` — no config file, and nothing to restart.
 
@@ -54,7 +68,10 @@ and
 [the runtime add/update/remove path](../architecture.md#changing-a-display-while-the-service-runs)
 — nothing here needs a restart, and Chromium itself is never relaunched.
 
-Each card also carries a **History** disclosure — the last render outcomes,
+Each card also carries a **Dashboard starter** disclosure — a Lovelace
+dashboard generated for that panel, with a Copy button, a Download and a link
+to the design guide; see [Building a dashboard for
+e-ink](#building-a-dashboard-for-e-ink) — and a **History** disclosure — the last render outcomes,
 newest first, with a failed or lint-blocked one highlighted and its reason
 on expand — and a **Source/Frame** toggle over the image, so you can compare
 what Chromium actually captured against what the panel will show after
@@ -364,6 +381,75 @@ render:
 
 `timeout` is the budget for both the navigation and the selector wait, so raise
 it alongside `settle` rather than leaving it at its 45-second default.
+
+## Building a dashboard for e-ink
+
+> Status: written from the source; not yet verified against a live Home Assistant instance.
+
+"Design it for the panel" is easy to write and hard to act on, so this is the
+short version of [the design guide](../design-guide.md), and the command that
+saves you doing it by hand.
+
+### Start from a generated one
+
+```bash
+maverick dashboard kitchen              # prints it
+maverick dashboard kitchen -o view.yaml # writes it
+```
+
+Or open a display's card in the setup UI and expand **Dashboard starter**,
+which is the same thing through `GET /api/displays/{id}/dashboard.yaml`
+([HTTP API reference](../reference/http-api.md)), with a Copy button.
+
+What comes back is a complete Lovelace configuration — a top-level `views:`
+list, which is what Home Assistant's **Raw configuration editor** takes. Paste
+it into a new dashboard (**Settings → Dashboards → Add dashboard**, then
+**Edit → ⋮ → Raw configuration editor**) and point the display's `dashboard`
+at the view path in it.
+
+Two things make it a starting point rather than a template:
+
+* **It is sized for your panel.** The column count and how much text fits come
+  from that panel's own pixels and dpi, through `budget_for`
+  (`src/maverick/eink/layout.py`) — the same arithmetic
+  [the design guide's column table](../design-guide.md#how-many-columns-fit)
+  is printed from. A 7.5-inch panel gets three columns and a twenty-one-line
+  budget; a 2.9-inch shelf label gets one column, five lines, a shrunken
+  heading and no card titles, because on a tag the title costs as much as the
+  value it labels.
+* **It names entities you have.** The generator is handed
+  `HomeAssistantClient.list_states`, so the weather entity, the temperature
+  sensors and the door sensors in it are yours. With no connection it emits
+  the same layout with placeholder ids and says so in the file, so it is
+  useful before the credential is.
+
+Every choice it made is written into the file as a comment, including the
+cards it refused to use and why.
+
+### The three rules, if you would rather build it yourself
+
+**Legibility is millimetres, not pixels.** Body text is sized in mm by the
+injected theme and 3.2 mm is the default (`TypeScale`,
+`src/maverick/eink/theme.py`), which is 16 px on a 124 dpi panel and 38 px on a
+300 dpi Kindle. This is why a 300 dpi Kindle holds *one* column where a 124 dpi
+7.5-inch panel holds three: the Kindle is physically 91 mm across.
+
+**Count in lines before you count in cards.** The whole frame holds a fixed
+number of body lines — twenty-one on a 7.5-inch panel, five on a shelf label —
+headings and blank space included. Nothing scrolls; a dashboard that overflows
+is simply cut off.
+
+**Use cards that are text on white.** Entity lists, glance rows, markdown,
+headings and tiles are dark glyphs on a light ground: they snap to the nearest
+ink and come out crisp. Gauges, filled sparklines, gradients and camera
+thumbnails are broad fields of intermediate tone, and they either dissolve
+under dithering or spend the ink budget
+([design guide, section 7](../design-guide.md#cards-that-survive)).
+
+On a mono panel nothing may depend on colour, because an accent is not dimmer
+there — it is absent. On a panel with a spot ink, spend that ink on alerts and
+nothing else, or the linter's `spot_ink_overuse` check will say so
+([troubleshooting](../troubleshooting.md)).
 
 ## Making it a device: MQTT discovery
 

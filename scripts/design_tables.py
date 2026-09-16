@@ -40,6 +40,7 @@ import numpy as np  # noqa: E402
 import yaml  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
+from maverick.eink import layout  # noqa: E402
 from maverick.eink.dither import DitherMode, _continuous_tone_mask, quantize  # noqa: E402
 from maverick.eink.lint import LintThresholds, lint_frame  # noqa: E402
 from maverick.eink.palette import (  # noqa: E402
@@ -67,24 +68,17 @@ from maverick.eink.theme import (  # noqa: E402
 
 PANELS = ROOT / "src" / "maverick" / "devices" / "panels.yaml"
 
-#: Line height from the `html, body` rule in `theme.build_css`.
-LINE_HEIGHT = 1.35
-
-#: Mean advance width of a lowercase alphabet, as a fraction of the font size.
-#: Measured with Pillow on the two faces from `EINK_FONT_STACK` that Linux
-#: container images carry: 0.554 for DejaVu Sans, 0.482 for Liberation Sans.
-#: 0.5 is the midpoint and the figure the column arithmetic uses.
-MEAN_ADVANCE_RATIO = 0.5
-
-#: A column narrower than this many characters of body text cannot hold a
-#: label and a value on one line, which is what a dashboard column is for.
-MIN_CHARS_PER_COLUMN = 24
-
-#: Space inside a card edge, between cards, and around the frame, in mm. Each
-#: is two rule widths plus a little; below this, cards read as one grey block.
-CARD_PADDING_MM = 2.0
-GUTTER_MM = 2.0
-MARGIN_MM = 2.0
+# The column arithmetic moved into the package when something other than this
+# page needed it: `maverick dashboard <id>` sizes a starter dashboard from the
+# same numbers (`src/maverick/eink/layout.py`), and a table that disagreed with
+# the layout Maverick hands you would be worse than no table. Re-exported here
+# under the names this script's tables already used.
+LINE_HEIGHT = layout.LINE_HEIGHT
+MEAN_ADVANCE_RATIO = layout.MEAN_ADVANCE_RATIO
+MIN_CHARS_PER_COLUMN = layout.MIN_CHARS_PER_COLUMN
+CARD_PADDING_MM = layout.CARD_PADDING_MM
+GUTTER_MM = layout.GUTTER_MM
+MARGIN_MM = layout.MARGIN_MM
 
 #: Home Assistant hard-codes this size on a good deal of card text. The theme
 #: never reaches it with a `font-size` rule; root `zoom` scales it anyway.
@@ -387,20 +381,8 @@ def schemes() -> list[str]:
 
 def _columns_for(width: int, height: int, dpi: int) -> tuple[int, int, int, int]:
     """Columns, characters per column, body lines, and the column width in px."""
-    body = TypeScale().px(dpi, 0)
-    advance = body * MEAN_ADVANCE_RATIO
-    padding = mm_to_px(CARD_PADDING_MM, dpi)
-    gutter = mm_to_px(GUTTER_MM, dpi)
-    margin = mm_to_px(MARGIN_MM, dpi)
-
-    usable_w = width - 2 * margin
-    usable_h = height - 2 * margin
-    wanted = MIN_CHARS_PER_COLUMN * advance + 2 * padding
-    columns = max(1, int((usable_w + gutter) // (wanted + gutter)))
-    column_px = (usable_w - (columns - 1) * gutter) / columns
-    chars = max(0, int((column_px - 2 * padding) // advance))
-    lines = max(0, int(usable_h // (body * LINE_HEIGHT)))
-    return columns, chars, lines, round(column_px)
+    budget = layout.budget_for(width, height, dpi)
+    return budget.columns, budget.chars_per_column, budget.lines, budget.column_px
 
 
 def columns() -> list[str]:
