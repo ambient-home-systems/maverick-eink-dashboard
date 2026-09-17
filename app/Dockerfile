@@ -27,7 +27,7 @@ FROM ${BUILD_FROM}
 # It installs the same tree. Repointing it at v0.5.0 once someone with
 # tag-push rights creates that tag is a one-line change with no behavioural
 # difference.
-ARG MAVERICK_REF=be6d569728e771e297e29c260ab8661c3fd86a75
+ARG MAVERICK_REF=844c2c96f2083a806f1b981022047a7c3d0cebfb
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
