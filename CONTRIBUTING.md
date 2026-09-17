@@ -424,11 +424,14 @@ Four things follow from the tag being the manifest's `version`:
   version tag is whatever `main` built the first time; if that was the wrong
   `MAVERICK_REF`, release again. *Rebuild* in the app's menu is for locally
   built apps and no longer applies.
-- **The package has to be public.** GitHub creates a container package
-  private on its first push. The Supervisor pulls anonymously, so after the
-  first publish open the package on GitHub (**Packages → maverick-app →
-  Package settings**) and set its visibility to *Public*; the same for the
-  two `amd64-maverick-app` and `aarch64-maverick-app` packages. Once.
+- **The packages have to be public**, because the Supervisor pulls
+  anonymously. The first publish, from a public repository with the
+  workflow's own `GITHUB_TOKEN`, created `maverick-app`,
+  `amd64-maverick-app` and `aarch64-maverick-app` public: an anonymous
+  manifest request against `ghcr.io` answered 200 for all three the minute
+  the run finished. Should a package ever come out private — after a change
+  to the organisation's package settings, say — its visibility is under
+  **Packages → the package → Package settings** on GitHub.
 - **Pull requests build, they do not publish.** Every change under `app/` or
   `src/` builds both architectures and runs the smoke tests on the image,
   without pushing; only a push to `main` or a manual run pushes.
