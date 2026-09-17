@@ -321,6 +321,55 @@ class HomeAssistantClient:
         devices.sort(key=lambda d: str(d["name"]).lower())
         return devices
 
+    async def dashboard_url_paths(self) -> set[str]:
+        """The `url_path` of every extra dashboard, from `lovelace/dashboards/list`.
+
+        The cheap question `list_dashboards` answers expensively: that one
+        fetches every dashboard's configuration to list its views, which the
+        one-click create does not need. The built-in default dashboard is not
+        in the collection (see `list_dashboards`) and is never a target here.
+        """
+        entries = await self._ws_call("lovelace/dashboards/list")
+        return {
+            str(entry["url_path"])
+            for entry in entries or []
+            if isinstance(entry, dict) and entry.get("url_path")
+        }
+
+    async def create_dashboard(
+        self, url_path: str, title: str, icon: str = "mdi:tablet-dashboard"
+    ) -> dict[str, Any]:
+        """Add a storage-mode dashboard, empty, with a sidebar entry.
+
+        `lovelace/dashboards/create` is the collection's create command
+        (`DashboardsCollectionWebSocket` in
+        `homeassistant/components/lovelace/__init__.py`, with
+        `STORAGE_DASHBOARD_CREATE_FIELDS` from its `const.py`: `title`
+        required, `url_path` required and needing a hyphen, `icon`,
+        `show_in_sidebar` and `require_admin` optional). It is an admin
+        command, so the credential has to be an administrator's — a linked
+        account is whoever pressed the button, a long-lived token is whoever
+        made it.
+        """
+        return await self._ws_call(
+            "lovelace/dashboards/create",
+            url_path=url_path,
+            title=title,
+            icon=icon,
+            show_in_sidebar=True,
+            require_admin=False,
+        )
+
+    async def save_dashboard_config(self, url_path: str, config: dict[str, Any]) -> None:
+        """Replace a dashboard's whole configuration.
+
+        `lovelace/config/save` (`websocket_lovelace_save_config` in
+        `homeassistant/components/lovelace/websocket.py`) takes the same
+        `views` mapping the raw configuration editor saves, for the dashboard
+        named by `url_path`. Admin only, like the create.
+        """
+        await self._ws_call("lovelace/config/save", url_path=url_path, config=config)
+
     async def list_dashboards(self) -> list[dict[str, Any]]:
         """Every Lovelace dashboard and its views.
 

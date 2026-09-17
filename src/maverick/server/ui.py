@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any
 # so this is not the cycle it looks like — `api.py` imports both this module
 # and `..app` the same way.
 from ..app import VERSION
+from ..lovelace import CARD_ADVICE, RULES
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..app import Application
@@ -74,8 +75,8 @@ _TROUBLESHOOTING_URL = f"{_REPO}/blob/main/docs/troubleshooting.md"
 # 1,100-line answer in the repository that the tool never pointed at, so it is
 # named here, first.
 _DOC_LINKS = f"""<span class="sub spacer doclinks">
-    <a href="{_DESIGN_GUIDE_URL}" target="_blank" rel="noopener"
-       title="How to build a dashboard that stays legible on e-ink">Design guide</a>
+    <a href="#rules" class="rules-open"
+       title="The five rules for a dashboard on ink, on one screen">Designing for ink</a>
     <a href="{_DOCS_URL}" target="_blank" rel="noopener"
        title="Every page: guides, recipes per device, and the generated reference">Docs</a>
     <a href="{_TROUBLESHOOTING_URL}" target="_blank" rel="noopener"
@@ -143,6 +144,11 @@ _MQTT_HELP = """<details class="chip">
 #   the override for a schedule an interval cannot express.
 # * **Id** is derived from the name by `slugify` in `static/app.js` and only
 #   needs touching when the derived one is not wanted.
+# * **The geometry overrides, the crontab and the wire format are not here at
+#   all.** They were, under Advanced, and a dozen boxes with reference prose
+#   under each was the part of this dialog people called confusing. They live
+#   on the Edit drawer under *Expert settings* now; the fold here is four
+#   things a first day might need.
 #
 # This form's shape does not change, so it is server-rendered like the rest of
 # the shell and app.js only fills in what has to come from `/api/panels`,
@@ -185,7 +191,8 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
 
     <div class="field">
       <label for="add-name">Name</label>
-      <input id="add-name" name="name" type="text" autocomplete="off" autofocus>
+      <input id="add-name" name="name" type="text" autocomplete="off" autofocus
+             placeholder="Kitchen">
       <div class="help" data-help="name"></div>
     </div>
 
@@ -193,7 +200,7 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
       <label for="add-panel">Panel</label>
       <select id="add-panel" name="panel" required></select>
       <div class="help" id="add-panel-notes" hidden></div>
-      <!-- What this panel settles on its own, so the Advanced fold reads as
+      <!-- What this panel settles on its own, so the fold below reads as
            somewhere to disagree rather than somewhere to go and finish. -->
       <div class="help" id="add-panel-summary"></div>
       <div class="field-error" data-error="panel"></div>
@@ -211,11 +218,9 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
       <div class="help" data-help="dashboard"></div>
       <!-- The one prompt in the flow that says a dashboard for ink is its own
            design problem. It points at the generated starter, which is the
-           part that works with no internet; the design guide behind it is the
-           long version. -->
-      <div class="help">Don't have one built for e-ink yet? Add the display,
-        then open <b>Dashboard starter</b> on its card for a layout sized to
-        this panel.</div>
+           part that works with no internet. -->
+      <div class="help">No dashboard for e-ink yet? Add the display, then use
+        <b>Dashboard starter</b> on its card.</div>
       <div class="field-error" data-error="dashboard"></div>
     </div>
 
@@ -224,10 +229,8 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
       <select id="add-refresh" name="refresh">
           {_REFRESH_OPTIONS}
       </select>
-      <div class="help" id="add-refresh-help">How often to re-render. Every
-        refresh is visible on the panel and costs a battery one wake, so slower
-        is kinder than it sounds. Advanced has quiet hours, a crontab and
-        rendering on an entity change.</div>
+      <div class="help" id="add-refresh-help">Every refresh is visible on the
+        panel, and costs a battery one wake.</div>
       <div class="field-error" data-error="schedule"></div>
     </div>
 
@@ -235,7 +238,7 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
          an OpenDisplay panel, the endpoint for a webhook. Drawn by app.js from
          each transport's `option_fields` (src/maverick/transports/base.py) —
          only the required options and the mode that decides them; everything
-         optional stays under Advanced. Hidden for a transport that needs
+         optional stays under the fold. Hidden for a transport that needs
          nothing, which is most of them. -->
     <div class="field" id="add-delivery" hidden>
       <label id="add-delivery-label">Delivery</label>
@@ -244,83 +247,15 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
       <div class="field-error" data-error="delivery"></div>
     </div>
 
+    <!-- Four things a person might reasonably want on day one that the
+         defaults do not settle: which way the panel is mounted, when not to
+         refresh, what should trigger a refresh, and a different way to reach
+         the panel. Everything else the model takes — geometry overrides, a
+         crontab, the wire format — is on the display's Edit drawer under
+         Expert settings, where it is one click away rather than in the way. -->
     <details class="field-group" id="add-advanced">
-      <summary>Advanced</summary>
+      <summary>More settings</summary>
 
-      <div class="field">
-        <label for="add-id">Id</label>
-        <!-- No `required` and no `pattern`: a constraint violation on a
-             control inside a closed `<details>` cannot be reported, because
-             the browser has nothing focusable to point at, and the submission
-             is blocked with nothing shown. `submitAddDisplay` checks the same
-             two rules in script and opens the fold to say so. -->
-        <input id="add-id" name="id" type="text" autocomplete="off">
-        <!-- The rule DisplayConfig._slug enforces (src/maverick/config.py): -->
-        <div class="help">Filled in from the name. Lower-case, with
-          <code>-</code> for spaces: letters, digits, <code>-</code> or
-          <code>_</code>, starting with a letter or digit. It becomes a URL
-          path segment and an MQTT topic level.</div>
-        <div class="field-error" data-error="id"></div>
-      </div>
-
-      <div class="field">
-        <label for="add-transport">Transport</label>
-        <select id="add-transport" name="transport"></select>
-        <div class="help" id="add-transport-help"></div>
-      </div>
-      <div id="add-transport-options"></div>
-      <div class="field-error" data-error="transport"></div>
-
-      <div class="field">
-        <label for="add-cron">Cron</label>
-        <input id="add-cron" name="cron" type="text" placeholder="e.g. 0 6-22 * * *"
-               autocomplete="off">
-        <div class="help" data-help="schedule.cron"></div>
-        <div class="help">Set this and it replaces <b>Refresh</b> above: the two
-          are alternatives, not a pair.</div>
-      </div>
-      <div class="field">
-        <label for="add-quiet-hours">Quiet hours</label>
-        <input id="add-quiet-hours" name="quiet_hours" type="text"
-               placeholder="23:00-06:30" autocomplete="off">
-        <div class="help" data-help="schedule.quiet_hours"></div>
-      </div>
-      <div class="field">
-        <label for="add-on-change">On change</label>
-        <input id="add-on-change" name="on_change" type="text"
-               placeholder="sensor.a, sensor.b" autocomplete="off">
-        <div class="help" data-help="schedule.on_change"></div>
-      </div>
-
-      <div class="field checkbox">
-        <label><input id="add-enabled" name="enabled" type="checkbox" checked> Enabled</label>
-        <div class="help" data-help="enabled"></div>
-      </div>
-
-      <div class="field">
-        <label for="add-width">Width</label>
-        <input id="add-width" name="width" type="number" min="1" autocomplete="off">
-        <div class="help" data-help="width"></div>
-        <div class="field-error" data-error="width"></div>
-      </div>
-      <div class="field">
-        <label for="add-height">Height</label>
-        <input id="add-height" name="height" type="number" min="1" autocomplete="off">
-        <div class="help" data-help="height"></div>
-        <div class="field-error" data-error="height"></div>
-      </div>
-      <div class="field">
-        <label for="add-color-scheme">Colour scheme</label>
-        <select id="add-color-scheme" name="color_scheme"></select>
-        <div class="help" data-help="color_scheme"></div>
-        <div class="field-error" data-error="color_scheme"></div>
-      </div>
-      <div class="field">
-        <label for="add-dpi">DPI</label>
-        <input id="add-dpi" name="dpi" type="number" min="1" autocomplete="off">
-        <div class="help" data-help="dpi"></div>
-        <div class="field-error" data-error="dpi"></div>
-      </div>
       <div class="field">
         <label for="add-rotation">Rotation</label>
         <select id="add-rotation" name="rotation">
@@ -334,10 +269,38 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
         <div class="field-error" data-error="rotation"></div>
       </div>
       <div class="field">
-        <label for="add-frame-format">Frame format</label>
-        <select id="add-frame-format" name="frame_format"></select>
-        <div class="help" data-help="frame_format"></div>
-        <div class="field-error" data-error="frame_format"></div>
+        <label for="add-quiet-hours">Quiet hours</label>
+        <input id="add-quiet-hours" name="quiet_hours" type="text"
+               placeholder="23:00-06:30" autocomplete="off">
+        <div class="help" data-help="schedule.quiet_hours"></div>
+      </div>
+      <div class="field">
+        <label for="add-on-change">Refresh when these change</label>
+        <input id="add-on-change" name="on_change" type="text"
+               placeholder="sensor.a, sensor.b" autocomplete="off">
+        <div class="help" data-help="schedule.on_change"></div>
+      </div>
+
+      <div class="field">
+        <label for="add-transport">Delivery method</label>
+        <select id="add-transport" name="transport"></select>
+        <div class="help" id="add-transport-help"></div>
+      </div>
+      <div id="add-transport-options"></div>
+      <div class="field-error" data-error="transport"></div>
+
+      <div class="field">
+        <label for="add-id">Id</label>
+        <!-- No `required` and no `pattern`: a constraint violation on a
+             control inside a closed `<details>` cannot be reported, because
+             the browser has nothing focusable to point at, and the submission
+             is blocked with nothing shown. `submitAddDisplay` checks the same
+             two rules in script and opens the fold to say so. -->
+        <input id="add-id" name="id" type="text" autocomplete="off">
+        <!-- The rule DisplayConfig._slug enforces (src/maverick/config.py): -->
+        <div class="help">Made from the name. Lower-case letters, digits,
+          <code>-</code> or <code>_</code>. It cannot change once saved.</div>
+        <div class="field-error" data-error="id"></div>
       </div>
     </details>
 
@@ -356,6 +319,52 @@ _ADD_DIALOG = f"""<dialog id="add-dialog" aria-labelledby="add-dialog-title">
     </div>
   </form>
 </dialog>"""
+
+def _rules_dialog() -> str:
+    """The five rules and the card list, as one screen.
+
+    Rendered from `RULES` (`src/maverick/lovelace/rules.py`) and `CARD_ADVICE`
+    (`src/maverick/lovelace/generator.py`) rather than written here, so the
+    dialog, the starter's comments and the design guide's own summary cannot
+    say three different things. The long guide is linked at the bottom for
+    the mechanism behind each rule.
+    """
+    rules = "\n".join(
+        f"<li><b>{html.escape(title)}</b><span>{html.escape(what)}</span>"
+        f"<span class=\"why\">{html.escape(why)}</span></li>"
+        for title, what, why in RULES
+    )
+    good = [
+        (name, advice) for name, advice in CARD_ADVICE.items() if not advice.startswith("NOT USED")
+    ]
+    bad = [
+        (name, advice.removeprefix("NOT USED: "))
+        for name, advice in CARD_ADVICE.items()
+        if advice.startswith("NOT USED")
+    ]
+    cards = lambda rows: "\n".join(  # noqa: E731 - a two-line template helper
+        f"<li><code>{html.escape(name)}</code> {html.escape(advice)}</li>" for name, advice in rows
+    )
+    return f"""<dialog id="rules" aria-labelledby="rules-title">
+  <div class="rules-head">
+    <h2 id="rules-title">Designing for ink</h2>
+    <button type="button" class="drawer-close rules-close" aria-label="Close">&times;</button>
+  </div>
+  <div class="rules-body">
+    <p class="meta">Five rules cover almost everything. The starter dashboard follows
+      them for you; the checks under each card say which one a page broke.</p>
+    <ol class="rules">
+{rules}
+    </ol>
+    <div class="rules-cards">
+      <div><h3>Cards that work</h3><ul>{cards(good)}</ul></div>
+      <div><h3>Cards to avoid</h3><ul>{cards(bad)}</ul></div>
+    </div>
+    <p class="meta">The long version, with the numbers behind every rule:
+      <a href="{_DESIGN_GUIDE_URL}" target="_blank" rel="noopener">the design guide</a>.</p>
+  </div>
+</dialog>"""
+
 
 # The tags Home Assistant's OpenDisplay integration has already found, offered
 # as displays to add. Server-rendered shell, filled by app.js from
@@ -441,6 +450,7 @@ def render_ui(application: Application, displays: list[dict[str, Any]]) -> str:
 {_DISCOVERY}
 <main id="displays"></main>
 {_ADD_DIALOG}
+{_rules_dialog()}
 <script type="application/json" id="initial-displays">{embedded}</script>
 <script type="module" src="static/app.js"></script>
 </body></html>"""

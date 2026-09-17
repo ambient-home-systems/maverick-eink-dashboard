@@ -27,8 +27,21 @@ in the file, so it works offline and with no credential.
 from .generator import (
     CARD_ADVICE,
     EntityPick,
+    dashboard_url_path,
     generate_dashboard,
+    generate_dashboard_config,
     pick_entities,
+    starter_view_path,
 )
+from .rules import RULES
 
-__all__ = ["CARD_ADVICE", "EntityPick", "generate_dashboard", "pick_entities"]
+__all__ = [
+    "CARD_ADVICE",
+    "EntityPick",
+    "RULES",
+    "dashboard_url_path",
+    "generate_dashboard",
+    "generate_dashboard_config",
+    "pick_entities",
+    "starter_view_path",
+]

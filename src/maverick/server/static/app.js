@@ -324,6 +324,8 @@ const CARD = `
   <button type="button" class="act-edit">Edit</button>
   <button type="button" class="act-schedule"></button>
   <button type="button" class="act-enable" hidden>Enable</button>
+  <a class="card-edit-ha" target="_top" rel="noopener" hidden
+     title="Open this page in Home Assistant's dashboard editor">Edit in Home Assistant</a>
 </div>
 <div class="meta err card-error" hidden></div>
 <ul class="issues"></ul>
@@ -340,17 +342,24 @@ const CARD = `
 <details class="starter">
   <summary>Dashboard starter</summary>
   <div class="starter-body">
-    <p class="meta starter-intro">A Lovelace dashboard sized for this panel:
-      the column count and how much text fits come from its own pixels and dpi,
-      and every card in it is one that survives dithering. Paste it into Home
-      Assistant under Settings &rarr; Dashboards &rarr; Add dashboard, then
-      Edit &rarr; &#8942; &rarr; Raw configuration editor.</p>
+    <p class="meta starter-intro">A dashboard built for this panel: sized to
+      its glass, using only cards that stay readable on ink, filled with your
+      own entities.</p>
+    <div class="starter-create">
+      <div class="row">
+        <button type="button" class="starter-create-btn add-btn">Create in Home Assistant</button>
+        <span class="starter-links">
+          <a class="starter-open" target="_top" rel="noopener" hidden>Open it</a>
+          <a class="starter-edit" target="_top" rel="noopener" hidden>Edit it</a>
+        </span>
+      </div>
+      <p class="meta starter-status">Creates the dashboard in Home Assistant and
+        points this display at it. Nothing to paste.</p>
+    </div>
     <div class="row">
-      <button type="button" class="starter-copy">Copy</button>
+      <button type="button" class="starter-copy">Copy YAML</button>
       <a class="starter-download" download>Download</a>
-      <a class="starter-guide" target="_blank" rel="noopener"
-         href="https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/docs/design-guide.md"
-      >Designing for e-ink</a>
+      <a class="starter-guide rules-open" href="#rules">Which cards work?</a>
     </div>
     <p class="meta err starter-error" hidden></p>
     <pre class="starter-yaml" tabindex="0"></pre>
@@ -411,6 +420,9 @@ function cardFor(id) {
   });
   card.querySelector('.starter-copy').addEventListener('click', (e) => {
     copyText(card.querySelector('.starter-yaml'), e.currentTarget);
+  });
+  card.querySelector('.starter-create-btn').addEventListener('click', (e) => {
+    createStarter(id, card, e.currentTarget, false);
   });
   // The guided ESPHome hand-off, fetched on first open like the starter. It
   // is re-fetched on every open rather than kept: `secrets.yaml` and the
@@ -651,6 +663,12 @@ function paint(card, display) {
   // Kindle or a BLE tag gets no firmware config to install.
   card.querySelector('.install').hidden = !display.esphome_applicable;
 
+  // Straight to Home Assistant's own editor for this page, out of the ingress
+  // frame: the loop is edit there, Refresh here.
+  const editLink = card.querySelector('.card-edit-ha');
+  editLink.hidden = !display.edit_url;
+  attribute(card, '.card-edit-ha', 'href', display.edit_url || '');
+
   const error = card.querySelector('.card-error');
   // 300 characters: a Playwright failure runs to pages, and the whole of it
   // is in the log and in `state.last_error` either way.
@@ -768,6 +786,20 @@ function issues(card, found) {
     const severity = document.createElement('span');
     severity.className = severityClass(issue.severity);
     severity.textContent = issue.severity;
+    // What to change, first and in full ink; the measurement and the
+    // mechanism under it for whoever wants them
+    // (`LINT_ADVICE`, `src/maverick/server/copy.py`).
+    if (issue.advice) {
+      const advice = document.createElement('span');
+      advice.className = 'advice';
+      advice.textContent = issue.advice;
+      item.append(severity, ' ', advice);
+      const detail = document.createElement('div');
+      detail.className = 'hint';
+      detail.textContent = issue.message + (issue.hint ? ' ' + issue.hint : '');
+      item.append(detail);
+      return item;
+    }
     item.append(severity, ' ' + issue.message);
     if (issue.hint) {
       const hint = document.createElement('div');
@@ -1091,26 +1123,40 @@ async function ensureAddDialogData() {
 function populateAddDialog(data) {
   fillHelpTexts(data.schema);
   populatePanelSelect(document.getElementById('add-panel'), data.panels);
-  populateEnumSelect(
-    document.getElementById('add-color-scheme'), enumValues(data.schema, 'ColorScheme'),
-    'panel default'
-  );
-  populateEnumSelect(
-    document.getElementById('add-frame-format'), enumValues(data.schema, 'FrameFormat'),
-    'panel default'
-  );
   populateTransportSelect(document.getElementById('add-transport'), data.transports);
   onPanelChange();
   onTransportChange();
 }
 
-/** `data-help="dashboard"` or `data-help="schedule.every"` -> a schema description. */
+/** `data-help="dashboard"` or `data-help="schedule.quiet_hours"` -> the
+ *  plain-language help for that setting (`src/maverick/server/copy.py`, served
+ *  under `ui`), or the reference description when there is none. */
 function fillHelpTexts(schema) {
   for (const el of document.querySelectorAll('#add-dialog [data-help]')) {
-    const path = el.dataset.help.split('.');
-    let node = path.length === 2 ? schema.$defs.ScheduleConfig.properties[path[1]] : schema.properties[path[0]];
+    const path = el.dataset.help;
+    const plain = copyFor(schema, path);
+    if (plain && plain.help !== undefined) {
+      el.textContent = plain.help;
+      continue;
+    }
+    const parts = path.split('.');
+    const node = parts.length === 2
+      ? schema.$defs.ScheduleConfig.properties[parts[1]]
+      : schema.properties[parts[0]];
     el.textContent = (node && node.description) || '';
   }
+}
+
+/** The plain-language copy for a setting, or null (`ui.fields` in the schema). */
+function copyFor(schema, path) {
+  const ui = schema && schema.ui;
+  return (ui && ui.fields && ui.fields[path]) || null;
+}
+
+/** The copy for a section of the drawer, or a fallback built from the key. */
+function sectionCopy(schema, key) {
+  const ui = schema && schema.ui;
+  return (ui && ui.sections && ui.sections[key]) || null;
 }
 
 function populatePanelSelect(select, panels) {
@@ -1207,7 +1253,7 @@ function updatePanelSummary(panel) {
   }
   summary.textContent =
     `${panel.width}×${panel.height}, ${panel.color_scheme}, ${panel.dpi} dpi, ` +
-    `delivered over ${panel.default_transport}. Change any of it under Advanced.`;
+    `delivered over ${panel.default_transport}.`;
   const auto = document.querySelector('#add-transport option[value=""]');
   if (auto) auto.textContent = `automatic — ${panel.default_transport} for this panel`;
 }
@@ -1220,14 +1266,7 @@ function updatePanelNotes(panel) {
 
 function updateAdvancedPlaceholders(panel) {
   if (!panel) return;
-  document.getElementById('add-width').placeholder = String(panel.width);
-  document.getElementById('add-height').placeholder = String(panel.height);
-  document.getElementById('add-dpi').placeholder = String(panel.dpi);
-  defaultOptionLabel('add-color-scheme', `panel default (${panel.color_scheme})`);
-  defaultOptionLabel('add-rotation', `panel default (${panel.rotation}°)`);
-  defaultOptionLabel('add-frame-format', panel.frame_format
-    ? `panel default (${panel.frame_format})`
-    : 'panel default (from transport)');
+  defaultOptionLabel('add-rotation', `as the panel is (${panel.rotation}°)`);
 }
 
 function defaultOptionLabel(selectId, label) {
@@ -1287,6 +1326,7 @@ function onTransportChange() {
   const built = transportControls(info, addTransportValues, {
     idPrefix: 'add-opt',
     environment: formData.environment,
+    help: ((formData.schema.ui || {}).transports || {})[type] || {},
     extras: [],
     onModeChange: onTransportChange,
     // A picked tag names its size; move the panel picker to the guess unless
@@ -1300,17 +1340,9 @@ function onTransportChange() {
     },
   });
   delivery.hidden = !built.primary.length;
-  document.getElementById('add-delivery-help').textContent = built.primary.length
-    ? `How the frame reaches a ${type} panel.`
-    : '';
+  document.getElementById('add-delivery-help').textContent = '';
   deliveryBox.append(...built.primary);
   if (built.advanced) container.appendChild(built.advanced);
-  if (!built.primary.length && !built.advanced) {
-    const note = document.createElement('div');
-    note.className = 'help';
-    note.textContent = 'This transport takes no options of its own.';
-    container.appendChild(note);
-  }
 }
 
 /** Every `[data-transport-key]` control under `root`, as text, empty ones left out. */
@@ -1349,15 +1381,9 @@ function fieldError(name, message) {
 function buildAddBody() {
   const value = (id) => document.getElementById(id).value.trim();
   const schedule = {};
-  // `every` and `cron` are mutually exclusive in the model
-  // (`ScheduleConfig._exclusive`, `src/maverick/config.py`), so the form sends
-  // one of them and never both: a crontab under Advanced is the considered
-  // answer and replaces the interval picker, which is what its help says.
-  if (value('add-cron')) {
-    schedule.cron = value('add-cron');
-  } else if (value('add-refresh')) {
-    schedule.every = value('add-refresh');
-  }
+  // A crontab is an Edit-drawer setting now (Expert settings); this dialog
+  // only ever sends the interval picker's answer.
+  if (value('add-refresh')) schedule.every = value('add-refresh');
   if (value('add-quiet-hours')) schedule.quiet_hours = value('add-quiet-hours');
   const onChange = value('add-on-change').split(',').map((s) => s.trim()).filter(Boolean);
   if (onChange.length) schedule.on_change = onChange;
@@ -1379,16 +1405,13 @@ function buildAddBody() {
     name: value('add-name'),
     panel: value('add-panel'),
     dashboard: value('add-dashboard') || '/lovelace/0',
-    enabled: document.getElementById('add-enabled').checked,
     schedule,
     transport,
   };
-  if (value('add-width')) body.width = Number(value('add-width'));
-  if (value('add-height')) body.height = Number(value('add-height'));
-  if (value('add-color-scheme')) body.color_scheme = value('add-color-scheme');
-  if (value('add-dpi')) body.dpi = Number(value('add-dpi'));
+  // The one geometry setting a first day can need: the panel is on its side.
+  // Width, height, inks, dpi and the wire format come from the panel, and are
+  // on the Edit drawer under Expert settings for the rare panel that is wrong.
   if (value('add-rotation')) body.rotation = Number(value('add-rotation'));
-  if (value('add-frame-format')) body.frame_format = value('add-frame-format');
   return body;
 }
 
@@ -1621,6 +1644,21 @@ if (main) {
   });
 }
 
+// The five rules, from the header and from every starter panel. A <dialog>
+// for the same reasons the editor is one: Escape, the backdrop and focus
+// return come for free. The links keep `href="#rules"` so a page whose
+// script never loaded still jumps to the (then visible) markup.
+const rulesDialog = document.getElementById('rules');
+if (rulesDialog) {
+  document.addEventListener('click', (e) => {
+    const opener = e.target.closest('.rules-open');
+    if (!opener) return;
+    e.preventDefault();
+    if (!rulesDialog.open) rulesDialog.showModal();
+  });
+  rulesDialog.querySelector('.rules-close').addEventListener('click', () => rulesDialog.close());
+}
+
 const addDialog = document.getElementById('add-dialog');
 if (addDialog) {
   document.getElementById('add-display-btn')?.addEventListener(
@@ -1683,11 +1721,25 @@ if (addDialog) {
  * being undocumented.
  */
 
-/** The nested models, in the order the drawer shows them under Display. */
+/** Fallback section titles, for a model the copy does not name
+ *  (`src/maverick/server/copy.py` is the source of the titles the drawer
+ *  shows; this only stops a new section appearing under its key). */
 const SECTION_TITLES = {
-  schedule: 'Schedule', theme: 'Theme', image: 'Image', render: 'Render',
-  lint: 'Lint', transport: 'Transport', pack: 'Pack', esphome: 'ESPHome',
+  schedule: 'Schedule', theme: 'Look', image: 'Image', render: 'Browser',
+  lint: 'Checks', transport: 'Delivery', pack: 'Controller quirks', esphome: 'Board wiring',
 };
+
+/** Whether the drawer shows expert settings, remembered per browser. A
+ *  convenience, so it lives in localStorage and every read is guarded. */
+const EXPERT_KEY = 'maverick.expert';
+
+function expertWanted() {
+  try { return localStorage.getItem(EXPERT_KEY) === '1'; } catch (e) { return false; }
+}
+
+function rememberExpert(on) {
+  try { localStorage.setItem(EXPERT_KEY, on ? '1' : '0'); } catch (e) { /* private window */ }
+}
 
 /** Top-level fields that lead the Display section; the rest follow in schema order. */
 const DISPLAY_FIRST = ['name', 'dashboard', 'panel', 'enabled'];
@@ -1713,6 +1765,8 @@ const EDITOR = `
     <div class="meta"><code class="editor-id"></code> <span class="editor-panel"></span></div>
   </div>
   <span class="pill warn editor-dirty" hidden>unsaved changes</span>
+  <label class="expert-switch" title="Show every setting, including the ones the panel and the defaults already settle">
+    <input type="checkbox" class="expert-toggle"> Expert settings</label>
   <button type="button" class="drawer-close" aria-label="Close the editor">&times;</button>
 </div>
 <p class="dialog-error editor-error" role="alert" hidden></p>
@@ -1740,17 +1794,16 @@ const PREVIEW = `
     <button type="button" class="view-source" aria-pressed="false">Source</button>
     <button type="button" class="view-frame" aria-pressed="true">Frame</button>
   </span>
+  <a class="preview-edit-ha" target="_top" rel="noopener" hidden
+     title="Open this page in Home Assistant's dashboard editor">Edit in Home Assistant</a>
   <span class="spacer"></span>
   <span class="compare-modes" role="group" aria-label="Compare the two frames" hidden>
     <button type="button" class="mode-side" aria-pressed="true">Side by side</button>
     <button type="button" class="mode-overlay" aria-pressed="false">Overlay</button>
   </span>
 </div>
-<div class="help">Renders this configuration and shows the frame it would
-  produce. It saves nothing and sends nothing to the panel — Save is what
-  writes the configuration. A render can take as long as
-  <code>render.timeout</code>; the rest of the drawer stays usable while it
-  runs.</div>
+<div class="help">Shows what these settings would put on the panel. Nothing is
+  saved or sent until you press Save.</div>
 <div class="compare is-side" hidden>
   <figure class="compare-now">
     <img class="shot" alt="" hidden><div class="shot shot-empty">no frame yet</div>
@@ -1832,6 +1885,13 @@ function ensureEditor() {
 
   dialog.querySelector('.drawer-close').addEventListener('click', requestClose);
   dialog.querySelector('.act-close').addEventListener('click', requestClose);
+  const expert = dialog.querySelector('.expert-toggle');
+  expert.checked = expertWanted();
+  dialog.classList.toggle('is-expert', expert.checked);
+  expert.addEventListener('change', () => {
+    dialog.classList.toggle('is-expert', expert.checked);
+    rememberExpert(expert.checked);
+  });
   dialog.querySelector('.act-save').addEventListener('click', (e) => saveEditor(e.currentTarget));
   dialog.querySelector('.act-delete').addEventListener('click', askToDelete);
   dialog.querySelector('.editor-confirm-no').addEventListener('click', hideConfirm);
@@ -1871,13 +1931,22 @@ function fillEditor(data, summary) {
   setText(editorDialog.querySelector('.editor-panel'), '· ' + summary.panel_name);
 
   const parts = [previewSection(summary)];
-  parts.push(sectionNode('', 'Display', displayFields(schema, data, summary), true));
+  const display = displayFields(schema, data, summary);
+  parts.push(sectionNode('', 'Display', display.main, true, sectionHelp(schema, '')));
   parts.push(pagesSection(schema, summary));
-  for (const [key, title] of sectionOrder(schema)) {
+  // The nested models in the order the copy lists them, the expert ones
+  // (hidden until the switch is on) after the everyday ones. The panel
+  // overrides are top-level fields gathered into a section of their own, so
+  // that a person changing a name never meets a dpi box.
+  for (const [key, title, expert] of sectionOrder(schema)) {
+    if (key === 'panel') {
+      parts.push(sectionNode(key, title, display.panel, false, sectionHelp(schema, key), expert));
+      continue;
+    }
     const fields = key === 'transport'
       ? transportFields(schema, data)
       : modelFields(schema, key);
-    parts.push(sectionNode(key, title, fields, false, sectionHelp(schema, key)));
+    parts.push(sectionNode(key, title, fields, false, sectionHelp(schema, key), expert));
   }
   editorDialog.querySelector('.drawer-body').replaceChildren(...parts);
   // Every field is registered and in the document by now, which is what the
@@ -1887,17 +1956,26 @@ function fillEditor(data, summary) {
   markDirty();
 }
 
-/** The nested models the schema has, the ones named above first. */
+/** `[key, title, expert]` per section, in the copy's order: everyday
+ *  sections first, then the expert ones; `panel` is the virtual section of
+ *  geometry overrides. A model added to `DisplayConfig` and not named in the
+ *  copy still gets a section, titled from the schema, rather than silently
+ *  going missing from the editor. */
 function sectionOrder(schema) {
   const nested = Object.keys(schema.properties).filter((key) => isSection(schema, key));
-  const known = Object.keys(SECTION_TITLES).filter((key) => nested.includes(key));
-  // A model added to `DisplayConfig` and not named above still gets a section,
-  // titled from the schema, rather than silently going missing from the editor.
-  const rest = nested.filter((key) => !(key in SECTION_TITLES));
-  return [
-    ...known.map((key) => [key, SECTION_TITLES[key]]),
-    ...rest.map((key) => [key, deref(schema, schema.properties[key].$ref).title || key]),
+  const sections = (schema.ui && schema.ui.sections) || {};
+  const listed = Object.keys(sections).filter(
+    (key) => key && key !== 'pages' && (key === 'panel' || nested.includes(key))
+  );
+  const rest = nested.filter((key) => !(key in sections));
+  const entries = [
+    ...listed.map((key) => [key, sections[key].title, Boolean(sections[key].expert)]),
+    ...rest.map((key) => [
+      key, SECTION_TITLES[key] || deref(schema, schema.properties[key].$ref).title || key, false,
+    ]),
   ];
+  // Everyday sections before expert ones, keeping the copy's order within each.
+  return [...entries.filter((e) => !e[2]), ...entries.filter((e) => e[2])];
 }
 
 function isSection(schema, key) {
@@ -1922,13 +2000,15 @@ function deref(schema, ref) {
  * model rather than the model.
  */
 function sectionHelp(schema, key) {
+  const plain = sectionCopy(schema, key);
+  if (plain && plain.help !== undefined) return plain.help;
   const node = schema.properties[key] || {};
   return node.description || deref(schema, node.$ref).description || '';
 }
 
-function sectionNode(key, title, fields, open, helpText) {
+function sectionNode(key, title, fields, open, helpText, expert) {
   const section = document.createElement('details');
-  section.className = 'section';
+  section.className = 'section' + (expert ? ' is-expert-only' : '');
   section.dataset.section = key;
   if (open) section.open = true;
   const summary = document.createElement('summary');
@@ -1945,6 +2025,8 @@ function sectionNode(key, title, fields, open, helpText) {
   return section;
 }
 
+/** The top-level fields, split into the Display section's own and the panel
+ *  overrides the copy files under `section: "panel"`. */
 function displayFields(schema, data, summary) {
   const names = Object.keys(schema.properties).filter(
     // `id` is the path a PUT goes to and the key every stored frame is under;
@@ -1956,10 +2038,16 @@ function displayFields(schema, data, summary) {
     ...DISPLAY_FIRST.filter((key) => names.includes(key)),
     ...names.filter((key) => !DISPLAY_FIRST.includes(key)),
   ];
-  return ordered.map((name) => {
-    if (name === 'panel') return panelField(schema, data, summary);
-    return fieldNode(schema, '', name, schema.properties[name], resolvedFor(summary, name));
-  });
+  const main = [];
+  const panel = [];
+  for (const name of ordered) {
+    const node = name === 'panel'
+      ? panelField(schema, data, summary)
+      : fieldNode(schema, '', name, schema.properties[name], resolvedFor(summary, name));
+    const plain = copyFor(schema, name);
+    (plain && plain.section === 'panel' ? panel : main).push(node);
+  }
+  return { main, panel };
 }
 
 function modelFields(schema, key) {
@@ -1993,9 +2081,8 @@ const PAGE_FIELDS = new Set(['pages', 'rotate']);
 /** The rule the schema cannot state in one field's description: it is about
  *  this field and the Dashboard box in the section above. */
 const PAGES_HELP =
-  'Set these or the Dashboard field above, not both — a display with pages ' +
-  'renders those, and saving with both is refused. A row with no dashboard is ' +
-  'dropped on save, and a page with no name takes one from its dashboard path.';
+  'Use pages or the Dashboard box above, not both. A page with no name is named ' +
+  'after its dashboard.';
 
 function pagesSection(schema, summary) {
   const fields = [
@@ -2004,9 +2091,7 @@ function pagesSection(schema, summary) {
   ];
   // The section's own help is what the schema says about `pages`, as every
   // other section shows its model's description.
-  return sectionNode(
-    'pages', 'Pages', fields, false, schema.properties.pages.description || ''
-  );
+  return sectionNode('pages', 'Pages', fields, false, sectionHelp(schema, 'pages'));
 }
 
 function pagesField(schema, summary) {
@@ -2188,9 +2273,9 @@ function fieldNode(schema, section, name, node, placeholder) {
   // the drawer's own markup (`EDITOR` above) rather than the add dialog's.
   if (path === 'dashboard') built.control.setAttribute('list', 'editor-dashboard-list');
 
-  const help = document.createElement('div');
-  help.className = 'help';
-  help.textContent = node.description || '';
+  const plain = copyFor(schema, path);
+  if (plain && plain.expert) field.classList.add('is-expert-only');
+  const title = (plain && plain.label) || name;
   const error = document.createElement('div');
   error.className = 'field-error';
 
@@ -2200,16 +2285,38 @@ function fieldNode(schema, section, name, node, placeholder) {
     // whole line a hit target.
     field.classList.add('checkbox');
     const wrap = document.createElement('label');
-    wrap.append(built.control, ' ' + name);
-    field.append(wrap, help, error);
+    wrap.append(built.control, ' ' + title);
+    field.append(wrap, ...helpNodes(plain, node.description), error);
   } else {
     const label = document.createElement('label');
     label.setAttribute('for', id);
-    label.textContent = name;
-    field.append(label, built.control, help, error);
+    label.textContent = title;
+    field.append(label, built.control, ...helpNodes(plain, node.description), error);
   }
   editorFields.push({ path, section, name, spec, read: built.read, control: built.control });
   return field;
+}
+
+/** One line of plain help, and the reference description behind a *More*
+ *  disclosure when there is copy to stand in front of it. With no copy the
+ *  description is the help, as it always was. */
+function helpNodes(plain, description) {
+  const help = document.createElement('div');
+  help.className = 'help';
+  if (!plain) {
+    help.textContent = description || '';
+    return [help];
+  }
+  help.textContent = plain.help || '';
+  if (!description || description === plain.help) return [help];
+  const more = document.createElement('details');
+  more.className = 'more is-expert-only';
+  const summary = document.createElement('summary');
+  summary.textContent = 'More';
+  const body = document.createElement('div');
+  body.textContent = description;
+  more.append(summary, body);
+  return [help, more];
 }
 
 function plainControl(spec, id, current, placeholder, textarea) {
@@ -2359,9 +2466,10 @@ function panelField(schema, data, summary) {
   const field = document.createElement('div');
   field.className = 'field';
   field.dataset.path = 'panel';
+  const plain = copyFor(schema, 'panel');
   const label = document.createElement('label');
   label.setAttribute('for', 'editor-panel');
-  label.textContent = 'panel';
+  label.textContent = (plain && plain.label) || 'panel';
   const select = document.createElement('select');
   select.id = 'editor-panel';
   populatePanelSelect(select, data.panels);
@@ -2376,14 +2484,11 @@ function panelField(schema, data, summary) {
     select.value = summary.panel;
   }
   select.addEventListener('change', onEditorPanelChange);
-  const help = document.createElement('div');
-  help.className = 'help';
-  help.textContent = node.description || '';
   const notes = document.createElement('div');
   notes.className = 'help panel-notes';
   const error = document.createElement('div');
   error.className = 'field-error';
-  field.append(label, select, help, notes, error);
+  field.append(label, select, notes, ...helpNodes(plain, node.description), error);
   editorFields.push({
     path: 'panel', section: '', name: 'panel', spec: { kind: 'text' },
     read: () => select.value || undefined, control: select,
@@ -2447,7 +2552,7 @@ function transportFields(schema, data) {
   field.dataset.path = 'transport.type';
   const label = document.createElement('label');
   label.setAttribute('for', 'editor-transport-type');
-  label.textContent = 'type';
+  label.textContent = (copyFor(schema, 'transport.type') || {}).label || 'type';
   const select = document.createElement('select');
   select.id = 'editor-transport-type';
   populateTransportSelect(select, data.transports, editorAutoTransportLabel());
@@ -2476,12 +2581,13 @@ function transportFields(schema, data) {
     );
     markDirty();
   });
-  const help = document.createElement('div');
-  help.className = 'help';
-  help.textContent = (def.properties.type || {}).description || '';
   const error = document.createElement('div');
   error.className = 'field-error';
-  field.append(label, select, help, error);
+  field.append(
+    label, select,
+    ...helpNodes(copyFor(schema, 'transport.type'), (def.properties.type || {}).description),
+    error
+  );
   fields.push(field);
 
   const options = document.createElement('div');
@@ -2545,6 +2651,7 @@ function redrawTransportOptions(data, box, type) {
   const built = transportControls(info, editorTransport, {
     idPrefix: 'editor-transport',
     environment: (data.environment || {}),
+    help: ((data.schema.ui || {}).transports || {})[type] || {},
     extras,
     pathPrefix: 'transport.',
     onModeChange: () => {
@@ -2672,6 +2779,9 @@ function previewSection(summary) {
   node.className = 'editor-preview';
   node.innerHTML = PREVIEW;
 
+  const editLink = node.querySelector('.preview-edit-ha');
+  editLink.hidden = !summary.edit_url;
+  if (summary.edit_url) editLink.href = summary.edit_url;
   const now = node.querySelector('.compare-now img');
   if (summary.checksum) {
     now.dataset.framesrc = withToken(
@@ -3076,10 +3186,10 @@ function modeControl(info, values, ctx) {
     });
     group.appendChild(button);
   }
-  const help = document.createElement('div');
-  help.className = 'help';
-  help.textContent = info.options[key] || '';
-  wrap.append(label, group, hidden, help);
+  const plainHelp = (ctx.help || {})[key];
+  wrap.append(label, group, hidden, ...helpNodes(
+    plainHelp === undefined ? null : { help: plainHelp }, info.options[key] || ''
+  ));
   if (mode === 'ble' && addon) {
     const warn = document.createElement('div');
     warn.className = 'help warn';
@@ -3163,18 +3273,23 @@ function optionControl(key, description, field, value, ctx, mode) {
   }
   control.id = id;
   control.dataset.transportKey = key;
-  const help = document.createElement('div');
-  help.className = 'help' + (field.extra ? ' warn' : '');
-  help.textContent = field.extra
-    ? 'Not an option this transport documents. It is kept as it is; clear the box to drop it.'
-    : description;
+  let helps;
+  if (field.extra) {
+    const help = document.createElement('div');
+    help.className = 'help warn';
+    help.textContent = 'Not a setting this delivery method knows. Clear the box to drop it.';
+    helps = [help];
+  } else {
+    const plainHelp = (ctx.help || {})[key];
+    helps = helpNodes(plainHelp === undefined ? null : { help: plainHelp }, description);
+  }
   const error = document.createElement('div');
   error.className = 'field-error';
   wrap.appendChild(label);
   if (extra && extraFirst) wrap.appendChild(extra);
   wrap.appendChild(control);
   if (extra && !extraFirst) wrap.appendChild(extra);
-  wrap.append(help, error);
+  wrap.append(...helps, error);
   return wrap;
 }
 
@@ -3727,4 +3842,47 @@ function tagCard(device) {
     card.appendChild(add);
   }
   return card;
+}
+
+
+// --------------------------------------------------------- one-click starter --
+
+/* `POST /api/displays/{id}/dashboard/create` (`src/maverick/server/api.py`):
+ * the starter is created as a dashboard in Home Assistant and this display
+ * is pointed at it, in one click. A dashboard that already exists at the same
+ * path is the user's, so the route answers 409 until told to replace it, and
+ * the button becomes a question rather than an accident. */
+
+async function createStarter(id, card, button, overwrite) {
+  const status = card.querySelector('.starter-status');
+  const open = card.querySelector('.starter-open');
+  const edit = card.querySelector('.starter-edit');
+  setBusy(button, true);
+  status.textContent = 'Creating\u2026';
+  try {
+    const result = await sendJSON(
+      `api/displays/${encodeURIComponent(id)}/dashboard/create`, 'POST',
+      { overwrite: overwrite }, 'The dashboard could not be created.'
+    );
+    const what = result.replaced ? 'Replaced' : 'Created';
+    status.textContent = result.applied
+      ? `${what} "${result.title}" in Home Assistant. This display now shows it; press ` +
+        'Refresh to see it on the panel.'
+      : `${what} "${result.title}" in Home Assistant. This display has pages, so it was ` +
+        `not switched to it: its path is ${result.path}.`;
+    open.href = result.open_url;
+    open.hidden = false;
+    edit.href = result.edit_url;
+    edit.hidden = false;
+    await poll();
+  } catch (error) {
+    if (error.status === 409) {
+      status.textContent = error.message + ' ';
+      status.appendChild(actionButton('Replace it', () => createStarter(id, card, button, true)));
+    } else if (!error.unauthorised) {
+      status.textContent = error.message;
+    }
+  } finally {
+    setBusy(button, false);
+  }
 }

@@ -49,6 +49,7 @@ from ..ha import client as ha_client
 from ..ha import supervisor
 from ..store import dump_display
 from ..transports import available_transports
+from .copy import lint_advice, ui_copy
 from .ui import render_token_prompt, render_ui
 
 log = logging.getLogger(__name__)
@@ -92,6 +93,15 @@ class PageSelect(BaseModel):
                 + (f", not {', '.join(given)}" if given else "")
             )
         return self
+
+
+class DashboardCreate(BaseModel):
+    """Body of `POST /api/displays/{id}/dashboard/create`."""
+
+    #: Replace the contents of a dashboard that already exists at the same
+    #: `url_path`. Off, such a dashboard is the user's and the route answers
+    #: 409 instead.
+    overwrite: bool = False
 
 
 class EsphomeInstall(BaseModel):
@@ -267,6 +277,10 @@ def create_app(application: Application) -> FastAPI:
             }
             for name, cls in sorted(available_transports().items())
         }
+        # What the form calls each setting: a short label, one line of help
+        # and whether it is an expert setting (`src/maverick/server/copy.py`).
+        # The reference descriptions above stay for the *More* disclosure.
+        schema["ui"] = ui_copy()
         return schema
 
     #: `dashboard_url` asks the Supervisor for the ESPHome add-on; once a
@@ -428,6 +442,12 @@ def create_app(application: Application) -> FastAPI:
             "rotation": resolved.rotation,
             "frame_format": resolved.frame_format.value,
             "transport": display.transport_type,
+            # Where this page lives in Home Assistant's own frontend, and the
+            # same with `?edit=1`, which opens its editor: the card's *Edit in
+            # Home Assistant* link. None for a page that is not a Home
+            # Assistant path (a full URL, a file).
+            "dashboard_url": _frontend_url(application, page.dashboard),
+            "edit_url": _frontend_url(application, page.dashboard, edit=True),
             # Whether the card should offer the ESPHome install step at all:
             # a pull display on a panel that is plausibly an ESP32
             # (`esphome_applicable`, `src/maverick/esphome/generator.py`).
@@ -464,7 +484,7 @@ def create_app(application: Application) -> FastAPI:
             "lint": (
                 {
                     "summary": frame.lint_summary,
-                    "issues": frame.lint_issues,
+                    "issues": _with_advice(frame.lint_issues),
                     "metrics": frame.metrics,
                 }
                 if frame
@@ -623,6 +643,7 @@ def create_app(application: Application) -> FastAPI:
                         "severity": i.severity.value,
                         "message": i.message,
                         "hint": i.hint,
+                        "advice": lint_advice(i.code),
                     }
                     for i in outcome.frame.lint.issues
                 ],
@@ -894,6 +915,84 @@ def create_app(application: Application) -> FastAPI:
             except (ha_client.HomeAssistantError, httpx.HTTPError):
                 states = None
         return generate_dashboard(display.resolved(), states)
+
+    @api.post("/api/displays/{display_id}/dashboard/create", dependencies=[auth])
+    async def create_starter_dashboard(display_id: str, body: DashboardCreate) -> dict[str, Any]:
+        """Create the starter dashboard in Home Assistant and point the display at it.
+
+        The copy-and-paste loop, done by the server: the same starter
+        `GET .../dashboard.yaml` hands back is created as a storage-mode
+        dashboard called `maverick-<id>` through `lovelace/dashboards/create`
+        and filled through `lovelace/config/save`
+        (`HomeAssistantClient.create_dashboard` and `.save_dashboard_config`,
+        `src/maverick/ha/client.py`), and the display's `dashboard` is set to
+        its view. A dashboard already at that `url_path` is the user's — they
+        may have edited it — so it is replaced only with `overwrite: true`
+        and the route answers **409** otherwise. A display with `pages` gets
+        the dashboard but keeps its pages: `dashboard` and `pages` are
+        exclusive (`DisplayConfig`, `src/maverick/config.py`), and the
+        response says `applied: false`.
+
+        Both commands are admin-only in Home Assistant, so a credential
+        without that right fails here with Home Assistant's own message as a
+        **503**, and nothing is half done: the create runs before the save,
+        and a failed create leaves no dashboard to fill.
+        """
+        from ..lovelace import (
+            dashboard_url_path,
+            generate_dashboard_config,
+            starter_view_path,
+        )
+
+        display = _lookup(application, display_id)
+        ha = application.engine.ha
+        if not application.engine.ha_ok or ha is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Not connected to Home Assistant, so no dashboard can be created there.",
+            )
+        resolved = display.resolved()
+        url_path = dashboard_url_path(resolved)
+        title = display.name
+        try:
+            states = await ha.list_states()
+        except (ha_client.HomeAssistantError, httpx.HTTPError):
+            states = None
+        config = generate_dashboard_config(resolved, states)
+        try:
+            existing = url_path in await ha.dashboard_url_paths()
+            if existing and not body.overwrite:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Home Assistant already has a dashboard at /{url_path}. Replace "
+                        "its contents with a fresh starter, or leave it as it is."
+                    ),
+                )
+            if not existing:
+                await ha.create_dashboard(url_path, title)
+            await ha.save_dashboard_config(url_path, config)
+        except ha_client.HomeAssistantError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        view_path = starter_view_path(resolved)
+        applied = False
+        if not display.pages:
+            updated = DisplayConfig.model_validate(
+                {**dump_display(display), "dashboard": view_path}
+            )
+            await application.update_display(display_id, updated)
+            applied = True
+        return {
+            "url_path": url_path,
+            "path": view_path,
+            "title": title,
+            "created": not existing,
+            "replaced": existing,
+            "applied": applied,
+            "open_url": _frontend_url(application, view_path),
+            "edit_url": _frontend_url(application, view_path, edit=True),
+        }
 
     # ------------------------------------------------------- TRMNL (BYOS) --
 
@@ -1176,6 +1275,44 @@ def _next_refresh_seconds(application: Application, display_id: str) -> int:
     if schedule.interval_seconds:
         return int(schedule.interval_seconds)
     return 900
+
+
+def _frontend_url(application: Application, dashboard: str, *, edit: bool = False) -> str | None:
+    """Where a display's page is in Home Assistant's frontend, or None.
+
+    A dashboard path (`/lovelace-eink/kitchen`) is joined to
+    `home_assistant.render_url`, the frontend origin the renderer itself
+    loads pages from (`src/maverick/config.py`). `edit=True` appends
+    `?edit=1`, which the frontend takes as "open this view in the editor".
+    A full URL is handed back as it is, and a page that is not a Home
+    Assistant one (a `file://` page, say) gets None: there is no editor for it.
+    """
+    if not dashboard:
+        return None
+    if dashboard.startswith("/"):
+        url = application.config.home_assistant.render_url + dashboard
+    elif dashboard.startswith(("http://", "https://")):
+        url = dashboard
+    else:
+        return None
+    if edit:
+        if not url.startswith(application.config.home_assistant.render_url):
+            return None
+        url += ("&" if "?" in url else "?") + "edit=1"
+    return url
+
+
+def _with_advice(issues: Any) -> Any:
+    """The stored lint findings with a plain sentence of advice on each."""
+    if not isinstance(issues, list):
+        return issues
+    out = []
+    for issue in issues:
+        if isinstance(issue, dict):
+            out.append({**issue, "advice": lint_advice(str(issue.get("code", "")))})
+        else:
+            out.append(issue)
+    return out
 
 
 def _frame_url(application: Application, display_id: str) -> str:

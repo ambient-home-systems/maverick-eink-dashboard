@@ -6,6 +6,63 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Create the starter dashboard in Home Assistant with one click.**
+  **Create in Home Assistant** in each card's Dashboard starter panel creates
+  a storage-mode dashboard called `maverick-<id>`, saves the generated starter
+  into it and points the display at its view — `POST
+  /api/displays/{id}/dashboard/create`, over Home Assistant's own
+  `lovelace/dashboards/create` and `lovelace/config/save`
+  (`HomeAssistantClient.create_dashboard`, `.save_dashboard_config`,
+  `.dashboard_url_paths`). A dashboard already at that path is replaced only
+  on confirmation; a display with pages keeps them. The copy-and-paste into
+  the raw configuration editor is now the fallback for a credential without
+  administrator rights.
+- **Edit in Home Assistant.** Each card, and the Edit drawer's preview row,
+  links straight to the page in Home Assistant's own editor (`?edit=1`);
+  `GET /api/displays` carries `dashboard_url` and `edit_url`.
+- **The five rules for ink, where the mistakes happen.** *Designing for ink*
+  in the header opens one screen with the five rules and the cards that work
+  and do not (`RULES` in `src/maverick/lovelace/rules.py`, rendered with
+  `CARD_ADVICE`); the design guide repeats them word for word and a test
+  keeps the two in step. Every lint finding on a card now leads with what to
+  change, in plain words (`LINT_ADVICE`, `src/maverick/server/copy.py`), with
+  the measurement and the mechanism beneath.
+- A dashboard **strategy** — generating the dashboard live inside Home
+  Assistant's editor — is recorded as the future goal in `docs/roadmap.md`
+  and the guide; it needs a frontend module and a real installation to test
+  on.
+
+### Changed
+
+- **The setup UI speaks plainly.** Every label and line of help in the Add
+  dialog and the Edit drawer now comes from `src/maverick/server/copy.py` —
+  a short label a person would say out loud and one sentence of help — served
+  under `ui` by `GET /api/schema/display`. The `Field(description=...)` text
+  the reference is generated from stays where it was and is no longer what
+  the form shows; with *Expert settings* on it is one click away under
+  **More**. `tests/test_ui_copy.py` holds every setting to an entry and every
+  line of help to under 110 characters.
+- **The Add dialog's fold is four settings, not twelve.** *More settings*
+  holds rotation, quiet hours, the entities that trigger a refresh and a
+  different delivery method. The geometry overrides, the crontab, the enabled
+  switch and the wire format moved to the Edit drawer, where they were
+  already, under Expert settings.
+- **The Edit drawer shows what people change.** Display, Pages, Schedule,
+  Look, Image and Delivery, with only the everyday settings in each. An
+  **Expert settings** switch in the header — remembered per browser — shows
+  the rest: Panel overrides, Browser, Checks, Controller quirks and Board
+  wiring, and the expert-level settings inside the everyday sections.
+  Sections were renamed to say what they are for (Theme → Look, Render →
+  Browser, Lint → Checks, Pack → Controller quirks, ESPHome → Board wiring).
+
+### Fixed
+
+- **A "Delivery" label with nothing under it** appeared in the Add dialog for
+  a transport with no required options: `[hidden]` on a flex container needs
+  restating in the stylesheet.
+
 ## [0.5.0] - 2026-09-16
 
 ### Fixed

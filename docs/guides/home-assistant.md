@@ -35,22 +35,33 @@ Home Assistant app, which embeds the same page through ingress) is where most
 of it happens day to day.
 
 **Add display** asks four things: a name, which panel it is, which dashboard
-to put on it, and how often to refresh. Everything else is under **Advanced**,
-because everything else has a defensible default. The panel supplies the
-transport — `PanelProfile.default_transport` (`src/maverick/devices/panels.yaml`)
-is what a display gets when it names none, so a BLE shelf label is delivered
-over `opendisplay` and a Waveshare module over `http_pull` with nothing to
-choose (`DisplayConfig.transport_type`, `src/maverick/config.py`). Refresh is
-one picker of intervals rather than the `every`/`cron` pair the model takes;
-those two are mutually exclusive (`ScheduleConfig._exclusive`), so a crontab
-lives under Advanced and replaces the interval rather than competing with it.
-The id is derived from the name.
+to put on it, and how often to refresh. **More settings** holds four more that
+a first day might need — rotation, quiet hours, entities that trigger a
+refresh, and a different delivery method — and nothing else: the geometry
+overrides, the crontab and the wire format are on each display's Edit drawer
+under *Expert settings* (`_ADD_DIALOG`, `src/maverick/server/ui.py`). The
+panel supplies the transport — `PanelProfile.default_transport`
+(`src/maverick/devices/panels.yaml`) is what a display gets when it names
+none, so a BLE shelf label is delivered over `opendisplay` and a Waveshare
+module over `http_pull` with nothing to choose (`DisplayConfig.transport_type`,
+`src/maverick/config.py`). Refresh is one picker of intervals rather than the
+`every`/`cron` pair the model takes; those two are mutually exclusive
+(`ScheduleConfig._exclusive`), so the crontab lives in the drawer and replaces
+the interval rather than competing with it. The id is derived from the name.
+
+Every label and line of help in the dialog and the drawer is plain-language
+copy from `src/maverick/server/copy.py`, served under `ui` by
+`GET /api/schema/display`, not the reference descriptions the models carry —
+those are written for [the configuration reference](../reference/configuration.md)
+and read like one. With *Expert settings* on, each setting gains a **More**
+disclosure with the reference text; `tests/test_ui_copy.py` holds every
+setting to an entry and every line of help to one short sentence.
 
 The rest is filled in from what the running service already knows. `GET
 /api/panels` fills the panel picker, grouped by vendor, and shows the
 profile's own notes and the geometry, palette and transport it settles once
-one is chosen; `GET /api/transports` fills the transport picker under
-Advanced; and the Dashboard field's suggestions come from
+one is chosen; `GET /api/transports` fills the delivery-method picker under
+More settings; and the Dashboard field's suggestions come from
 [the dashboard picker](#a-dashboard-path) below. What the chosen transport
 cannot deliver without is asked for above the fold, under **Delivery**: each
 transport declares in `option_fields` (`src/maverick/transports/base.py`)
@@ -59,7 +70,7 @@ control to draw, and the dialog draws only those there — for an OpenDisplay
 tag, a mode picker and a **tag picker** fed by Home Assistant's device
 registry (`GET /api/ha/opendisplay/devices`), so the device id is chosen
 rather than copied out of a URL; for a webhook, the endpoint. The rest of
-each transport's options sit under Advanced, folded. **Test delivery** asks
+each transport's options sit under More settings, folded. **Test delivery** asks
 the transport whether a delivery would arrive before anything is saved
 (`POST /api/displays/probe`). Submitting posts to `POST /api/displays` — no
 config file, and nothing to restart.
@@ -69,11 +80,16 @@ OpenDisplay integration has found, with the catalogue panel its model looks
 like, and **Add as display** opens the same dialog with the name, the panel
 and the device id filled in.
 
-**Edit**, on each card, opens a drawer with every field of that display: the
-schedule, the theme, the image and render settings, the lint thresholds, the
-transport's own options, the wire format and the ESPHome settings, each
-labelled with the same help text `docs/reference/configuration.md` is
-generated from. **Preview** renders the drawer's current state — without
+**Edit**, on each card, opens a drawer with the settings a person adjusting a
+panel actually changes — the dashboard and pages, the schedule, the look
+(text size, the colour ink, extra CSS), the image (brightness, contrast,
+dithering) and the delivery — under plain labels with one line of help each.
+The **Expert settings** switch in its header shows the rest: the panel's
+geometry overrides, the browser capture settings, the lint thresholds, the
+controller quirks and the board wiring for the ESPHome file, plus every
+expert-level setting inside the everyday sections, each with its reference
+description under **More**. The switch is remembered per browser
+(`src/maverick/server/copy.py` decides which is which). **Preview** renders the drawer's current state — without
 saving it — and shows it beside what the panel is currently showing, with the
 lint findings underneath; **Save** applies it live, and **Delete** removes the
 display and its stored frames, both with a confirmation first. This is
@@ -409,22 +425,43 @@ it alongside `settle` rather than leaving it at its 45-second default.
 short version of [the design guide](../design-guide.md), and the command that
 saves you doing it by hand.
 
-### Start from a generated one
+### Create it with one click
+
+Open a display's card in the setup UI, expand **Dashboard starter** and press
+**Create in Home Assistant**. Maverick creates a storage-mode dashboard called
+`maverick-<display id>` in Home Assistant, saves the starter into it and points
+the display at its view; **Open it** and **Edit it** then go straight to it.
+This is `POST /api/displays/{id}/dashboard/create`
+([HTTP API reference](../reference/http-api.md)), which runs Home Assistant's
+own `lovelace/dashboards/create` and `lovelace/config/save` commands through
+`HomeAssistantClient` (`src/maverick/ha/client.py`). Both are administrator
+commands in Home Assistant, so the linked account or the token has to be an
+administrator's. A dashboard already at that path is yours — you may have
+edited it — and is replaced only when you confirm; a display with pages gets
+the dashboard but keeps its pages.
+
+From there the loop is two clicks: **Edit in Home Assistant** on the card
+opens the page in Home Assistant's own editor (the page's URL with `?edit=1`,
+`_frontend_url` in `src/maverick/server/api.py`), and **Refresh** shows the
+result on the panel. Each lint finding under the card leads with what to
+change, in plain words (`LINT_ADVICE`, `src/maverick/server/copy.py`), with
+the measurement and the mechanism under it; **Designing for ink** in the
+header is the five rules on one screen.
+
+### Or take the YAML
 
 ```bash
 maverick dashboard kitchen              # prints it
 maverick dashboard kitchen -o view.yaml # writes it
 ```
 
-Or open a display's card in the setup UI and expand **Dashboard starter**,
-which is the same thing through `GET /api/displays/{id}/dashboard.yaml`
-([HTTP API reference](../reference/http-api.md)), with a Copy button.
-
-What comes back is a complete Lovelace configuration — a top-level `views:`
-list, which is what Home Assistant's **Raw configuration editor** takes. Paste
-it into a new dashboard (**Settings → Dashboards → Add dashboard**, then
-**Edit → ⋮ → Raw configuration editor**) and point the display's `dashboard`
-at the view path in it.
+The same starter is in the card's panel as YAML, with Copy and Download, and
+through `GET /api/displays/{id}/dashboard.yaml`. What comes back is a complete
+Lovelace configuration — a top-level `views:` list, which is what Home
+Assistant's **Raw configuration editor** takes. Paste it into a new dashboard
+(**Settings → Dashboards → Add dashboard**, then **Edit → ⋮ → Raw
+configuration editor**) and point the display's `dashboard` at the view path
+in it. This is the route for a credential without administrator rights.
 
 Two things make it a starting point rather than a template:
 
@@ -1066,6 +1103,12 @@ and none of them exists today:
   reachable — the entities above, and
   [Rotating between pages](#rotating-between-pages) — but the tile feature and
   the card that would gather them into one place on a dashboard are not built.
+* **No dashboard strategy.** The one-click starter creates a dashboard once;
+  a Lovelace *strategy* would generate it live inside Home Assistant's own
+  editor from a panel and a set of areas, and re-generate it when they
+  change. It needs a frontend module, a HACS listing and testing on a real
+  installation, and is the stated future goal in
+  [roadmap.md](../roadmap.md#layer-1--a-dashboard-strategy).
 
 ## Where to go next
 

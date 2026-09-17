@@ -295,7 +295,13 @@ async def test_the_dashboard_starter_generates_yaml_on_the_card(populated_server
             # And it teaches rather than only emitting: the cards it refused.
             assert "NOT USED" in text
 
-            await expect(starter.locator(".starter-guide")).to_have_attribute(
+            # "Which cards work?" opens the five rules in the page; the long
+            # guide is linked from the foot of that dialog.
+            await starter.locator(".starter-guide").click()
+            rules = page.locator("dialog#rules")
+            await expect(rules).to_be_visible(timeout=5000)
+            await expect(rules.locator("ol.rules li")).to_have_count(5)
+            await expect(rules.locator("a", has_text="the design guide")).to_have_attribute(
                 "href", re.compile(r"design-guide\.md$")
             )
 

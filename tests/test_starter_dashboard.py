@@ -337,3 +337,19 @@ def test_the_route_answers_with_placeholders_rather_than_failing(tmp_path, monke
         response = client.get("/api/displays/kitchen/dashboard.yaml")
         assert response.status_code == 200
         assert "PLACEHOLDER" in response.text
+
+
+def test_the_design_guide_repeats_the_five_rules_word_for_word():
+    """`RULES` (`src/maverick/lovelace/rules.py`) is what the setup UI shows;
+    the design guide's own summary must say the same five things."""
+    from pathlib import Path
+
+    from maverick.lovelace import RULES
+
+    guide = Path(__file__).resolve().parents[1] / "docs" / "design-guide.md"
+    text = guide.read_text(encoding="utf-8")
+    assert len(RULES) == 5
+    for title, what, _why in RULES:
+        assert f"**{title}.**" in text, f"the design guide has lost the rule {title!r}"
+        assert what in text, f"the design guide's wording for {title!r} drifted from RULES"
+
