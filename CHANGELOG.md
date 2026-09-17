@@ -6,6 +6,25 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The Home Assistant app installs from a pre-built image.** `app/config.yaml`
+  names `ghcr.io/ambient-home-systems/maverick-app`, and
+  `.github/workflows/app.yml` builds it for amd64 and aarch64 on native
+  runners with Home Assistant's builder actions and publishes it, tagged with
+  the manifest's version, from `main`. Until now the manifest named no
+  `image`, so the Supervisor built the Dockerfile on the machine installing
+  the app — Debian's Chromium from apt and the package from pip, on a Pi, on
+  every install and every update. Installing is now a pull. A published tag
+  is never overwritten (`skip-existing`), so a change under `app/` reaches
+  users through a version bump; CONTRIBUTING's *Releasing* has the new step.
+- **The app image names its base outright**,
+  `ghcr.io/home-assistant/base-debian:bookworm-2026.08.0`, instead of an
+  `ARG BUILD_FROM` with a default: the Supervisor stopped supplying the
+  argument with 2026.04.0 and the builder no longer reads `build.yaml`.
+- The `app` job in `.github/workflows/ci.yml` moved to the new workflow, where
+  its smoke tests now run on both architectures.
+
 ## [0.6.0] - 2026-09-17
 
 ### Added

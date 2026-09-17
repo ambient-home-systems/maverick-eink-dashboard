@@ -1,0 +1,300 @@
+# The Home Assistant app: linted, built for both architectures, smoke-tested,
+# and — from main — published to GitHub's container registry.
+#
+# Until 0.6.0 the manifest named no `image`, so the Supervisor built this
+# image on the machine installing it: an apt-get of Debian's Chromium and a
+# pip install of the package, on a Pi, every install and every update. That is
+# the slow path Home Assistant's own publishing guide asks established apps to
+# leave (developers.home-assistant.io/docs/apps/publishing). With `image` set
+# in app/config.yaml, an install is a pull of what this workflow pushed.
+#
+# Three things about how it publishes:
+#
+# - The tag is the manifest's `version`, read from app/config.yaml, because
+#   that is the tag the Supervisor pulls. A version tag is never overwritten:
+#   `skip-existing` makes a run whose tag already exists build but not push,
+#   with a warning. A change to app/ therefore reaches users only through a
+#   version bump — which is also the only way the store offers it to them.
+# - Pull requests build both architectures and run the smoke tests on the
+#   image, without pushing. Pushes to main and manual runs publish. Running
+#   it by hand on a release branch, before that branch's manifest bump
+#   merges, puts the tag in place before main advertises it (CONTRIBUTING.md,
+#   "Releasing").
+# - The two builds run on native runners (ubuntu-24.04 and ubuntu-24.04-arm,
+#   picked by prepare-multi-arch-matrix), so the aarch64 image is built and
+#   its Chromium launched on real ARM hardware, which nothing else in the
+#   project does.
+name: Home Assistant app
+
+on:
+  pull_request:
+    paths:
+      - app/**
+      - .github/workflows/app.yml
+      # The options test below runs this commit's package inside the image.
+      - src/**
+  push:
+    branches: [main]
+    paths:
+      - app/**
+      - .github/workflows/app.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The last path segment of `image` in app/config.yaml; the per-architecture
+  # images are `<arch>-` + this. tests/test_app.py holds the two together.
+  IMAGE_NAME: maverick-app
+
+jobs:
+  lint:
+    name: Manifest and entrypoint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The manifest, against the Supervisor's own schema.
+      - name: Lint app manifest
+        uses: frenck/action-addon-linter@v2
+        with:
+          path: ./app
+
+      - name: Shell syntax
+        run: |
+          bash -n app/run.sh
+          shellcheck --shell=bash --exclude=SC1091 app/run.sh
+
+  prepare:
+    name: Read the manifest
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.manifest.outputs.version }}
+      architectures: ${{ steps.manifest.outputs.architectures }}
+      name: ${{ steps.manifest.outputs.name }}
+      description: ${{ steps.manifest.outputs.description }}
+      url: ${{ steps.manifest.outputs.url }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      publish: ${{ steps.manifest.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Everything the build needs comes from app/config.yaml, so the tag, the
+      # architectures and the labels cannot disagree with what the store reads.
+      - name: Read app/config.yaml
+        id: manifest
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+        run: |
+          image="$(yq '.image' app/config.yaml)"
+          if [[ "${image}" != "${EXPECTED_IMAGE}" ]]; then
+            echo "::error::app/config.yaml names image ${image}; this workflow publishes ${EXPECTED_IMAGE}"
+            exit 1
+          fi
+          {
+            echo "version=$(yq '.version' app/config.yaml)"
+            echo "architectures=$(yq -o=json -I=0 '.arch' app/config.yaml)"
+            echo "name=$(yq '.name' app/config.yaml)"
+            echo "description=$(yq '.description' app/config.yaml)"
+            echo "url=$(yq '.url' app/config.yaml)"
+            if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+              echo "publish=false"
+            else
+              echo "publish=true"
+            fi
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Prepare build matrix
+        id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.09.0
+        with:
+          architectures: ${{ steps.manifest.outputs.architectures }}
+          image-name: ${{ env.IMAGE_NAME }}
+
+  build:
+    name: Build ${{ matrix.arch }} image
+    needs: [lint, prepare]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write   # Cosign signs the pushed image with the workflow's OIDC token
+      packages: write   # the push to ghcr.io
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      IMAGE: ${{ matrix.image }}:${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # A pull request loads the image into the runner's Docker for the tests
+      # below; a publishing run pushes it instead, and the tests pull it back
+      # — what a user's Supervisor will get, byte for byte.
+      - name: Build image
+        uses: home-assistant/builder/actions/build-image@2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: ./app
+          image: ${{ matrix.image }}
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          labels: |
+            io.hass.type=app
+            io.hass.name=${{ needs.prepare.outputs.name }}
+            io.hass.description=${{ needs.prepare.outputs.description }}
+            io.hass.url=${{ needs.prepare.outputs.url }}
+          load: ${{ needs.prepare.outputs.publish != 'true' }}
+          push: ${{ needs.prepare.outputs.publish }}
+          skip-existing: ${{ needs.prepare.outputs.version }}
+          version: ${{ needs.prepare.outputs.version }}
+
+      # Chromium and Playwright's driver have to agree inside the image, which a
+      # smoke test of the CLI alone would not show. BrowserPool is the project's
+      # own launcher, flags included.
+      - name: Smoke test
+        run: |
+          docker run --rm --entrypoint maverick "${IMAGE}" --version
+          docker run --rm --entrypoint maverick "${IMAGE}" panels --json > /dev/null
+          docker run --rm -i --entrypoint python "${IMAGE}" - <<'PY'
+          import asyncio
+
+          from maverick.render.browser import BrowserPool
+
+
+          async def main() -> None:
+              pool = BrowserPool(max_concurrent=1)
+              await pool.start()
+              async with pool.page("ci", (320, 240)) as page:
+                  await page.goto("about:blank")
+                  print("chromium ok:", await page.evaluate("navigator.userAgent"))
+              await pool.stop()
+
+
+          asyncio.run(main())
+          PY
+
+      # The other half of the pinned-ref check in tests/test_app.py, from inside
+      # the image: the starter config ships from app/rootfs/ at this commit, the
+      # package comes from MAVERICK_REF, and every model bar TransportConfig
+      # forbids unknown keys. A ref left behind at an older release therefore
+      # writes keys that release rejects, and the app dies on its first start
+      # with nothing installed and nothing configured — exactly this run.
+      - name: Starter configuration loads in the image
+        run: |
+          docker run --rm -i \
+            --env HA_URL=http://homeassistant:8123 \
+            --env HA_TOKEN= \
+            --env HA_REFRESH_TOKEN= \
+            --env HA_CLIENT_ID= \
+            --env MAVERICK_LOG_LEVEL=info \
+            --env MAVERICK_API_TOKEN= \
+            --env MAVERICK_BASE_URL= \
+            --env MQTT_ENABLED=false \
+            --env MQTT_HOST=core-mosquitto \
+            --env MQTT_PORT=1883 \
+            --env MQTT_USERNAME= \
+            --env MQTT_PASSWORD= \
+            --entrypoint python "${IMAGE}" - <<'PY'
+          from maverick.app import VERSION
+          from maverick.config import load_config
+
+          config = load_config("/usr/share/maverick/maverick.yaml")
+          print("maverick", VERSION, "loads the starter config:",
+                [display.id for display in config.displays])
+          PY
+
+      # The reproduction the 0.2.x cycle did not have. Until now the options only
+      # became configuration inside a Supervisor, through bashio, so every fix to
+      # that translation was tested by releasing it. The service reads
+      # /data/options.json itself (src/maverick/ha/options.py), which a container
+      # can do: an options file, a SUPERVISOR_TOKEN so the app path is taken at
+      # all, and nothing whatsoever in the environment.
+      #
+      # This one runs *this commit's* package, mounted over the one the image
+      # installed — the mirror of the step above, which deliberately uses the
+      # package from MAVERICK_REF. The ref only moves at a release
+      # (CONTRIBUTING.md), so between the change and the release it names a
+      # commit that knows nothing of these options; the assertion on
+      # maverick.__file__ is what stops this silently testing that one instead.
+      # The image still supplies the interpreter and every dependency.
+      #
+      # No Supervisor answers here, which is the point of the last two
+      # assertions: an unreachable one has to leave base_url on the option and
+      # MQTT off rather than fail the start.
+      - name: The app's options become the configuration in the image
+        run: |
+          mkdir -p "${RUNNER_TEMP}/options"
+          cat > "${RUNNER_TEMP}/options/options.json" <<'JSON'
+          {
+            "home_assistant_url": "http://homeassistant:8123",
+            "home_assistant_token": "a-long-lived-token",
+            "home_assistant_refresh_token": null,
+            "home_assistant_client_id": null,
+            "log_level": "debug",
+            "base_url": "http://192.168.1.10:5000",
+            "api_token": "an-api-token"
+          }
+          JSON
+          docker run --rm -i \
+            --volume "${RUNNER_TEMP}/options:/data:ro" \
+            --volume "${GITHUB_WORKSPACE}/src:/src:ro" \
+            --env PYTHONPATH=/src \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            --env SUPERVISOR_TOKEN=not-a-real-token \
+            --entrypoint python "${IMAGE}" - <<'PY'
+          import maverick
+
+          assert maverick.__file__.startswith("/src/"), maverick.__file__
+
+          # _load is the function run.sh reaches through `maverick ... serve`,
+          # and the only step between the Configuration tab and a loaded config.
+          from maverick.cli import _load, build_parser
+
+          args = build_parser().parse_args(
+              ["-c", "/usr/share/maverick/maverick.yaml", "serve"]
+          )
+          config = _load(args)
+
+          assert config.home_assistant.token == "a-long-lived-token", config.home_assistant
+          assert config.home_assistant.url == "http://homeassistant:8123", config.home_assistant
+          # null in options.json is unset, not the string "null" (0.2.4).
+          assert config.home_assistant.refresh_token == "", config.home_assistant
+          assert config.home_assistant.client_id == "", config.home_assistant
+          assert config.log_level == "debug", config.log_level
+          assert config.server.api_token == "an-api-token", config.server
+          assert config.server.base_url == "http://192.168.1.10:5000", config.server
+          assert config.mqtt.enabled is False, config.mqtt
+          print("the app's options reached the configuration")
+          PY
+
+  # The generic name the manifest carries — `ghcr.io/<owner>/maverick-app` —
+  # is a multi-arch manifest over the two images above; the Supervisor
+  # resolves its own architecture from it.
+  manifest:
+    name: Publish multi-arch manifest
+    needs: [prepare, build]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - name: Publish multi-arch manifest
+        uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.09.0
+        with:
+          architectures: ${{ needs.prepare.outputs.architectures }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          skip-existing: ${{ needs.prepare.outputs.version }}

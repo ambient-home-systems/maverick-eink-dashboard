@@ -3,9 +3,19 @@
 # Debian rather than Alpine on purpose. Playwright's driver is a glibc Node
 # binary, and Debian's own chromium package exists for amd64 and arm64, so the
 # "Playwright ships no ARM Chromium" problem from the README does not exist
-# inside this image. The Supervisor builds it on the machine that installs it.
-ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:bookworm
-FROM ${BUILD_FROM}
+# inside this image.
+#
+# Built and published by .github/workflows/app.yml, for both architectures,
+# under the `image` name in config.yaml; the Supervisor pulls it. It used to
+# build this file on the machine installing the app, which is why installing
+# took minutes and a few hundred megabytes of downloads on a Pi.
+#
+# The base image is named outright and pinned to a dated tag. The Supervisor
+# stopped passing BUILD_FROM with 2026.04.0 and the builder no longer reads
+# build.yaml (developers.home-assistant.io/docs/apps/configuration), so an ARG
+# with a default was the only thing still making it work. The tag is a
+# multi-arch index carrying amd64 and arm64.
+FROM ghcr.io/home-assistant/base-debian:bookworm-2026.08.0
 
 # The commit of this repository the image installs. Pinned so that an image
 # built today and one built next month contain the same code. The release

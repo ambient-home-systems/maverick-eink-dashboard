@@ -27,9 +27,10 @@ project still say add-on; the two words mean the same thing.
    and you confirm **Add**. Or by hand: **Settings → Apps → App store**, the
    menu in the top right, **Repositories**, and paste
    `https://github.com/ambient-home-systems/maverick-eink-dashboard`.
-2. Open **Maverick** in the store and install it. There is no pre-built image
-   yet, so the Supervisor builds one on your machine. Expect a few minutes and
-   a few hundred megabytes: Debian's Chromium is most of it.
+2. Open **Maverick** in the store and install it. The image is pre-built and
+   pulled from GitHub's container registry, so installing is a download of a
+   few hundred megabytes — Debian's Chromium is most of it — and not a build
+   on your machine.
 3. **Start** the app and open its **Web UI**.
 4. Press **Link with Home Assistant**. You will be asked to log in once, and
    sent straight back. That is the whole setup.
@@ -244,27 +245,28 @@ lists every message the service can print, with its cause and fix.
 
 ## What is not there yet
 
-- **No pre-built image.** Installing builds it on your machine.
 - **No custom integration.** Displays become devices through MQTT, and
   automations reach the app through those entities or a `rest_command`.
 
 ## What was verified
 
 - The manifest (`config.yaml`) passes the app linter, `run.sh` passes
-  `bash -n` and shellcheck, and the image builds on amd64 in CI, where
-  `maverick --version`, `maverick panels` and a Playwright launch of the
-  bundled Chromium all succeed inside the container.
+  `bash -n` and shellcheck, and the image builds for amd64 and aarch64 in CI
+  on native runners (`.github/workflows/app.yml`), where `maverick --version`,
+  `maverick panels` and a Playwright launch of the bundled Chromium all
+  succeed inside the container — on both architectures. The images the store
+  pulls are the ones that passed.
 - The starter `maverick.yaml` loads through the real config loader with every
   variable the service sets, and the options it reads are the ones the schema
   declares (`tests/test_app.py`).
 - CI runs the built image with an `options.json` of its own and nothing in the
   environment, and checks that the loaded configuration carries those option
-  values (`.github/workflows/ci.yml`, the `app` job). The Supervisor is not
+  values (`.github/workflows/app.yml`, the `build` job). The Supervisor is not
   there to answer, so that run also exercises what happens when it will not:
   no broker, and a `base_url` that has to come from the option.
 - Nothing on this page has been exercised on a Home Assistant OS installation:
-  not the Supervisor build, not the aarch64 image, not the MQTT hand-off from
-  the Mosquitto app, not the derived `base_url`. What those two calls return,
+  not the pull from the registry, not the MQTT hand-off from the Mosquitto
+  app, not the derived `base_url`. What those two calls return,
   and what grants each of them, is read from the Supervisor's own source — its
   network and services APIs and the security middleware in front of them — and
   from Home Assistant's documentation, never from a running system.

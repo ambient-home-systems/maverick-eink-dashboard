@@ -11,6 +11,6 @@ and edit `maverick.yaml` in the app's configuration folder to describe your
 panels. The Documentation tab has the rest.
 
 **Not yet run on a Home Assistant installation by the project.** The image
-builds and Chromium starts inside it in CI; please report what happens on your
-system at
+is pre-built for amd64 and aarch64, and Chromium starts inside it in CI on
+both; please report what happens on your system at
 https://github.com/ambient-home-systems/maverick-eink-dashboard/issues.

@@ -61,9 +61,10 @@ repository to the app store; the app itself lives in [`app/`](app/DOCS.md).
    repository dialog pre-filled, and you confirm **Add**. Or do it by hand:
    **Settings → Apps → App store**, the menu in the top right, **Repositories**,
    and add `https://github.com/ambient-home-systems/maverick-eink-dashboard`.
-2. Open **Maverick** in the store and install it. The image is built on your
-   machine, Chromium included, so the aarch64 note below does not apply; expect
-   a few minutes.
+2. Open **Maverick** in the store and install it. The image is pre-built for
+   amd64 and aarch64 and pulled from GitHub's container registry
+   (`.github/workflows/app.yml`), so installing is a download and not a build;
+   Debian's Chromium is inside it, so the aarch64 note below does not apply.
 3. On the **Configuration** tab, paste a long-lived access token (your profile
    → Security). Nothing else is required: the URL defaults to Home Assistant's
    internal address, and the Mosquitto broker app is picked up automatically
