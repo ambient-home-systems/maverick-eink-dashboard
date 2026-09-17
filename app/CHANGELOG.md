@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0
+
 - **One click to a dashboard.** In a display's *Dashboard starter*, **Create
   in Home Assistant** makes the dashboard for you, sized for that panel, and
   points the display at it. No YAML to paste. **Edit in Home Assistant** on
