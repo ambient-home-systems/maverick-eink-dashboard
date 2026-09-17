@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Install on device now works, and says what to do.** *Send to ESPHome*
+  wrote the file into a folder the ESPHome Device Builder never reads, so the
+  device appeared nowhere; it now goes into `esphome/` in Home Assistant's
+  config folder, where the Device Builder lists it (the app maps that folder
+  instead of `/addon_configs`). The **Open ESPHome Device Builder** link was
+  built on the app's internal Home Assistant address and did not open; it now
+  opens in your Home Assistant tab. The step is rewritten for a board that has
+  never been set up: where the secrets go (the Device Builder's own *Secrets*
+  editor), an API key made up for you, and what to press to flash the board
+  and add it to Home Assistant. If the app cannot see the Device Builder's
+  folder, it says so and walks through the copy and paste instead.
 - **Installing is a download now, not a build.** The image is pre-built for
   amd64 and aarch64 and pulled from GitHub's container registry. Until now
   the Supervisor built it on your machine, Chromium included, which is why

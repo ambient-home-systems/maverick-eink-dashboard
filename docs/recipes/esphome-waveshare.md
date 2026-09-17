@@ -137,28 +137,40 @@ has to do with it, drawn from `GET /api/displays/{id}/esphome`
 (`src/maverick/server/static/app.js`):
 
 1. **Secrets.** The `secrets.yaml` entries the file references, with a Copy
-   button. Maverick fills in the one it knows — its own token, as
-   `maverick_authorization: "Bearer …"` — and leaves the Wi-Fi and API-key
-   values blank with their descriptions as comments.
+   button and where they go: ESPHome keeps one `secrets.yaml` for all its
+   devices, which the Device Builder's own *Secrets* editor (under its ⋮
+   menu) edits. Maverick fills in the two it can — its own token, as
+   `maverick_authorization: "Bearer …"`, and an ESPHome API key it makes up
+   (`_fresh_api_key`, `src/maverick/esphome/generator.py`: 32 random bytes in
+   base64, which is all `api.encryption.key` asks for) — and leaves the Wi-Fi
+   values blank with their descriptions as comments. When Maverick can read
+   the destination's `secrets.yaml` it says which of the names are already
+   there.
 2. **The configuration.** Copy, Download (named `<node>.yaml`, which is the
-   name ESPHome expects), and — when there is somewhere to put it — **Send to
-   ESPHome**, which writes the file where the ESPHome Device Builder reads its
-   configurations so the device appears there with nothing to paste
+   name ESPHome expects), and — when Maverick can see the Device Builder's
+   folder — **Send to ESPHome**, which writes the file there so the device
+   appears in the Device Builder with nothing to paste
    (`POST /api/displays/{id}/esphome/install`,
-   `src/maverick/esphome/install.py`). In the Home Assistant app that is the
-   ESPHome add-on's own config folder, which the app reaches through its
-   `all_addon_configs:rw` mapping (`app/config.yaml`), with `/share/esphome`
-   as the fallback; standalone it is
-   [`server.esphome_dir`](../reference/configuration.md#server), and with that
-   unset the button is not shown. A file already there with different content
-   is yours and is not replaced until you say so. The status line under the
-   button reads the destination's `secrets.yaml` — reads only, it holds your
-   Wi-Fi password — and says which of the names in step 1 are still missing.
+   `src/maverick/esphome/install.py`). In the Home Assistant app that folder
+   is `esphome/` in Home Assistant's config directory: the add-on's manifest
+   maps `config:rw` and its start script runs
+   `esphome-device-builder /config/esphome`, so the app reaches it at
+   `/homeassistant/esphome` through its `homeassistant_config:rw` mapping
+   (`app/config.yaml`). Standalone it is
+   [`server.esphome_dir`](../reference/configuration.md#server). With neither,
+   the step says so and walks through the copy and paste instead: *New device*
+   in the Device Builder, name it `<node>`, skip the install it offers, then
+   *Edit* and replace the editor's contents with the file. A file already
+   there with different content is yours and is not replaced until you say so.
 3. **Install.** A link to the ESPHome Device Builder's own page when the add-on
    is installed (the Supervisor reports it; `dashboard_url` in
-   `src/maverick/esphome/install.py`), where the device now appears and
-   *Install* compiles it and flashes over USB from the browser or over the
-   air. Standalone, the equivalent `esphome run` command.
+   `src/maverick/esphome/install.py`; the link is rebuilt on Home Assistant's
+   own origin by `haFrontendUrl` in `src/maverick/server/static/app.js`, since
+   the app's internal address for Home Assistant is not one a browser can
+   open), then the flash as numbered sub-steps: the board on USB, *Install*
+   on its card in the Device Builder with *Plug into this computer*, adding
+   the device when Home Assistant discovers it, and a Refresh here. Standalone,
+   the equivalent `esphome run` command.
 
 Above the steps, two warnings appear when they apply: the panel has no ESPHome
 driver in the catalogue (the file names a placeholder model — see
@@ -186,7 +198,7 @@ maverick_authorization: "Bearer <server.api_token>"   # only when a token is set
 | --- | --- |
 | `!secret wifi_ssid` | Wi-Fi network the panel joins. |
 | `!secret wifi_password` | Its password. |
-| `!secret api_key` | The ESPHome native API encryption key, base64, 32 bytes. Generate one in the ESPHome dashboard, or with `openssl rand -base64 32`. |
+| `!secret api_key` | The ESPHome native API encryption key, base64, 32 bytes. The setup UI's step 1 makes one up for you; keep the one already in `secrets.yaml` if there is one. `openssl rand -base64 32` makes the same thing. |
 | `!secret maverick_authorization` | Maverick's API token as the panel presents it: `server.api_token` with `Bearer ` in front. Referenced only when a token is set. The setup UI's step 1 writes this line for you. |
 
 Nothing in the document itself is sensitive; the values live in `secrets.yaml`
@@ -511,8 +523,10 @@ Checked on this repository, at the commit this page was written against:
 
 Not checked: `esphome compile`, any flash, any panel, any measurement of RAM,
 refresh time or battery life, and the ESPHome add-on's config folder on a
-real Home Assistant OS installation — its path is read from the Supervisor's
-`all_addon_configs` mapping and the add-on's slug, not from a running system.
+real Home Assistant OS installation — its path is read from the add-on's own
+manifest and start script (`config:rw`, `esphome-device-builder
+/config/esphome`) and the Supervisor's `homeassistant_config` mapping, not
+from a running system.
 
 ## What to check first when it does not work
 

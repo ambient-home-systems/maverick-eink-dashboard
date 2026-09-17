@@ -144,12 +144,17 @@ derived one is wrong, for instance when Home Assistant has more than one
 network.
 
 For an ESP32 board, each display's card in the Web UI has an **Install on
-device** step: the secrets the generated ESPHome configuration expects, the
-configuration itself, and **Send to ESPHome**, which writes it into the
-ESPHome Device Builder add-on's own folder so the device appears there ready
-to install. That needs the ESPHome add-on installed, and is why this app maps
-`/addon_configs` read-write. The Device Builder does the compiling and the
-flashing; this app never does.
+device** step, written for a board that has never been set up: the secrets the
+generated ESPHome configuration expects (put them in the Device Builder's own
+*Secrets* editor, under its ⋮ menu; the API key is made up for you), the
+configuration itself, and **Send to ESPHome**, which writes it into the folder
+the ESPHome Device Builder reads — `esphome/` in Home Assistant's config
+directory, which is why this app maps that directory read-write — so the
+device appears there ready to install. Then the install itself: plug the board
+in over USB, *Install* on its card in the Device Builder, and add the device
+when Home Assistant discovers it. That needs the ESPHome Device Builder add-on
+installed; the step links to its page. The Device Builder does the compiling
+and the flashing; this app never does.
 
 ## MQTT and devices
 
@@ -194,7 +199,7 @@ action in Home Assistant, so the linked account has to be an administrator's.
 | `/config/data/` | the same folder, `data/` | The frame store — the current frame, its preview PNG and the pre-quantisation screenshot per display — plus `state.json` and `debug/<id>/` when a display sets `render.debug_artifacts: true`. |
 | `/config/data/history/` | `data/history/` | Up to the last 50 render outcomes per display, `<id>.json`, behind each card's History disclosure and `GET /api/displays/{id}/history`. |
 | `/media/maverick/` | Home Assistant's media folder | Frames for OpenDisplay tags. |
-| `/addon_configs/5c53de3b_esphome/` | the ESPHome add-on's configuration folder | Where **Send to ESPHome** writes a display's generated firmware configuration. Its `secrets.yaml` is read to say which names are still missing, and never written. |
+| `/homeassistant/esphome/` | Home Assistant's `config/esphome/` folder, where the ESPHome Device Builder keeps its devices | Where **Send to ESPHome** writes a display's generated firmware configuration. Its `secrets.yaml` is read to say which names are still missing, and never written. |
 | `/share/` | the Samba share, other apps | Available to the file transport (`transport: {type: file, path: /share/maverick}`). |
 
 ## Troubleshooting

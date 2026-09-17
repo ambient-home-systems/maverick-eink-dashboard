@@ -912,26 +912,34 @@ validated against ESPHome's own schema for every catalogued panel by
   ],
   "applicable": true,
   "destinations": [
-    {"id": "5c53de3b_esphome", "path": "/addon_configs/5c53de3b_esphome", "kind": "addon",
-     "label": "the ESPHome Device Builder add-on", "writable": true, "exists": true,
+    {"id": "esphome", "path": "/homeassistant/esphome", "kind": "addon",
+     "label": "the ESPHome Device Builder", "writable": true, "exists": true,
      "missing_secrets": ["maverick_authorization"], "installed": false}
   ],
   "dashboard": {"slug": "5c53de3b_esphome", "name": "ESPHome Device Builder",
                 "version": "2026.6.5", "state": "started",
-                "url": "http://homeassistant.local:8123/hassio/ingress/5c53de3b_esphome"}
+                "path": "/hassio/ingress/5c53de3b_esphome",
+                "url": "http://homeassistant:8123/hassio/ingress/5c53de3b_esphome"},
+  "addon": true
 }
 ```
 
-`secrets` is every `!secret` the document references, with the value Maverick
-knows (its own token, as the panel presents it) and `null` for the ones only
-the user has; this is why the route is behind the token. `model_known` is
+`secrets` is every `!secret` the document references, with the values Maverick
+knows — its own token, as the panel presents it, and an ESPHome API key it
+makes up fresh on every call (32 random bytes, base64) — and `null` for the
+Wi-Fi ones only the user has; this is why the route is behind the token. `model_known` is
 false for a panel ESPHome has no driver for, where the document names a
 placeholder model. `destinations` is where the file can be written so the
-ESPHome Device Builder sees it (`src/maverick/esphome/install.py`): the
-add-on's own config folder in the app, `server.esphome_dir` standalone, each
-with which of the secret names its `secrets.yaml` still lacks (`null` when
-there is no such file). `dashboard` is the Device Builder add-on when the
-Supervisor reports one, `null` otherwise.
+ESPHome Device Builder sees it (`src/maverick/esphome/install.py`): `esphome/`
+in Home Assistant's config folder in the app (`kind: addon`), `server.esphome_dir`
+standalone (`configured`), and `/share/esphome` in the app (`share`, which the
+Device Builder does not read and the setup UI does not offer), each with which
+of the secret names its `secrets.yaml` still lacks (`null` when there is no
+such file). `dashboard` is the Device Builder add-on when the Supervisor
+reports one, `null` otherwise; its `url` is on `home_assistant.render_url`,
+the app's internal address, and `path` is the ingress route for a page
+served inside Home Assistant to join to its own origin. `addon` says whether
+this is the Home Assistant app.
 
 ### `POST /api/displays/{display_id}/esphome/install`
 
@@ -941,8 +949,8 @@ one of the `destinations` above. Writes the generated document as
 beside it is read to report what is still missing and never written. **200**:
 
 ```json
-{"path": "/addon_configs/5c53de3b_esphome/kitchen-panel.yaml",
- "destination": {"id": "5c53de3b_esphome", "...": "..."},
+{"path": "/homeassistant/esphome/kitchen-panel.yaml",
+ "destination": {"id": "esphome", "...": "..."},
  "missing_secrets": ["maverick_authorization"],
  "dashboard": null}
 ```

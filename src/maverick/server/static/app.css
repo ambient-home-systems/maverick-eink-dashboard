@@ -427,6 +427,10 @@ ol.steps .row{padding:0 0 8px}
 .install-send select{font:inherit;font-size:12.5px;padding:5px 8px;max-width:100%;
       border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
 .install-status{padding:0}
+/* The numbered sub-steps inside a step: plain, indented, in the meta colour. */
+ol.substeps{margin:0 0 8px;padding:0 0 0 20px;color:var(--muted);font-size:12.5px;line-height:1.5}
+ol.substeps li{margin:0 0 4px}
+.substeps-head{padding-bottom:2px;font-weight:600}
 .install-status button{font-size:12px;padding:3px 9px;margin-left:4px}
 
 /* --------------------------------------------------------- discovered tags */
