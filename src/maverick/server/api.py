@@ -831,8 +831,9 @@ def create_app(application: Application) -> FastAPI:
         the file references — with the value of Maverick's own token, which
         is why this route sits behind the token — whether the panel has a
         driver ESPHome knows by name, whether the frame needs PSRAM, where
-        the file can be written so the ESPHome Device Builder sees it, and
-        the Device Builder's own page when the add-on is installed
+        the file can be written so the ESPHome Device Builder sees it, the
+        Device Builder's own page when the add-on is installed, and whether
+        this is the Home Assistant app at all
         (`describe_esphome`, `src/maverick/esphome/generator.py`;
         `src/maverick/esphome/install.py`).
         """
@@ -849,6 +850,9 @@ def create_app(application: Application) -> FastAPI:
         described["applicable"] = esphome_applicable(resolved)
         described["destinations"] = targets
         described["dashboard"] = await _esphome_dashboard()
+        # Under the Supervisor the UI can say "install the add-on" when there
+        # is no Device Builder, rather than the CLI command it shows standalone.
+        described["addon"] = supervisor.running_under_supervisor()
         return described
 
     @api.post("/api/displays/{display_id}/esphome/install", dependencies=[auth])

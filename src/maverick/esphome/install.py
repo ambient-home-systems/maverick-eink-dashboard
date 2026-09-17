@@ -11,24 +11,35 @@ were all theirs to work out.
 This module closes that gap two ways:
 
 * **Where the Device Builder reads from.** The official add-on keeps its
-  configurations in its own config folder, which the Supervisor mounts for
-  other apps at ``/addon_configs/<slug>`` when they ask for the
-  ``all_addon_configs:rw`` mapping (``app/config.yaml``). A file written there
-  appears in the Device Builder as a device to install, with no paste.
-  Standalone, ``server.esphome_dir`` names the directory instead
-  (``src/maverick/config.py``). ``/share/esphome`` is the fallback in the app:
-  visible over Samba, and a path a user can import from.
+  configurations in *Home Assistant's* config folder, under ``esphome/``: its
+  manifest maps ``config:rw`` (``esphome/config.yaml`` in
+  ``esphome/home-assistant-addon``), the legacy mapping that mounts Home
+  Assistant's config directory at ``/config``, and its start script runs
+  ``esphome-device-builder /config/esphome``
+  (``docker/ha-addon-rootfs/etc/s6-overlay/s6-rc.d/esphome/run`` in
+  ``esphome/esphome``). Another app sees that same directory at
+  ``/homeassistant`` when it asks for the ``homeassistant_config:rw`` mapping
+  (``app/config.yaml``), so ``/homeassistant/esphome`` is where a file has to
+  go to appear in the Device Builder as a device to install, with no paste.
+  It is *not* the add-on's own ``/addon_configs/5c53de3b_esphome`` folder,
+  which the Device Builder never reads; an earlier version of this module
+  wrote there, and the file appeared nowhere. Standalone,
+  ``server.esphome_dir`` names the directory instead
+  (``src/maverick/config.py``). ``/share/esphome`` is the last resort in the
+  app: visible over Samba, but the Device Builder does not read it either,
+  and the setup UI says so.
 * **Which secrets are still missing.** ESPHome resolves every ``!secret`` from
-  the ``secrets.yaml`` beside the configuration, and fails the compile naming
-  the first one it cannot find. That file is read here — read, never written:
-  it holds the user's Wi-Fi password — so the setup UI can say which names
-  still need adding rather than leaving the compile to say so.
+  the ``secrets.yaml`` beside the configuration — the Device Builder's own
+  *Secrets* editor edits that file — and fails the compile naming the first
+  one it cannot find. That file is read here — read, never written: it holds
+  the user's Wi-Fi password — so the setup UI can say which names still need
+  adding rather than leaving the compile to say so.
 
 The slugs are the official ESPHome add-on's, from its repository
 (``esphome/home-assistant-addon``, ``esphome/config.yaml`` and the beta and dev
 variants beside it): the repository's own slug prefix ``5c53de3b`` and the
-add-on's ``esphome``, joined the way the Supervisor names every add-on's
-config folder.
+add-on's ``esphome``, joined the way the Supervisor names every add-on. They
+are used to find the Device Builder's page, not its files.
 """
 
 from __future__ import annotations
@@ -51,12 +62,22 @@ ESPHOME_ADDON_SLUGS: tuple[str, ...] = (
     "5c53de3b_esphome-dev",
 )
 
-#: Where the Supervisor mounts every add-on's config folder for an app with
-#: the `all_addon_configs` mapping.
-ADDON_CONFIGS = Path("/addon_configs")
+#: Where the Supervisor mounts Home Assistant's config folder for an app with
+#: the `homeassistant_config` mapping (`app/config.yaml`).
+HOMEASSISTANT_CONFIG = Path("/homeassistant")
 
-#: The fallback in the app: on the Samba share, where a user can import from.
+#: The Device Builder's own directory: `esphome/` in Home Assistant's config
+#: folder, which its start script passes to `esphome-device-builder` (see the
+#: module docstring).
+ESPHOME_DIR_NAME = "esphome"
+
+#: The last resort in the app: on the Samba share, where a user can copy the
+#: file out of. The Device Builder does not read it.
 SHARE_DIR = Path("/share/esphome")
+
+#: The frontend route that opens an add-on's ingress page inside Home
+#: Assistant, relative to Home Assistant's own origin.
+INGRESS_ROUTE = "/hassio/ingress/{slug}"
 
 
 class InstallError(RuntimeError):
@@ -73,7 +94,8 @@ class Destination:
 
     id: str
     path: Path
-    #: `addon`, `configured` or `share`: which rule found it.
+    #: `addon` (the Device Builder's own folder), `configured` or `share`:
+    #: which rule found it.
     kind: str
     label: str
 
@@ -98,10 +120,14 @@ class Destination:
 def destinations(configured: str = "") -> list[Destination]:
     """Every directory a generated file could usefully be written to, best first.
 
-    `configured` is `server.esphome_dir`. In the app the ESPHome add-on's own
-    folder comes first when the mapping exposes it, then `/share/esphome`;
-    standalone only the configured directory is offered, since nothing else
-    means anything to whatever ESPHome the user runs.
+    `configured` is `server.esphome_dir`. In the app the Device Builder's own
+    directory, `esphome/` in Home Assistant's config folder, comes first when
+    the `homeassistant_config` mapping exposes that folder — offered even
+    before the add-on has created it, since its start script does
+    `mkdir -p /config/esphome` and reads whatever is there — then
+    `/share/esphome`, which the Device Builder never reads. Standalone only
+    the configured directory is offered, since nothing else means anything to
+    whatever ESPHome the user runs.
     """
     found: list[Destination] = []
     if configured:
@@ -111,12 +137,15 @@ def destinations(configured: str = "") -> list[Destination]:
             )
         )
     if supervisor.running_under_supervisor():
-        for slug in ESPHOME_ADDON_SLUGS:
-            path = ADDON_CONFIGS / slug
-            if path.is_dir():
-                found.append(
-                    Destination(slug, path, "addon", "the ESPHome Device Builder add-on")
+        if HOMEASSISTANT_CONFIG.is_dir():
+            found.append(
+                Destination(
+                    "esphome",
+                    HOMEASSISTANT_CONFIG / ESPHOME_DIR_NAME,
+                    "addon",
+                    "the ESPHome Device Builder",
                 )
+            )
         found.append(Destination("share", SHARE_DIR, "share", "the share folder"))
     return found
 
@@ -135,8 +164,14 @@ async def dashboard_url(frontend_url: str) -> dict[str, Any] | None:
     at the default role (`^/.+/info$`, `supervisor/api/middleware/security.py`),
     which `hassio_api: true` in `app/config.yaml` grants. The frontend route
     `/hassio/ingress/<slug>` opens that add-on's ingress page inside Home
-    Assistant, which is where its *Install* button lives. Outside the
-    Supervisor there is no add-on to find, and None is the answer.
+    Assistant, which is where its *Install* button lives. `path` is that
+    route on its own; `url` joins it to `frontend_url`, which in the app is
+    the *internal* address the renderer uses (`http://homeassistant:8123`,
+    `app/config.yaml`) and not one a browser can open, so the setup UI
+    rebuilds the link from `path` on Home Assistant's own origin when it is
+    running inside Home Assistant's ingress (`haFrontendUrl`,
+    `src/maverick/server/static/app.js`). Outside the Supervisor there is no
+    add-on to find, and None is the answer.
     """
     if not supervisor.running_under_supervisor():
         return None
@@ -147,12 +182,14 @@ async def dashboard_url(frontend_url: str) -> dict[str, Any] | None:
             continue
         if not isinstance(info, dict):
             continue
+        path = INGRESS_ROUTE.format(slug=slug)
         return {
             "slug": slug,
             "name": info.get("name") or "ESPHome Device Builder",
             "version": info.get("version"),
             "state": info.get("state"),
-            "url": f"{frontend_url.rstrip('/')}/hassio/ingress/{slug}",
+            "path": path,
+            "url": f"{frontend_url.rstrip('/')}{path}",
         }
     return None
 
@@ -211,8 +248,10 @@ def install(target: Destination, filename: str, document: str, *, overwrite: boo
 
 
 __all__ = [
-    "ADDON_CONFIGS",
     "ESPHOME_ADDON_SLUGS",
+    "ESPHOME_DIR_NAME",
+    "HOMEASSISTANT_CONFIG",
+    "INGRESS_ROUTE",
     "SHARE_DIR",
     "Destination",
     "ExistsError",

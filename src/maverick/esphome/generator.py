@@ -33,6 +33,8 @@ recipe stays until someone runs the result on a panel.
 
 from __future__ import annotations
 
+import base64
+from secrets import token_bytes
 from typing import Any
 
 from ..config import Config, ResolvedDisplay
@@ -108,6 +110,16 @@ def generate_esphome_config(display: ResolvedDisplay, config: Config) -> str:
     return describe_esphome(display, config)["yaml"]
 
 
+def _fresh_api_key() -> str:
+    """A new ESPHome native API encryption key: 32 random bytes, base64.
+
+    The format ESPHome's `api.encryption.key` takes
+    (https://esphome.io/components/api.html), and the same thing the Device
+    Builder's wizard generates for a new device.
+    """
+    return base64.b64encode(token_bytes(32)).decode("ascii")
+
+
 def describe_esphome(display: ResolvedDisplay, config: Config) -> dict[str, Any]:
     """The generated document plus everything a guided install step needs.
 
@@ -180,11 +192,17 @@ def describe_esphome(display: ResolvedDisplay, config: Config) -> dict[str, Any]
         {"name": SECRET_WIFI_SSID, "value": None, "description": "Wi-Fi network the panel joins."},
         {"name": SECRET_WIFI_PASSWORD, "value": None, "description": "Its password."},
         {
+            # Any 32 random bytes are a valid key, so one is made up here
+            # rather than sent the user to `openssl`: fresh on every call,
+            # which is fine because the key lives only in `secrets.yaml`, the
+            # setup UI says which names are already there, and Home Assistant
+            # reads it from the Device Builder when it adopts the device.
             "name": SECRET_API_KEY,
-            "value": None,
+            "value": _fresh_api_key(),
             "description": (
-                "ESPHome's native API encryption key: base64, 32 bytes. The ESPHome "
-                "Device Builder generates one, or `openssl rand -base64 32` does."
+                "ESPHome's native API encryption key. Maverick made this one up; "
+                "any 32 random bytes in base64 work, so keep the one already in "
+                "secrets.yaml if there is one."
             ),
         },
     ]

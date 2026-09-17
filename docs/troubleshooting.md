@@ -827,10 +827,28 @@ no ESPHome destination '…' on this host
 ```
 
 **Cause:** the destination id is not one `GET /api/displays/{id}/esphome`
-listed: the ESPHome add-on's folder is not mounted (the app needs the
-`all_addon_configs:rw` mapping, `app/config.yaml`), or standalone
-`server.esphome_dir` is not set. **Fix:** set `server.esphome_dir`, or copy
-the file by hand from the same step.
+listed: Home Assistant's config folder is not mounted (the app needs the
+`homeassistant_config:rw` mapping, `app/config.yaml`, which an app installed
+before that mapping was added only picks up on update), or standalone
+`server.esphome_dir` is not set. **Fix:** update the app, or set
+`server.esphome_dir`, or paste the file by hand as the same step describes.
+
+**The device does not appear in the ESPHome Device Builder after *Send to
+ESPHome*.** The Device Builder lists every `*.yaml` in `esphome/` under Home
+Assistant's config directory, which is where the button writes
+(`/homeassistant/esphome`, `src/maverick/esphome/install.py`). Reload the
+Device Builder's page; it scans that folder rather than being told. A version
+of the app before this mapping wrote to `/addon_configs/5c53de3b_esphome` or
+`/share/esphome`, neither of which it reads: update the app and send again.
+
+**The *Open ESPHome Device Builder* link does not open.** The server builds
+it on `home_assistant.render_url`, which in the app is
+`http://homeassistant:8123` — a name only the container resolves. Inside
+Home Assistant's ingress the setup UI rebuilds the link on Home Assistant's
+own origin (`haFrontendUrl`, `src/maverick/server/static/app.js`). Opened on
+the published port instead, or standalone, the link is the configured
+address as it is: set `home_assistant.frontend_url` to one your browser can
+reach, or use *ESPHome Builder* in Home Assistant's sidebar.
 
 ```text
 cannot create {path}: {exc}

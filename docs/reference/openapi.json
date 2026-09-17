@@ -952,7 +952,7 @@
     "/api/displays/{display_id}/esphome": {
       "get": {
         "summary": "Esphome Describe",
-        "description": "The generated config plus everything the *Install on device* step shows.\n\nThe YAML, the node name (the file name ESPHome expects), the secrets\nthe file references \u2014 with the value of Maverick's own token, which\nis why this route sits behind the token \u2014 whether the panel has a\ndriver ESPHome knows by name, whether the frame needs PSRAM, where\nthe file can be written so the ESPHome Device Builder sees it, and\nthe Device Builder's own page when the add-on is installed\n(`describe_esphome`, `src/maverick/esphome/generator.py`;\n`src/maverick/esphome/install.py`).",
+        "description": "The generated config plus everything the *Install on device* step shows.\n\nThe YAML, the node name (the file name ESPHome expects), the secrets\nthe file references \u2014 with the value of Maverick's own token, which\nis why this route sits behind the token \u2014 whether the panel has a\ndriver ESPHome knows by name, whether the frame needs PSRAM, where\nthe file can be written so the ESPHome Device Builder sees it, the\nDevice Builder's own page when the add-on is installed, and whether\nthis is the Home Assistant app at all\n(`describe_esphome`, `src/maverick/esphome/generator.py`;\n`src/maverick/esphome/install.py`).",
         "operationId": "esphome_describe_api_displays__display_id__esphome_get",
         "parameters": [
           {

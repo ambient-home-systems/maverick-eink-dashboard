@@ -572,16 +572,22 @@ def test_the_manifest_can_reach_the_api_base_url_is_derived_from() -> None:
     )
 
 
-def test_the_manifest_can_reach_the_esphome_addons_folder() -> None:
-    """*Send to ESPHome* writes into the ESPHome Device Builder's own folder.
+def test_the_manifest_can_reach_the_esphome_device_builders_folder() -> None:
+    """*Send to ESPHome* writes into the folder the ESPHome Device Builder reads.
 
-    The Supervisor mounts every app's config folder at ``/addon_configs`` only
-    for an app that asks for the ``all_addon_configs`` mapping; without it
-    ``destinations`` (``src/maverick/esphome/install.py``) finds no add-on
-    folder and the setup UI's button falls back to ``/share/esphome``, which
-    the Device Builder does not read. ``rw`` because the write is the point.
+    That folder is ``esphome/`` in *Home Assistant's* config directory: the
+    add-on's manifest maps ``config:rw`` and its start script runs
+    ``esphome-device-builder /config/esphome`` (the module docstring of
+    ``src/maverick/esphome/install.py`` cites both). The Supervisor mounts
+    that directory at ``/homeassistant`` only for an app that asks for the
+    ``homeassistant_config`` mapping; without it ``destinations`` finds no
+    such folder and the setup UI can only offer a copy and a paste. ``rw``
+    because the write is the point. The ``all_addon_configs`` mapping the app
+    used to ask for reached the add-on's *own* folder, which the Device
+    Builder never reads — a file sent there appeared nowhere.
     """
-    assert "all_addon_configs:rw" in _manifest()["map"]
+    assert "homeassistant_config:rw" in _manifest()["map"]
+    assert "all_addon_configs:rw" not in _manifest()["map"], "not where the Device Builder reads"
     assert "media:rw" in _manifest()["map"], "the OpenDisplay `ha` path writes frames there"
 
 

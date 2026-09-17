@@ -6,7 +6,36 @@ versions with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Send to ESPHome` wrote where the Device Builder does not read.** The
+  ESPHome Device Builder add-on keeps its devices in `esphome/` under *Home
+  Assistant's* config folder — its manifest maps `config:rw` and its start
+  script runs `esphome-device-builder /config/esphome` — not in its own
+  `/addon_configs/5c53de3b_esphome` folder, which is where the app wrote and
+  where nothing listed the file. `destinations` in
+  `src/maverick/esphome/install.py` now offers `/homeassistant/esphome`, and
+  `app/config.yaml` maps `homeassistant_config:rw` in place of
+  `all_addon_configs:rw`. The setup UI no longer offers `/share/esphome` as a
+  place to send the file, since the Device Builder does not read that either.
+- **Home Assistant links from the setup UI did not open in the app.** *Open
+  ESPHome Device Builder*, *Edit in Home Assistant* and the starter's *Open
+  it* were built on `home_assistant.render_url`, which in the app is
+  `http://homeassistant:8123` — a name only the container resolves. Under
+  Home Assistant's ingress the page's own origin is Home Assistant's, so
+  `haFrontendUrl` in `src/maverick/server/static/app.js` rebuilds each link
+  on it; `dashboard_url` carries the ingress route as `path` for that.
+
 ### Changed
+
+- **The *Install on device* step is written for a first flash.** Where the
+  secrets go (the Device Builder's own *Secrets* editor), which of them the
+  destination's `secrets.yaml` already has, an ESPHome API key made up by
+  `describe_esphome` rather than left for `openssl`, the copy-and-paste route
+  when Maverick cannot see the Device Builder's folder, and the install
+  itself as numbered sub-steps: USB, *Install* on the device's card, adding
+  the discovered device in Home Assistant. `GET /api/displays/{id}/esphome`
+  gains `addon`, and `dashboard.path`.
 
 - **The Home Assistant app installs from a pre-built image.** `app/config.yaml`
   names `ghcr.io/ambient-home-systems/maverick-app`, and

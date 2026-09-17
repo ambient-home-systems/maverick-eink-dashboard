@@ -157,16 +157,50 @@ def test_destinations_standalone_are_the_configured_directory_only(tmp_path, mon
     assert found[0].writable is True, "the parent exists, so the directory can be made"
 
 
-def test_destinations_in_the_app_find_the_esphome_addon_folder(tmp_path, monkeypatch) -> None:
+def test_destinations_in_the_app_are_esphome_in_ha_config(tmp_path, monkeypatch) -> None:
+    """The Device Builder reads `esphome/` in Home Assistant's config folder.
+
+    Its manifest maps `config:rw` and its start script runs
+    `esphome-device-builder /config/esphome` (see the module docstring of
+    `src/maverick/esphome/install.py`); the app sees that folder at
+    `/homeassistant`. Offered before the add-on has made the directory, since
+    its start script does, and never the add-on's own `/addon_configs` folder,
+    which it does not read.
+    """
     monkeypatch.setenv("SUPERVISOR_TOKEN", "x")
-    root = tmp_path / "addon_configs"
-    (root / "5c53de3b_esphome").mkdir(parents=True)
-    monkeypatch.setattr(esphome_install, "ADDON_CONFIGS", root)
+    root = tmp_path / "homeassistant"
+    root.mkdir()
+    monkeypatch.setattr(esphome_install, "HOMEASSISTANT_CONFIG", root)
     monkeypatch.setattr(esphome_install, "SHARE_DIR", tmp_path / "share" / "esphome")
     found = esphome_install.destinations("")
-    assert [d.id for d in found] == ["5c53de3b_esphome", "share"]
+    assert [d.id for d in found] == ["esphome", "share"]
     assert found[0].kind == "addon"
-    assert found[0].path == root / "5c53de3b_esphome"
+    assert found[0].path == root / "esphome"
+    assert found[0].writable is True, "the parent exists, so the directory can be made"
+    assert found[0].to_json()["exists"] is False
+
+
+def test_without_the_mapping_only_the_share_folder_is_left(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "x")
+    monkeypatch.setattr(esphome_install, "HOMEASSISTANT_CONFIG", tmp_path / "homeassistant")
+    monkeypatch.setattr(esphome_install, "SHARE_DIR", tmp_path / "share" / "esphome")
+    assert [d.id for d in esphome_install.destinations("")] == ["share"]
+
+
+def test_the_api_key_is_made_up_fresh_and_is_a_valid_esphome_key(tmp_path) -> None:
+    """`api.encryption.key` is 32 bytes in base64; the user should not need openssl."""
+    import base64
+
+    config = _config(tmp_path)
+    first = describe_esphome(config.display("kitchen").resolved(), config)
+    second = describe_esphome(config.display("kitchen").resolved(), config)
+    keys = [
+        {e["name"]: e["value"] for e in d["secrets"]}["api_key"] for d in (first, second)
+    ]
+    for key in keys:
+        assert len(base64.b64decode(key, validate=True)) == 32
+    assert keys[0] != keys[1]
+    assert keys[0] not in first["yaml"], "the value goes in secrets.yaml, never the file"
 
 
 def test_install_writes_and_refuses_to_replace_edits(tmp_path) -> None:
@@ -210,6 +244,7 @@ def test_the_describe_route_lists_destinations_with_their_missing_secrets(
         ).json()
     assert body["applicable"] is True
     assert body["dashboard"] is None, "not under the Supervisor"
+    assert body["addon"] is False
     (destination,) = body["destinations"]
     assert destination["id"] == "configured"
     assert destination["installed"] is False

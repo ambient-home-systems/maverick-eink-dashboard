@@ -667,7 +667,7 @@ function paint(card, display) {
   // frame: the loop is edit there, Refresh here.
   const editLink = card.querySelector('.card-edit-ha');
   editLink.hidden = !display.edit_url;
-  attribute(card, '.card-edit-ha', 'href', display.edit_url || '');
+  attribute(card, '.card-edit-ha', 'href', haFrontendUrl(display.edit_url));
 
   const error = card.querySelector('.card-error');
   // 300 characters: a Playwright failure runs to pages, and the whole of it
@@ -2781,7 +2781,7 @@ function previewSection(summary) {
 
   const editLink = node.querySelector('.preview-edit-ha');
   editLink.hidden = !summary.edit_url;
-  if (summary.edit_url) editLink.href = summary.edit_url;
+  if (summary.edit_url) editLink.href = haFrontendUrl(summary.edit_url);
   const now = node.querySelector('.compare-now img');
   if (summary.checksum) {
     now.dataset.framesrc = withToken(
@@ -3566,6 +3566,31 @@ function renderInstall(card, id, info) {
     ));
   }
 
+  // The Device Builder add-on, its page, and its folder when Maverick can
+  // see it (`kind: addon` in the app, `configured` standalone). `share` is
+  // left out on purpose: the Device Builder never reads `/share/esphome`, so
+  // a file sent there appears nowhere and the step used to end in exactly
+  // that confusion.
+  const builder = info.dashboard || null;
+  const builderName = builder ? builder.name : 'ESPHome Device Builder';
+  const builderUrl = builder ? haFrontendUrl(builder.url, builder.path) : '';
+  const folder = (info.destinations || []).find(
+    (d) => (d.kind === 'addon' || d.kind === 'configured') && d.writable
+  ) || null;
+
+  nodes.push(muted(
+    'Three things, in this order: give ESPHome the secrets the file uses, give it the ' +
+    'file, then install from its own page. Maverick never compiles or flashes; the ' +
+    `${builderName} does both.`
+  ));
+  if (info.addon && !builder) {
+    nodes.push(warnBox(
+      'The ESPHome Device Builder add-on is not installed. In Home Assistant go to ' +
+      'Settings, Add-ons, Add-on store, install ESPHome Device Builder and start it, ' +
+      'then open this step again.'
+    ));
+  }
+
   const list = document.createElement('ol');
   list.className = 'steps';
 
@@ -3573,12 +3598,16 @@ function renderInstall(card, id, info) {
   const secretsText = secretsSnippet(info.secrets);
   const secretsPre = pre(secretsText, 'install-pre install-secrets');
   const copySecrets = actionButton('Copy', () => copyText(secretsPre, copySecrets));
-  list.appendChild(step(
-    'Secrets',
-    'ESPHome resolves every !secret from the secrets.yaml beside the configuration. ' +
-    'Add these names there; Maverick fills in the one it knows.',
-    [row(copySecrets), secretsPre]
+  const secretsNodes = [muted(secretsWhere(info, folder, builderName)), row(copySecrets), secretsPre];
+  secretsNodes.push(muted(
+    'The Wi-Fi lines are yours to fill in. The API key is made up by Maverick and is ' +
+    'fine as it is: Home Assistant fetches it from the Device Builder when it adds the ' +
+    'panel, and if it asks for the key instead, it is this one.' +
+    (info.secrets.some((entry) => entry.name === 'maverick_authorization')
+      ? ' The last line is Maverick’s own token, already filled in.'
+      : '')
   ));
+  list.appendChild(step('Secrets', '', secretsNodes));
 
   // 2. the file
   const yamlPre = pre(info.yaml, 'install-pre install-yaml');
@@ -3590,37 +3619,68 @@ function renderInstall(card, id, info) {
   // A blob rather than the route: an <a download> cannot send the token.
   download.href = URL.createObjectURL(new Blob([info.yaml], { type: 'text/yaml' }));
   const fileRow = row(copyYaml, download);
-  const sendRow = sendToEsphome(id, info);
-  list.appendChild(step(
-    `The configuration, ${info.filename}`,
-    sendRow
-      ? 'Send it straight to the ESPHome Device Builder’s folder, or copy it into a new ' +
-        'device there yourself.'
-      : 'Copy it into a new device in the ESPHome Device Builder, or save it beside your ' +
-        'other ESPHome configurations.',
-    sendRow ? [fileRow, sendRow, yamlPre] : [fileRow, yamlPre]
-  ));
+  const fileNodes = [];
+  const sendRow = folder ? sendToEsphome(id, info, folder, builderName) : null;
+  if (sendRow) {
+    fileNodes.push(muted(
+      `Send to ESPHome puts ${info.filename} where the ${builderName} keeps its devices, ` +
+      `so ${info.node} shows up there as a device. Nothing to paste.`
+    ));
+    fileNodes.push(sendRow);
+    fileNodes.push(muted('Or add it by hand: copy or download the file, then follow the steps below.'));
+  } else if (info.addon) {
+    fileNodes.push(muted(
+      'Maverick cannot see the Device Builder’s folder from here, so the file has to go ' +
+      'in by hand. That is a copy and a paste:'
+    ));
+  } else {
+    fileNodes.push(muted(
+      'Save it beside your other ESPHome configurations, or paste it into a new device ' +
+      'in the ESPHome Device Builder:'
+    ));
+  }
+  fileNodes.push(substeps([
+    `In the ${builderName}, choose New device, then Continue. Name it ${info.node}, pick ` +
+    'ESP32 as the board (any ESP32 option will do, the file below sets the real one), and ' +
+    'skip the install it offers.',
+    `Open Edit on the new ${info.node} card, delete everything in the editor, paste this ` +
+    'file in, and Save.',
+  ], sendRow ? 'By hand, if you prefer' : ''));
+  fileNodes.push(fileRow, yamlPre);
+  list.appendChild(step(`The configuration, ${info.filename}`, '', fileNodes));
 
   // 3. install
   const installNodes = [];
-  if (info.dashboard) {
+  if (builderUrl) {
     const open = document.createElement('a');
     open.className = 'install-open';
-    open.textContent = `Open ${info.dashboard.name}`;
-    open.href = info.dashboard.url;
+    open.textContent = `Open ${builderName}`;
+    open.href = builderUrl;
     // Out of the ingress iframe: the Device Builder is another add-on's page.
     open.target = '_top';
     open.rel = 'noopener';
     installNodes.push(row(open));
+    installNodes.push(muted(
+      'It opens in this Home Assistant tab; it is also ESPHome Builder in the sidebar.'
+    ));
   }
-  const method = document.createElement('p');
-  method.className = 'meta';
-  method.textContent = info.dashboard
-    ? `In the Device Builder, ${info.node} appears as a device. Choose Install, then either ` +
-      'plug the board into this computer or install wirelessly once it is on the network.'
-    : `With the ESPHome CLI: esphome run ${info.filename}. The ESPHome Device Builder add-on ` +
-      'does the same from a browser, and this step links to it once it is installed.';
-  installNodes.push(method);
+  const flash = info.addon || builder
+    ? `In the ${builderName}, find the ${info.node} card and choose Install, then ` +
+      '“Plug into this computer”, and pick the board’s port when the browser asks. Use ' +
+      'Chrome or Edge: the flashing happens in the browser. The first build takes a few ' +
+      'minutes on a Raspberry Pi.'
+    : `With the ESPHome CLI, run esphome run ${info.filename} with the board plugged in. ` +
+      'The ESPHome Device Builder add-on does the same from a browser, and this step ' +
+      'links to it once it is installed.';
+  installNodes.push(substeps([
+    'Plug the board into the computer you are using now with a USB data cable. The first ' +
+    'install has to go over USB; later ones can go over Wi-Fi.',
+    flash,
+    'When the board comes back up it joins your Wi-Fi, and Home Assistant offers it under ' +
+    'Settings, Devices & services, Discovered. Add it there.',
+    'The panel then fetches its frame from Maverick on its own schedule. Press Refresh on ' +
+    'this card to render one now; if the screen stays blank, History below says why.',
+  ]));
   if (info.deep_sleep) {
     installNodes.push(muted(
       'Battery mode: the node sleeps between fetches and is unreachable while it does, so a ' +
@@ -3633,6 +3693,35 @@ function renderInstall(card, id, info) {
   steps.replaceChildren(...nodes);
 }
 
+/** Where the secrets go, and which of them are already there when Maverick
+ *  can read the destination's `secrets.yaml` (`missing_secrets`,
+ *  `src/maverick/esphome/install.py`). */
+function secretsWhere(info, folder, builderName) {
+  const names = info.secrets.map((entry) => entry.name);
+  let where;
+  if (info.addon || info.dashboard) {
+    where = 'ESPHome keeps one secrets.yaml for all its devices. In the ' +
+      `${builderName}, open the ⋮ menu at the top right and choose Secrets; add the ` +
+      'lines below that are not there yet, with your own values, and Save.';
+  } else {
+    where = 'ESPHome reads every !secret from the secrets.yaml beside the configuration. ' +
+      'Add the lines below that are not there yet, with your own values.';
+  }
+  if (!folder) return where;
+  const missing = folder.missing_secrets;
+  if (missing === null || missing === undefined) {
+    return where + ' There is no secrets.yaml there yet: the Secrets editor creates it, ' +
+      'so paste all of this in.';
+  }
+  if (!missing.length) {
+    return where + ' Yours already has every one of these; nothing to add.';
+  }
+  if (missing.length === names.length) {
+    return where + ' Yours has none of these yet.';
+  }
+  return where + ` Yours already has the rest; it still needs ${missing.join(', ')}.`;
+}
+
 /** `secrets.yaml` as the file expects it, values filled in where Maverick has them. */
 function secretsSnippet(secrets) {
   const lines = ['# secrets.yaml, next to the ESPHome configuration'];
@@ -3643,28 +3732,13 @@ function secretsSnippet(secrets) {
   return lines.join('\n') + '\n';
 }
 
-/** The "Send to ESPHome" row, or null when nowhere on this host qualifies
- *  (`destinations` in `src/maverick/esphome/install.py`). One writable
- *  destination is a button; several are a picker and a button. */
-function sendToEsphome(id, info) {
-  const targets = (info.destinations || []).filter((d) => d.writable || d.kind === 'share');
-  if (!targets.length) return null;
+/** The "Send to ESPHome" row for `target`, the Device Builder's own folder
+ *  (`destinations` in `src/maverick/esphome/install.py`). */
+function sendToEsphome(id, info, target, builderName) {
   const wrap = document.createElement('div');
   wrap.className = 'install-send';
   const line = document.createElement('div');
   line.className = 'row';
-  let picker = null;
-  if (targets.length > 1) {
-    picker = document.createElement('select');
-    picker.setAttribute('aria-label', 'Where to write the configuration');
-    for (const target of targets) {
-      const option = document.createElement('option');
-      option.value = target.id;
-      option.textContent = `${target.label} (${target.path})`;
-      picker.appendChild(option);
-    }
-    line.appendChild(picker);
-  }
   const send = actionButton('Send to ESPHome', () => submit(false));
   send.classList.add('add-btn');
   line.appendChild(send);
@@ -3672,23 +3746,14 @@ function sendToEsphome(id, info) {
   status.className = 'meta install-status';
   wrap.append(line, status);
 
-  const current = () => targets.find((t) => t.id === (picker ? picker.value : targets[0].id));
-  const describe = () => {
-    const target = current();
-    if (!target) return;
-    if (target.installed) {
-      status.textContent = `${info.filename} is already in ${target.label}. Sending again ` +
-        'replaces it with this version.';
-    } else {
-      status.textContent = `Writes ${info.filename} into ${target.path}.`;
-    }
-    status.append(secretsNote(target.missing_secrets, info.secrets));
-  };
-  if (picker) picker.addEventListener('change', describe);
-  describe();
+  if (target.installed) {
+    status.textContent = `${info.filename} is already there. Sending again replaces it with ` +
+      'this version.';
+  } else {
+    status.textContent = `Writes ${info.filename} into ${target.path}.`;
+  }
 
   async function submit(overwrite) {
-    const target = current();
     setBusy(send, true);
     status.textContent = 'Writing…';
     try {
@@ -3697,10 +3762,15 @@ function sendToEsphome(id, info) {
         { destination: target.id, overwrite: overwrite }, 'The configuration could not be written.'
       );
       status.textContent = `Written to ${result.path}. `;
-      status.append(secretsNote(result.missing_secrets, info.secrets));
       if (result.dashboard) {
-        status.append(' Open ', link(result.dashboard.name, result.dashboard.url), ' and install it.');
+        status.append(
+          'Open ', link(result.dashboard.name, haFrontendUrl(result.dashboard.url, result.dashboard.path)),
+          `: ${info.node} is listed there now. If it is not, reload that page. Then step 3.`
+        );
+      } else {
+        status.append(`${info.node} is listed in the ${builderName} now. Then step 3.`);
       }
+      status.append(secretsNote(result.missing_secrets));
       target.installed = true;
     } catch (error) {
       if (error.status === 409) {
@@ -3717,18 +3787,36 @@ function sendToEsphome(id, info) {
   return wrap;
 }
 
-/** What the destination's secrets.yaml still lacks, as a fragment. */
-function secretsNote(missing, secrets) {
+/** What the destination's secrets.yaml still lacks, after a write, as a fragment. */
+function secretsNote(missing) {
   const fragment = document.createDocumentFragment();
   if (missing === null || missing === undefined) {
-    fragment.append(' There is no secrets.yaml there yet; step 1 is its contents.');
+    fragment.append(' There is no secrets.yaml there yet; step 1 says how to make one.');
   } else if (missing.length) {
-    fragment.append(` Its secrets.yaml is missing ${missing.join(', ')}; add ${
-      missing.length === 1 ? 'it' : 'them'} from step 1.`);
-  } else {
-    fragment.append(' Its secrets.yaml already has every name the file needs.');
+    fragment.append(` Its secrets.yaml still needs ${missing.join(', ')}; step 1 has ${
+      missing.length === 1 ? 'it' : 'them'}.`);
   }
   return fragment;
+}
+
+/** A short numbered list inside a step, optionally under a small heading. */
+function substeps(items, heading) {
+  const wrap = document.createDocumentFragment();
+  if (heading) {
+    const head = document.createElement('p');
+    head.className = 'meta substeps-head';
+    head.textContent = heading;
+    wrap.appendChild(head);
+  }
+  const list = document.createElement('ol');
+  list.className = 'substeps';
+  for (const text of items) {
+    const item = document.createElement('li');
+    item.textContent = text;
+    list.appendChild(item);
+  }
+  wrap.appendChild(list);
+  return wrap;
 }
 
 function step(title, lead, children) {
@@ -3776,6 +3864,32 @@ function link(text, href) {
   node.target = '_top';
   node.rel = 'noopener';
   return node;
+}
+
+/** A Home Assistant frontend link the browser can actually open.
+ *
+ *  The server builds these on `home_assistant.render_url`, the address the
+ *  renderer reaches Home Assistant on. In the app that is
+ *  `http://homeassistant:8123` (`app/config.yaml`), a name that resolves
+ *  only inside the Supervisor's network, so the link died in the browser.
+ *  Inside Home Assistant's ingress the page's own origin *is* Home
+ *  Assistant's, as the browser sees it, so the path is joined to that
+ *  instead: `path` when the server gives one (the ESPHome Device Builder's
+ *  ingress route), the URL's own path otherwise (a dashboard's editor).
+ *  Outside ingress the URL is handed back as it is. */
+function haFrontendUrl(url, path) {
+  if (!url) return url || '';
+  if (!location.pathname.includes('hassio_ingress')) return url;
+  let target = path || '';
+  if (!target) {
+    try {
+      const parsed = new URL(url);
+      target = parsed.pathname + parsed.search + parsed.hash;
+    } catch (e) {
+      return url;
+    }
+  }
+  return location.origin + target;
 }
 
 function actionButton(label, onClick) {
@@ -3870,9 +3984,9 @@ async function createStarter(id, card, button, overwrite) {
         'Refresh to see it on the panel.'
       : `${what} "${result.title}" in Home Assistant. This display has pages, so it was ` +
         `not switched to it: its path is ${result.path}.`;
-    open.href = result.open_url;
+    open.href = haFrontendUrl(result.open_url);
     open.hidden = false;
-    edit.href = result.edit_url;
+    edit.href = haFrontendUrl(result.edit_url);
     edit.hidden = false;
     await poll();
   } catch (error) {
