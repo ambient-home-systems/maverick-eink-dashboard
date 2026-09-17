@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Installing is a download now, not a build.** The image is pre-built for
+  amd64 and aarch64 and pulled from GitHub's container registry. Until now
+  the Supervisor built it on your machine, Chromium included, which is why
+  installing and every update took so long.
+
 ## 0.6.0
 
 - **One click to a dashboard.** In a display's *Dashboard starter*, **Create

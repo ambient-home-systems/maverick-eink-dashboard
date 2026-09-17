@@ -8,6 +8,13 @@ url: https://github.com/ambient-home-systems/maverick-eink-dashboard/blob/main/a
 arch:
   - aarch64
   - amd64
+# Pre-built, so installing is a pull and not a build. Without this key the
+# Supervisor builds the Dockerfile on the machine installing the app — an
+# apt-get of Chromium and a pip install on a Pi, on every install and every
+# update — which is what made installing take so long up to 0.6.0. The
+# images come from `.github/workflows/app.yml`, tagged with the `version`
+# above, one per architecture and a multi-arch manifest under this name.
+image: ghcr.io/ambient-home-systems/maverick-app
 # The base image runs s6-overlay v3, which is its own init.
 init: false
 # The Mosquitto broker app is picked up automatically when it is installed;

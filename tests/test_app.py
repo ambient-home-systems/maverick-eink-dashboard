@@ -712,6 +712,87 @@ def test_dockerfile_pins_a_ref_and_uses_the_distro_chromium() -> None:
     assert "MAVERICK_CHROMIUM_PATH=/usr/bin/chromium" in dockerfile
 
 
+def test_dockerfile_names_its_base_image_outright() -> None:
+    """No `BUILD_FROM`: nothing supplies it any more.
+
+    The Supervisor stopped passing the argument with 2026.04.0 and the builder
+    no longer reads `build.yaml` (developers.home-assistant.io, *App
+    configuration*), so an `ARG` with a default was the only thing still
+    making the old form work. The tag is dated, not `bookworm`, so an image
+    built next month is built on the same base.
+    """
+    instructions = "\n".join(
+        line for line in (APP / "Dockerfile").read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "BUILD_FROM" not in instructions
+    base = re.search(r"^FROM (\S+)$", instructions, re.M)
+    assert base, "no FROM"
+    dated = r"ghcr\.io/home-assistant/base-debian:bookworm-\d{4}\.\d{2}\.\d+"
+    assert re.fullmatch(dated, base.group(1)), f"pin the base image to a dated tag: {base.group(1)}"
+
+
+WORKFLOW = ROOT / ".github" / "workflows" / "app.yml"
+
+
+def _workflow() -> dict[str, Any]:
+    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+
+def _step(job: str, uses: str) -> dict[str, Any]:
+    steps = [
+        step for step in _workflow()["jobs"][job]["steps"]
+        if str(step.get("uses", "")).startswith(uses)
+    ]
+    assert len(steps) == 1, f"{job} should use {uses} exactly once"
+    return steps[0]
+
+
+def test_the_manifest_names_the_image_the_workflow_publishes() -> None:
+    """`image` is what turns an install from a build into a pull.
+
+    Without it the Supervisor builds `app/Dockerfile` on the machine
+    installing the app — Chromium from apt, the package from pip, on a Pi —
+    which is what made installing take minutes. With it, the Supervisor pulls
+    `<image>:<version>` (developers.home-assistant.io, *App configuration*,
+    the `image` row), so the name here, the name the workflow pushes to and
+    the tag it pushes have to be the same three things.
+    """
+    manifest = _manifest()
+    owner = _project()["urls"]["Homepage"].removeprefix("https://github.com/").split("/")[0]
+    assert manifest["image"] == f"ghcr.io/{owner}/maverick-app"
+    workflow = _workflow()
+    assert workflow["env"]["IMAGE_NAME"] == manifest["image"].rsplit("/", 1)[1]
+    build = _step("build", "home-assistant/builder/actions/build-image@")["with"]
+    assert build["context"] == "./app"
+    assert "${{ needs.prepare.outputs.version }}" in build["image-tags"].splitlines()
+    assert build["skip-existing"] == "${{ needs.prepare.outputs.version }}", (
+        "a published version tag is never overwritten; bump the version instead"
+    )
+    read = next(s for s in workflow["jobs"]["prepare"]["steps"] if s.get("id") == "manifest")
+    assert "app/config.yaml" in read["run"], "the tag and the architectures come from the manifest"
+
+
+def test_the_workflow_publishes_from_main_and_only_builds_for_a_pull_request() -> None:
+    workflow = _workflow()
+    on = workflow.get("on") or workflow[True]  # PyYAML reads a bare `on` as True
+    assert on["push"]["branches"] == ["main"]
+    for event in ("push", "pull_request"):
+        assert "app/**" in on[event]["paths"], f"{event} should run for a change under app/"
+    assert "workflow_dispatch" in on, "a release branch can publish ahead of its merge"
+    build = workflow["jobs"]["build"]
+    assert build["permissions"]["packages"] == "write"
+    manifest = workflow["jobs"]["manifest"]
+    assert manifest["if"] == "needs.prepare.outputs.publish == 'true'"
+    publish = _step("manifest", "home-assistant/builder/actions/publish-multi-arch-manifest@")
+    assert publish["with"]["image-name"] == "${{ env.IMAGE_NAME }}"
+    assert publish["with"]["skip-existing"] == "${{ needs.prepare.outputs.version }}"
+    build_step = _step("build", "home-assistant/builder/actions/build-image@")
+    matrix_step = _step("prepare", "home-assistant/builder/actions/prepare-multi-arch-matrix@")
+    versions = {step["uses"].split("@")[1] for step in (build_step, publish, matrix_step)}
+    assert len(versions) == 1, f"the builder actions move together, not {versions}"
+
+
 def _pinned_ref() -> str:
     dockerfile = (APP / "Dockerfile").read_text(encoding="utf-8")
     pinned = re.search(r"^ARG MAVERICK_REF=(\S+)$", dockerfile, re.M)

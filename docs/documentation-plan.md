@@ -493,7 +493,7 @@ Acceptance: CI green; `maverick --version` prints 0.1.0; CHANGELOG names every t
 **Still open**
 
 - Nothing has been installed on a real Home Assistant OS system: the Supervisor build, the aarch64 image, the Mosquitto hand-off and the derived `base_url` are read from the Supervisor's documentation and bashio's source. `app/DOCS.md` says so and asks for reports.
-- No ingress (the UI is on port 5000 behind the Web UI button), no pre-built image (installing builds it on the machine), and still no custom integration.
+- No ingress (the UI is on port 5000 behind the Web UI button), and still no custom integration. The image is pre-built and published now (`.github/workflows/app.yml`, from 0.6.0's image on); before that, installing built it on the machine.
 - Home Assistant renamed add-ons to *apps*; the new pages use *app* and say the words mean the same thing, while older pages still say add-on.
 
 ## How to run these

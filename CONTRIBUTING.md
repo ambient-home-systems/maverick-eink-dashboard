@@ -284,12 +284,14 @@ credential set — the state a freshly installed app is in — the app's `versio
 equals the package version, and the package at `MAVERICK_REF` accepts the
 starter config this commit ships. The derivations are tested with the
 Supervisor's two endpoints stubbed, so nothing in the suite reaches for one.
-CI (`.github/workflows/ci.yml`, job `app`) lints the manifest, builds the image
-on amd64, launches Chromium inside it, loads the starter config with the
-package the image installed, and runs that image once more with an
-`options.json` and no environment variables at all — the local reproduction the
-0.2.x fixes were made without. It is the one place the image is built, since
-nothing else in the suite touches Docker.
+CI (`.github/workflows/app.yml`) lints the manifest, builds the image for
+amd64 and aarch64 on native runners, launches Chromium inside each, loads the
+starter config with the package the image installed, and runs that image once
+more with an `options.json` and no environment variables at all — the local
+reproduction the 0.2.x fixes were made without. It is the one place the image
+is built, since nothing else in the suite touches Docker; from `main` it is
+also the place the image is published, see
+[The image is published, not built](#the-image-is-published-not-built).
 
 The last two exist because the starter config and the package reach a user's
 machine by different routes. `app/rootfs/usr/share/maverick/maverick.yaml` is
@@ -389,6 +391,51 @@ release has actually gone wrong.
    starter config through the pinned commit's config module, so leaving the ref
    behind is what breaks a fresh install's first start rather than merely
    mislabelling it.
+6. **Publish the image before the merge.** Open the pull request for that
+   commit and, once its checks are green, run the *Home Assistant app*
+   workflow by hand (**Actions → Home Assistant app → Run workflow**, on the
+   release branch). It pushes `ghcr.io/ambient-home-systems/maverick-app` at
+   the new version. Then merge. The push to `main` runs the workflow again
+   and finds the tag already there, which is a no-op with a warning. Merging
+   first works too, but leaves a window of a few minutes in which the store
+   offers a version whose image does not exist yet; an install in that window
+   fails to pull and succeeds when retried.
+
+### The image is published, not built
+
+Up to 0.6.0 `app/config.yaml` named no `image`, so the Supervisor built
+`app/Dockerfile` on the machine installing the app — Debian's Chromium from
+apt and the package from pip, on a Pi, on every install and every update.
+Home Assistant's publishing guide calls that the path for trying an idea and
+asks established apps to publish pre-built images instead
+(developers.home-assistant.io/docs/apps/publishing). The manifest now names
+`ghcr.io/ambient-home-systems/maverick-app` and `.github/workflows/app.yml`
+publishes it, with Home Assistant's own builder actions
+(`home-assistant/builder/actions/*`): one image per architecture, built on a
+native runner, and a multi-arch manifest under the generic name.
+
+Four things follow from the tag being the manifest's `version`:
+
+- **A published tag is never overwritten.** `skip-existing` makes a run
+  whose tag already exists build but not push. So a change to anything under
+  `app/` reaches users only through a version bump — which is also the only
+  way the store offers it to them.
+- **The remedy for a mislabelled release is a new version.** The image at a
+  version tag is whatever `main` built the first time; if that was the wrong
+  `MAVERICK_REF`, release again. *Rebuild* in the app's menu is for locally
+  built apps and no longer applies.
+- **The package has to be public.** GitHub creates a container package
+  private on its first push. The Supervisor pulls anonymously, so after the
+  first publish open the package on GitHub (**Packages → maverick-app →
+  Package settings**) and set its visibility to *Public*; the same for the
+  two `amd64-maverick-app` and `aarch64-maverick-app` packages. Once.
+- **Pull requests build, they do not publish.** Every change under `app/` or
+  `src/` builds both architectures and runs the smoke tests on the image,
+  without pushing; only a push to `main` or a manual run pushes.
+
+`tests/test_app.py::test_the_manifest_names_the_image_the_workflow_publishes`
+holds the manifest's `image`, the workflow's image name and its tag to one
+another.
 
 `maverick --version`, the HTTP API's `/` route (`src/maverick/server/api.py`) and
 the setup UI's own header all report `maverick.app.VERSION`, so any of the three
@@ -419,15 +466,14 @@ is what the old `test_app_version_is_the_package_version` — comparing the
 manifest to the *working tree* — could not do, since in that window both files
 read 0.4.1.
 
-**If it happens anyway**, the remedy is not an update: the version number is
-already the new one, so the Supervisor offers nothing. Reload the repository
-(**⋮ → Check for updates** in the add-on store) and then **Rebuild** the add-on
-from its own ⋮ menu, which re-runs the build against the current `MAVERICK_REF`.
+**If it happens anyway**, the remedy is a new version: the tag is already
+taken by the image `main` built first, and a published tag is never
+overwritten (see [The image is published, not built](#the-image-is-published-not-built)).
 
 ### Why `MAVERICK_REF` moves after the tag, not with it
 
-CI builds the app image on every pull request — `docker build` in the
-`Home Assistant app` job (`.github/workflows/ci.yml`) — and the image installs
+CI builds the app image on every pull request that touches it — the
+`Home Assistant app` workflow (`.github/workflows/app.yml`) — and the image installs
 the repository from `archive/${MAVERICK_REF}.tar.gz` (`app/Dockerfile`). So a
 ref named in a commit has to already exist on the remote when that commit is
 pushed. Setting `MAVERICK_REF` to `vx.y.z` in the same commit that cuts the
